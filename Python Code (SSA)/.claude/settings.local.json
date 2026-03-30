@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -c \"import sqlite3; conn=sqlite3.connect\\(''shooter_data.db''\\); cur=conn.cursor\\(\\); cur.execute\\(''SELECT * FROM recordings ORDER BY id DESC LIMIT 5''\\); print\\(cur.fetchall\\(\\)\\)\")",
+      "WebSearch",
+      "Read(//d/Aydiner/Projek Flutter SSA/**)"
+    ]
+  }
+}

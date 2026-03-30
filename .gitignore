@@ -1,0 +1,49 @@
+# Python
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.db-journal
+*.db-wal
+*.db-shm
+shooter_data.db
+
+# Flutter / Dart
+ssa_app/.dart_tool/
+ssa_app/.packages
+ssa_app/.flutter-plugins
+ssa_app/.flutter-plugins-dependencies
+ssa_app/build/
+ssa_app/.idea/
+ssa_app/android/.gradle/
+ssa_app/android/app/build/
+ssa_app/android/app/src/main/kotlin/
+ssa_app/android/.cxx/
+ssa_app/ios/Pods/
+ssa_app/ios/.symlinks/
+ssa_app/ios/Flutter/Flutter.podspec
+ssa_app/macos/Pods/
+ssa_app/linux/build/
+ssa_app/windows/build/
+ssa_app/web/build/
+
+# IDE / Editor
+.vscode/
+*.code-workspace
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Compressed / Archives
+*.rar
+*.zip
+*.7z
+*.tar
+*.gz
+
+# Misc
+*.log
+*.lock
+package-lock.json

@@ -1,16 +1,12 @@
 // ============================================
 // File: widgets/muzzle_trace_widget.dart
-// MantisX-Style Real-time Muzzle Trace (XY Plot)
+// Dark theme muzzle trace with enhanced glow
 // ============================================
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/sensor_data_provider.dart';
 import '../models/data_models.dart';
-
-// Phase colors (MantisX style)
-const Color _holdColor = Color(0xFFFF4444);   // Red
-const Color _pressColor = Color(0xFFFFFF44);  // Yellow
-const Color _recoilColor = Color(0xFF44FFFF); // Cyan
+import '../theme/app_theme.dart';
 
 class MuzzleTraceWidget extends StatefulWidget {
   final double zoom;
@@ -18,7 +14,7 @@ class MuzzleTraceWidget extends StatefulWidget {
 
   const MuzzleTraceWidget({
     super.key,
-    this.zoom = 0.05,  // ±0.05 radians = ±2.86 degrees default
+    this.zoom = 0.05,
     this.showGrid = true,
   });
 
@@ -27,83 +23,86 @@ class MuzzleTraceWidget extends StatefulWidget {
 }
 
 class _MuzzleTraceWidgetState extends State<MuzzleTraceWidget> {
-  // Integrated gyro trace
-  double _currX = 0.0; // Windage (left/right)
-  double _currY = 0.0; // Elevation (up/down)
-
+  double _currX = 0.0;
+  double _currY = 0.0;
   final List<_TracePoint> _recentTrace = [];
   static const int _maxTracePoints = 200;
-
-  // Phase coloring
   bool _isHold = true;
   bool _isPress = false;
   bool _isRecoil = false;
-
-  // Shot display
   ShotResult? _lastShot;
   int _shotCount = 0;
 
   Color get _currentPhaseColor {
-    if (_isRecoil) return _recoilColor;
-    if (_isPress) return _pressColor;
-    return _holdColor;
+    if (_isRecoil) return AppTheme.phaseRecoil;
+    if (_isPress) return AppTheme.phasePress;
+    return AppTheme.phaseHold;
   }
 
   @override
   Widget build(BuildContext context) {
     return Consumer<SensorDataProvider>(
       builder: (context, provider, child) {
-        // Process latest data
         _processLatestData(provider);
 
-        return Card(
-          elevation: 4,
-          margin: const EdgeInsets.all(8),
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              children: [
-                // Header
-                Row(
+        return Container(
+          decoration: AppTheme.cardDecoration(),
+          child: Column(
+            children: [
+              // Header
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
+                child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    const Text(
-                      'Muzzle Trace',
-                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                    Row(
+                      children: [
+                        Icon(Icons.gps_fixed, color: AppTheme.primary, size: 18),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Muzzle Trace',
+                          style: TextStyle(
+                            color: AppTheme.textPrimary,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
                     ),
                     Row(
                       children: [
-                        // Phase indicator dots
-                        _phaseDot('H', _holdColor, _isHold),
-                        _phaseDot('P', _pressColor, _isPress),
-                        _phaseDot('R', _recoilColor, _isRecoil),
-                        const SizedBox(width: 12),
-                        // Shot counter
+                        _phaseDot('H', AppTheme.phaseHold, _isHold),
+                        const SizedBox(width: 6),
+                        _phaseDot('P', AppTheme.phasePress, _isPress),
+                        const SizedBox(width: 6),
+                        _phaseDot('R', AppTheme.phaseRecoil, _isRecoil),
+                        const SizedBox(width: 10),
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                           decoration: BoxDecoration(
-                            color: Colors.grey[800],
-                            borderRadius: BorderRadius.circular(12),
+                            color: AppTheme.surfaceLight,
+                            borderRadius: BorderRadius.circular(10),
                           ),
                           child: Text(
                             '$_shotCount shots',
-                            style: const TextStyle(color: Colors.white, fontSize: 12),
+                            style: TextStyle(color: AppTheme.textSecondary, fontSize: 11),
                           ),
                         ),
                       ],
                     ),
                   ],
                 ),
+              ),
 
-                const SizedBox(height: 8),
-
-                // XY Plot
-                Expanded(
+              // XY Plot
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.all(8),
                   child: Container(
                     decoration: BoxDecoration(
-                      color: Colors.black,
+                      color: AppTheme.background,
                       borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.grey[700]!, width: 1),
+                      border: Border.all(color: AppTheme.cardBorder, width: 1),
                     ),
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(7),
@@ -121,13 +120,17 @@ class _MuzzleTraceWidgetState extends State<MuzzleTraceWidget> {
                     ),
                   ),
                 ),
+              ),
 
-                const SizedBox(height: 8),
-
-                // Score display
-                if (_lastShot != null) _buildScoreDisplay(_lastShot!),
-              ],
-            ),
+              // Score display
+              if (_lastShot != null)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                  child: _buildScoreDisplay(_lastShot!),
+                )
+              else
+                const SizedBox(height: 52),
+            ],
           ),
         );
       },
@@ -135,49 +138,47 @@ class _MuzzleTraceWidgetState extends State<MuzzleTraceWidget> {
   }
 
   Widget _phaseDot(String label, Color color, bool active) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 2),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 10,
-            height: 10,
-            decoration: BoxDecoration(
-              color: active ? color : color.withOpacity(0.3),
-              shape: BoxShape.circle,
-            ),
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 10,
+          height: 10,
+          decoration: BoxDecoration(
+            color: active ? color : color.withValues(alpha: 0.3),
+            shape: BoxShape.circle,
+            boxShadow: active ? [BoxShadow(color: color.withValues(alpha: 0.5), blurRadius: 6)] : null,
           ),
-          const SizedBox(width: 2),
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 10,
-              color: active ? color : Colors.grey,
-              fontWeight: active ? FontWeight.bold : FontWeight.normal,
-            ),
+        ),
+        const SizedBox(width: 2),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 10,
+            color: active ? color : AppTheme.textTertiary,
+            fontWeight: active ? FontWeight.bold : FontWeight.normal,
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
   Widget _buildScoreDisplay(ShotResult shot) {
-    final scoreColor = _getScoreColor(shot.totalScore);
+    final scoreColor = AppTheme.getScoreColor(shot.totalScore);
     return Container(
-      padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 12),
+      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
       decoration: BoxDecoration(
-        color: scoreColor.withOpacity(0.15),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: scoreColor.withOpacity(0.3)),
+        color: scoreColor.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: scoreColor.withValues(alpha: 0.25)),
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [
           _scoreChip('TOTAL', shot.totalScore, scoreColor),
-          _scoreChip('HOLD', shot.holdScore, _holdColor),
-          _scoreChip('PRESS', shot.pressScore, _pressColor),
-          _scoreChip('RECOIL', shot.recoilScore, _recoilColor),
+          _scoreChip('HOLD', shot.holdScore, AppTheme.phaseHold),
+          _scoreChip('PRESS', shot.pressScore, AppTheme.phasePress),
+          _scoreChip('RECOIL', shot.recoilScore, AppTheme.phaseRecoil),
         ],
       ),
     );
@@ -189,69 +190,43 @@ class _MuzzleTraceWidgetState extends State<MuzzleTraceWidget> {
       children: [
         Text(
           label,
-          style: TextStyle(fontSize: 8, color: Colors.grey[500]),
+          style: TextStyle(fontSize: 9, color: AppTheme.textTertiary, fontWeight: FontWeight.w500),
         ),
         Text(
           score.toInt().toString(),
-          style: TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.bold,
-            color: color,
-          ),
+          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: color),
         ),
       ],
     );
   }
 
-  Color _getScoreColor(double score) {
-    if (score >= 95) return Colors.amber;
-    if (score >= 85) return Colors.green;
-    if (score >= 70) return Colors.blue;
-    if (score >= 50) return Colors.orange;
-    return Colors.red;
-  }
-
   void _processLatestData(SensorDataProvider provider) {
-    // Get latest gyro values
     if (provider.gyroXData.isEmpty) return;
 
     final latestGx = provider.gyroXData.last.value;
-    // latestGy available but integrated separately via gyroYData
     final latestGz = provider.gyroZData.last.value;
     final latestTs = provider.gyroXData.last.timestamp;
 
-    // Integrate: X = Σ(-Gz * dt), Y = Σ(-Gx * dt)
-    const dt = 0.01; // 100Hz
+    const dt = 0.01;
     _currX += (-latestGz) * dt;
     _currY += (-latestGx) * dt;
 
-    // Add to trace
     final phase = _isRecoil ? TracePhase.recoil : (_isPress ? TracePhase.press : TracePhase.hold);
     _recentTrace.add(_TracePoint(_currX, _currY, latestTs, phase));
 
-    // Trim trace
     if (_recentTrace.length > _maxTracePoints) {
       _recentTrace.removeAt(0);
     }
 
-    // Update phase based on shot detector state
-    // (In the future, this could come from the isolate's shot detector)
-    // For now, we switch to recoil briefly after a shot
     if (_lastShot != null) {
       _isHold = false;
       _isPress = false;
       _isRecoil = true;
       Future.delayed(const Duration(milliseconds: 300), () {
-        if (mounted) {
-          setState(() {
-            _isRecoil = false;
-            _isHold = true;
-          });
-        }
+        if (mounted) setState(() { _isRecoil = false; _isHold = true; });
       });
     }
 
-    // Check for new shot
     if (provider.latestShot != null && provider.latestShot != _lastShot) {
       _lastShot = provider.latestShot;
       _shotCount++;
@@ -273,10 +248,6 @@ class _MuzzleTraceWidgetState extends State<MuzzleTraceWidget> {
   }
 }
 
-// ============================================
-// TRACE DATA CLASSES
-// ============================================
-
 enum TracePhase { hold, press, recoil }
 
 class _TracePoint {
@@ -284,13 +255,8 @@ class _TracePoint {
   final double y;
   final double timestamp;
   final TracePhase phase;
-
   _TracePoint(this.x, this.y, this.timestamp, this.phase);
 }
-
-// ============================================
-// CUSTOM PAINTER
-// ============================================
 
 class _MuzzleTracePainter extends CustomPainter {
   final List<_TracePoint> trace;
@@ -315,25 +281,20 @@ class _MuzzleTracePainter extends CustomPainter {
     final centerY = size.height / 2;
     final scale = size.width / 2 / zoom;
 
-    // --- GRID ---
     if (showGrid) {
-      final gridPaint = Paint()
-        ..color = Colors.grey[800]!
-        ..strokeWidth = 0.5;
-
       // Cross hairs
       canvas.drawLine(
         Offset(centerX, 0),
         Offset(centerX, size.height),
-        gridPaint,
+        Paint()..color = const Color(0xFF2A2A4A)..strokeWidth = 0.5,
       );
       canvas.drawLine(
         Offset(0, centerY),
         Offset(size.width, centerY),
-        gridPaint,
+        Paint()..color = const Color(0xFF2A2A4A)..strokeWidth = 0.5,
       );
 
-      // Concentric circles (reference rings)
+      // Concentric circles
       for (final r in [0.25, 0.5, 0.75, 1.0]) {
         final radius = r * scale;
         if (radius < size.width / 2) {
@@ -341,7 +302,7 @@ class _MuzzleTracePainter extends CustomPainter {
             Offset(centerX, centerY),
             radius,
             Paint()
-              ..color = Colors.grey[700]!.withOpacity(0.5)
+              ..color = const Color(0xFF2A2A4A).withValues(alpha: 0.5)
               ..style = PaintingStyle.stroke
               ..strokeWidth = 0.5,
           );
@@ -349,21 +310,19 @@ class _MuzzleTracePainter extends CustomPainter {
       }
     }
 
-    // --- TRACE PATH ---
+    // Trace path
     if (trace.length < 2) return;
 
     for (int i = 1; i < trace.length; i++) {
       final prev = trace[i - 1];
       final curr = trace[i];
-
       final x1 = centerX + prev.x * scale;
       final y1 = centerY + prev.y * scale;
       final x2 = centerX + curr.x * scale;
       final y2 = centerY + curr.y * scale;
 
-      final color = _getPhaseColor(curr.phase);
       final paint = Paint()
-        ..color = color.withOpacity(0.7)
+        ..color = _getPhaseColor(curr.phase).withValues(alpha: 0.7)
         ..strokeWidth = 2.0
         ..style = PaintingStyle.stroke
         ..strokeCap = StrokeCap.round;
@@ -371,55 +330,36 @@ class _MuzzleTracePainter extends CustomPainter {
       canvas.drawLine(Offset(x1, y1), Offset(x2, y2), paint);
     }
 
-    // --- CENTER ORIGIN (crosshair) ---
+    // Crosshair origin
     final crosshairPaint = Paint()
-      ..color = Colors.grey[500]!
-      ..strokeWidth = 1.5;
+      ..color = const Color(0xFF5A5A6E)..strokeWidth = 1.5;
+    canvas.drawLine(Offset(centerX - 10, centerY), Offset(centerX + 10, centerY), crosshairPaint);
+    canvas.drawLine(Offset(centerX, centerY - 10), Offset(centerX, centerY + 10), crosshairPaint);
 
-    canvas.drawLine(
-      Offset(centerX - 10, centerY),
-      Offset(centerX + 10, centerY),
-      crosshairPaint,
-    );
-    canvas.drawLine(
-      Offset(centerX, centerY - 10),
-      Offset(centerX, centerY + 10),
-      crosshairPaint,
-    );
+    // Current position dot with glow
+    final px = centerX + currentX * scale;
+    final py = centerY + currentY * scale;
 
-    // --- CURRENT POSITION DOT ---
-    final currentPx = centerX + currentX * scale;
-    final currentPy = centerY + currentY * scale;
-
-    // Glow effect
     final glowPaint = Paint()
-      ..color = phaseColor.withOpacity(0.3)
+      ..color = phaseColor.withValues(alpha: 0.2)
       ..style = PaintingStyle.fill;
-    canvas.drawCircle(Offset(currentPx, currentPy), 12, glowPaint);
+    canvas.drawCircle(Offset(px, py), 14, glowPaint);
 
-    // Solid dot
-    final dotPaint = Paint()
-      ..color = phaseColor
-      ..style = PaintingStyle.fill;
-    canvas.drawCircle(Offset(currentPx, currentPy), 6, dotPaint);
-
-    // White center
-    canvas.drawCircle(Offset(currentPx, currentPy), 2, Paint()..color = Colors.white);
+    canvas.drawCircle(Offset(px, py), 6, Paint()..color = phaseColor);
+    canvas.drawCircle(Offset(px, py), 2, Paint()..color = Colors.white);
   }
 
   Color _getPhaseColor(TracePhase phase) {
     switch (phase) {
       case TracePhase.hold:
-        return _holdColor;
+        return AppTheme.phaseHold;
       case TracePhase.press:
-        return _pressColor;
+        return AppTheme.phasePress;
       case TracePhase.recoil:
-        return _recoilColor;
+        return AppTheme.phaseRecoil;
     }
   }
 
   @override
-  bool shouldRepaint(covariant _MuzzleTracePainter oldDelegate) {
-    return true; // Always repaint for real-time updates
-  }
+  bool shouldRepaint(covariant _MuzzleTracePainter oldDelegate) => true;
 }

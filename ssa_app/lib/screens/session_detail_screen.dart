@@ -1,18 +1,18 @@
 // ============================================
 // File: screens/session_detail_screen.dart
+// Dark theme session detail
 // ============================================
 import 'package:flutter/material.dart';
 import 'package:syncfusion_flutter_charts/charts.dart';
+import 'package:intl/intl.dart';
 import '../providers/session_logger.dart';
 import '../models/data_models.dart';
 import '../widgets/benchmark_analysis_widget.dart';
-//import 'dart:math';
+import '../theme/app_theme.dart';
 
 class SessionDetailScreen extends StatefulWidget {
   final SessionLog session;
-  
   const SessionDetailScreen({super.key, required this.session});
-
   @override
   State<SessionDetailScreen> createState() => _SessionDetailScreenState();
 }
@@ -20,7 +20,7 @@ class SessionDetailScreen extends StatefulWidget {
 class _SessionDetailScreenState extends State<SessionDetailScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
-  
+
   @override
   void initState() {
     super.initState();
@@ -36,18 +36,26 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: AppTheme.background,
       appBar: AppBar(
-        title: Text('Session Details'),
-        backgroundColor: Colors.blue,
-        foregroundColor: Colors.white,
+        backgroundColor: AppTheme.background,
+        elevation: 0,
+        leading: IconButton(
+          icon: Icon(Icons.arrow_back, color: AppTheme.textPrimary),
+          onPressed: () => Navigator.pop(context),
+        ),
+        title: Text(
+          'Session Details',
+          style: TextStyle(color: AppTheme.textPrimary, fontWeight: FontWeight.w600),
+        ),
         bottom: TabBar(
           controller: _tabController,
-          indicatorColor: Colors.white,
-          labelColor: Colors.white,
-          unselectedLabelColor: Colors.white70,
+          indicatorColor: AppTheme.primary,
+          labelColor: AppTheme.primary,
+          unselectedLabelColor: AppTheme.textSecondary,
           tabs: const [
-            Tab(icon: Icon(Icons.analytics), text: 'Chart View'),
-            Tab(icon: Icon(Icons.assessment), text: 'Benchmark'),
+            Tab(icon: Icon(Icons.analytics, size: 20), text: 'Chart'),
+            Tab(icon: Icon(Icons.assessment, size: 20), text: 'Benchmark'),
           ],
         ),
       ),
@@ -62,174 +70,231 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
   }
 
   Widget _buildChartView() {
+    final avgScore = widget.session.averageScore;
+    final scoreColor = AppTheme.getScoreColor(avgScore);
+    final dateFormat = DateFormat('MMM d, yyyy');
+    final timeFormat = DateFormat('HH:mm');
+
     return Column(
       children: [
-        // Session Info Card
-        _buildSessionInfoCard(),
-        
+        // Session info card
+        Container(
+          margin: const EdgeInsets.all(16),
+          padding: const EdgeInsets.all(16),
+          decoration: AppTheme.cardDecoration(),
+          child: Column(
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          dateFormat.format(widget.session.date),
+                          style: const TextStyle(
+                            color: AppTheme.textPrimary,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'at ${timeFormat.format(widget.session.date)}',
+                          style: TextStyle(color: AppTheme.textSecondary, fontSize: 13),
+                        ),
+                      ],
+                    ),
+                  ),
+                  // Score badge
+                  Container(
+                    width: 60,
+                    height: 60,
+                    decoration: BoxDecoration(
+                      color: scoreColor.withValues(alpha: 0.12),
+                      shape: BoxShape.circle,
+                      border: Border.all(color: scoreColor.withValues(alpha: 0.3), width: 2),
+                    ),
+                    child: Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(
+                            avgScore > 0 ? '${avgScore.toInt()}' : '--',
+                            style: TextStyle(
+                              color: scoreColor,
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          if (avgScore > 0)
+                            Text(
+                              AppTheme.getScoreLabel(avgScore).substring(0, 1),
+                              style: TextStyle(color: scoreColor.withValues(alpha: 0.7), fontSize: 9, fontWeight: FontWeight.bold),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  _infoChip(Icons.timer_outlined, '${widget.session.duration.toStringAsFixed(1)}s'),
+                  const SizedBox(width: 8),
+                  _infoChip(Icons.gps_fixed, widget.session.firearmType.displayName),
+                  const SizedBox(width: 8),
+                  _infoChip(Icons.flash_on, widget.session.trainingMode.displayName),
+                  const SizedBox(width: 8),
+                  _infoChip(Icons.data_usage, '${widget.session.gyroX.length} pts'),
+                ],
+              ),
+            ],
+          ),
+        ),
+
         // Chart
         Expanded(
-          child: _buildChart(),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildSessionInfoCard() {
-    return Card(
-      margin: const EdgeInsets.all(16),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Session Information',
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 12),
-            Row(
+          child: Container(
+            margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            padding: const EdgeInsets.all(16),
+            decoration: AppTheme.cardDecoration(),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Expanded(
-                  child: _buildInfoItem(
-                    'Date & Time',
-                    '${widget.session.date.day}/${widget.session.date.month}/${widget.session.date.year}\n'
-                    '${widget.session.date.hour.toString().padLeft(2, '0')}:'
-                    '${widget.session.date.minute.toString().padLeft(2, '0')}',
-                    Icons.calendar_today,
-                  ),
+                Row(
+                  children: [
+                    Icon(Icons.show_chart, color: AppTheme.primary, size: 18),
+                    const SizedBox(width: 8),
+                    const Text(
+                      'Gyroscope Data',
+                      style: TextStyle(
+                        color: AppTheme.textPrimary,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
                 ),
-                Expanded(
-                  child: _buildInfoItem(
-                    'Duration',
-                    '${widget.session.duration.toStringAsFixed(1)}s',
-                    Icons.timer,
-                  ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    _legendDot('X', const Color(0xFF4285F4)),
+                    const SizedBox(width: 12),
+                    _legendDot('Y', const Color(0xFFEA4335)),
+                    const SizedBox(width: 12),
+                    _legendDot('Z', const Color(0xFF34A853)),
+                  ],
                 ),
+                const SizedBox(height: 12),
                 Expanded(
-                  child: _buildInfoItem(
-                    'Data Points',
-                    '${widget.session.gyroX.length}',
-                    Icons.data_usage,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: AppTheme.background,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: SfCartesianChart(
+                        plotAreaBorderWidth: 0,
+                        backgroundColor: AppTheme.background,
+                        primaryXAxis: NumericAxis(
+                          majorGridLines: MajorGridLines(width: 0.5, color: AppTheme.cardBorder),
+                          axisLine: AxisLine(color: AppTheme.cardBorder),
+                          labelStyle: TextStyle(color: AppTheme.textTertiary, fontSize: 9),
+                        ),
+                        primaryYAxis: NumericAxis(
+                          majorGridLines: MajorGridLines(width: 0.5, color: AppTheme.cardBorder),
+                          axisLine: AxisLine(color: AppTheme.cardBorder),
+                          labelStyle: TextStyle(color: AppTheme.textTertiary, fontSize: 9),
+                        ),
+                        tooltipBehavior: TooltipBehavior(
+                          enable: true,
+                          textStyle: TextStyle(color: AppTheme.textPrimary),
+                        ),
+                        zoomPanBehavior: ZoomPanBehavior(
+                          enablePinching: true,
+                          enablePanning: true,
+                          enableDoubleTapZooming: true,
+                        ),
+                        legend: const Legend(isVisible: false),
+                        series: <CartesianSeries>[
+                          LineSeries<DataPoint, double>(
+                            dataSource: widget.session.gyroX,
+                            xValueMapper: (DataPoint p, _) => p.x,
+                            yValueMapper: (DataPoint p, _) => p.y,
+                            name: 'Gyro X',
+                            color: const Color(0xFF4285F4),
+                            width: 2,
+                          ),
+                          LineSeries<DataPoint, double>(
+                            dataSource: widget.session.gyroY,
+                            xValueMapper: (DataPoint p, _) => p.x,
+                            yValueMapper: (DataPoint p, _) => p.y,
+                            name: 'Gyro Y',
+                            color: const Color(0xFFEA4335),
+                            width: 2,
+                          ),
+                          LineSeries<DataPoint, double>(
+                            dataSource: widget.session.gyroZ,
+                            xValueMapper: (DataPoint p, _) => p.x,
+                            yValueMapper: (DataPoint p, _) => p.y,
+                            name: 'Gyro Z',
+                            color: const Color(0xFF34A853),
+                            width: 2,
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
                 ),
               ],
             ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildInfoItem(String title, String value, IconData icon) {
-    return Column(
-      children: [
-        Icon(icon, color: Colors.blue, size: 24),
-        const SizedBox(height: 8),
-        Text(
-          title,
-          style: TextStyle(
-            fontSize: 12,
-            color: Colors.grey[600],
-            fontWeight: FontWeight.w500,
           ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          value,
-          style: const TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.bold,
-          ),
-          textAlign: TextAlign.center,
         ),
       ],
     );
   }
 
-  Widget _buildChart() {
-    return Card(
-      margin: const EdgeInsets.all(16),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+  Widget _infoChip(IconData icon, String text) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        decoration: BoxDecoration(
+          color: AppTheme.surfaceLight,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Text(
-              'Gyroscope Data',
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 16),
-            Expanded(
-              child: SfCartesianChart(
-                plotAreaBorderWidth: 1,
-                plotAreaBorderColor: Colors.grey[300],
-                backgroundColor: Colors.white,
-                
-                primaryXAxis: NumericAxis(
-                  title: AxisTitle(text: 'Time (seconds)'),
-                  majorGridLines: const MajorGridLines(width: 0.5),
-                  minorGridLines: const MinorGridLines(width: 0.2),
-                ),
-                
-                primaryYAxis: NumericAxis(
-                  title: AxisTitle(text: 'Angular Velocity (°/s)'),
-                  majorGridLines: const MajorGridLines(width: 0.5),
-                  minorGridLines: const MinorGridLines(width: 0.2),
-                ),
-                
-                tooltipBehavior: TooltipBehavior(
-                  enable: true,
-                  format: 'point.x: point.ys',
-                ),
-                
-                zoomPanBehavior: ZoomPanBehavior(
-                  enablePinching: true,
-                  enablePanning: true,
-                  enableDoubleTapZooming: true,
-                  enableMouseWheelZooming: true,
-                ),
-                
-                legend: const Legend(
-                  isVisible: true,
-                  position: LegendPosition.bottom,
-                ),
-                
-                series: <CartesianSeries>[
-                  LineSeries<DataPoint, double>(
-                    dataSource: widget.session.gyroX,
-                    xValueMapper: (DataPoint point, _) => point.x,
-                    yValueMapper: (DataPoint point, _) => point.y,
-                    name: 'Gyro X',
-                    color: Colors.red,
-                    width: 2,
-                  ),
-                  LineSeries<DataPoint, double>(
-                    dataSource: widget.session.gyroY,
-                    xValueMapper: (DataPoint point, _) => point.x,
-                    yValueMapper: (DataPoint point, _) => point.y,
-                    name: 'Gyro Y',
-                    color: Colors.green,
-                    width: 2,
-                  ),
-                  LineSeries<DataPoint, double>(
-                    dataSource: widget.session.gyroZ,
-                    xValueMapper: (DataPoint point, _) => point.x,
-                    yValueMapper: (DataPoint point, _) => point.y,
-                    name: 'Gyro Z',
-                    color: Colors.blue,
-                    width: 2,
-                  ),
-                ],
+            Icon(icon, size: 12, color: AppTheme.textSecondary),
+            const SizedBox(width: 4),
+            Flexible(
+              child: Text(
+                text,
+                style: TextStyle(color: AppTheme.textSecondary, fontSize: 11),
+                overflow: TextOverflow.ellipsis,
               ),
             ),
           ],
         ),
       ),
+    );
+  }
+
+  Widget _legendDot(String label, Color color) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 8,
+          height: 8,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        ),
+        const SizedBox(width: 4),
+        Text(label, style: TextStyle(color: AppTheme.textTertiary, fontSize: 11)),
+      ],
     );
   }
 }

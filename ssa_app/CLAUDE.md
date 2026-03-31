@@ -6,6 +6,14 @@ Mobile companion app for the STASYS shooter stability analyzer. Primary platform
 
 ---
 
+## GitHub Repository
+
+**URL**: https://github.com/Aydinerrizqu/STASYS
+**Current Branch**: `develop` (Phase 1 MVP completed)
+**Parent Project**: `d:\Aydiner\Projek Flutter SSA\`
+
+---
+
 ## Architecture
 
 ```
@@ -269,3 +277,25 @@ path_provider: ^2.1.1                  # File paths
 crypto: ^3.0.3                        # SHA256 auth
 intl: ^0.19.0                          # Formatting
 ```
+
+---
+
+## Phase 1 Completed Features
+
+- Protocol fix: 30-byte packet parsing with piezo uint16
+- MantisX-style scoring: sqrt-based soft curve, per-phase (hold/press/recoil), per-axis (elevation/windage)
+- Shot detection state machine: IDLE→ARMING→ARMED→POST_GATHER→COOLDOWN
+- Firearm type & training mode selectors with persistence
+- Real-time XY muzzle trace widget (CustomPainter, 3-phase coloring)
+- Shot timer with countdown (3s/5s/10s) and split times
+- Session logging with shot history
+- Isolate-based background processing for non-blocking UI
+
+## Phase 2 Pending
+
+- Drill library (drill_model.dart + drills_tab.dart)
+- Coaching analysis engine (coaching_service.dart)
+- Data export: PNG, CSV, JSON (export_service.dart)
+- Shot timer `_onShotDetected` integration with sensor data provider
+- Session-over-session improvement dashboard
+- Gamification: badges, streaks, daily challenges

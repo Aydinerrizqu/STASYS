@@ -12,6 +12,17 @@ STASYS is a DIY shooter training device inspired by MantisX ($99-$249). It consi
 
 ---
 
+## GitHub Repository
+
+**URL**: https://github.com/Aydinerrizqu/STASYS
+**Branches**:
+- `main` — stable releases
+- `develop` — active development (Phase 1 MVP completed)
+
+**Workflow**: All new work on `develop` branch, PR/merge to `main` when stable.
+
+---
+
 ## Architecture
 
 ```
@@ -237,11 +248,23 @@ Wire (built-in)
 
 ## Known Issues / TODOs
 
+### Phase 1 Completed ✅
+- Flutter packet parsing: was 28 bytes, now 30 bytes with piezo uint16 ✅
+- Flutter isolate message handling: `'ui_update'` auto-detect implemented ✅
+- MantisX-style scoring in Flutter: sqrt-based soft curve, per-phase & per-axis scores ✅
+- Firearm type & mode selector in Flutter ✅
+- Real-time muzzle trace widget in Flutter ✅
+- Shot timer in Flutter ✅
+- STASYS_REPORTCARD.py typo fixed ✅
+
+### Phase 2 Pending
 - Python uses Hardcore scoring, Flutter uses MantisX-style — consider unifying
-- Shot timer in Flutter (`shot_timer_tab.dart`) has `_onShotDetected` that is not yet connected to sensor data provider
 - STASY_V4.py is a duplicate of STASYS.py with different defaults (COM4, PIEZO 400/2500) — merge or delete
-- Battery monitoring only in firmware, not yet surfaced in Flutter UI consistently
-- Export service (`export_service.dart`) not yet implemented in Flutter
+- Drill library in Flutter (drill_model.dart + drills_tab.dart)
+- Coaching analysis engine in Flutter (coaching_service.dart)
+- Data export service in Flutter (export_service.dart)
+- Shot timer `_onShotDetected` in Flutter not yet fully connected to sensor data provider
+- Desktop-mobile sync via JSON import/export
 
 ---
 

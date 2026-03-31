@@ -1,13 +1,25 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'providers/sensor_data_provider.dart';
 import 'providers/bluetooth_provider.dart';
 import 'providers/session_provider.dart';
 import 'providers/settings_provider.dart';
-import 'screens/main_screen.dart';
+import 'screens/main_shell.dart';
 import 'providers/session_logger.dart';
+import 'theme/app_theme.dart';
 
 void main() {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // Set system UI overlay style for dark theme
+  SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
+    statusBarColor: Colors.transparent,
+    statusBarIconBrightness: Brightness.light,
+    systemNavigationBarColor: AppTheme.surface,
+    systemNavigationBarIconBrightness: Brightness.light,
+  ));
+
   runApp(const MyApp());
 }
 
@@ -40,7 +52,7 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProxyProvider<SensorDataProvider, BluetoothProvider>(
           create: (context) => BluetoothProvider(
             sensorDataProvider: Provider.of<SensorDataProvider>(context, listen: false),
-          )..initializeBluetooth(),
+          ),
           update: (context, sensorData, previousBluetoothProvider) {
             previousBluetoothProvider!.sensorDataProvider = sensorData;
             return previousBluetoothProvider;
@@ -48,12 +60,10 @@ class MyApp extends StatelessWidget {
         ),
       ],
       child: MaterialApp(
-        title: 'STASYS App',
-        theme: ThemeData(
-          primarySwatch: Colors.blue,
-          visualDensity: VisualDensity.adaptivePlatformDensity,
-        ),
-        home: const MainScreen(),
+        title: 'STASYS',
+        debugShowCheckedModeBanner: false,
+        theme: AppTheme.darkTheme,
+        home: const MainShell(),
       ),
     );
   }

@@ -72,24 +72,40 @@ class BluetoothProvider extends ChangeNotifier {
     return ((_invalidPacketsCount + _checksumErrorsCount) / _totalPacketsReceived) * 100;
   }
 
-  Future<void> initializeBluetooth() async {
-    bool permissionGranted = await _requestBluetoothPermissions();
+  Future<void> initializeBluetooth({BuildContext? context}) async {
+    bool permissionGranted = await _requestBluetoothPermissions(context);
     if (permissionGranted) {
       await getBondedDevices();
     }
   }
-  
-  Future<bool> _requestBluetoothPermissions() async {
+
+  Future<bool> _requestBluetoothPermissions([BuildContext? context]) async {
     Map<Permission, PermissionStatus> statuses = await [
       Permission.bluetooth,
       Permission.bluetoothConnect,
       Permission.bluetoothScan,
       Permission.location,
+      Permission.nearbyWifiDevices,
     ].request();
-    
-    return statuses.values.every((status) => status.isGranted);
+
+    final denied = <String>[];
+    statuses.forEach((permission, status) {
+      if (!status.isGranted) {
+        final name = permission.toString().replaceFirst('Permission.', '');
+        denied.add(name);
+      }
+    });
+
+    if (denied.isNotEmpty) {
+      debugPrint("Permissions denied: ${denied.join(', ')}");
+      // Show snackbar if context is available
+      // Note: In provider context, we can't directly show snackbar
+      // The UI layer should handle this via listening to provider state
+    }
+
+    return denied.isEmpty;
   }
-  
+
   Future<void> getBondedDevices() async {
     try {
       List<BluetoothDevice> bonded = await FlutterBluetoothSerial.instance.getBondedDevices();
@@ -99,10 +115,14 @@ class BluetoothProvider extends ChangeNotifier {
       debugPrint("Error getting bonded devices: $e");
     }
   }
-  
-  Future<void> startScan() async {
-    bool permissionGranted = await _requestBluetoothPermissions();
-    if (!permissionGranted) return;
+
+  Future<void> startScan({BuildContext? context}) async {
+    bool permissionGranted = await _requestBluetoothPermissions(context);
+    if (!permissionGranted) {
+      _isScanning = false;
+      notifyListeners();
+      return;
+    }
     
     _isScanning = true;
     _devicesList.clear();

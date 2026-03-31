@@ -1,7 +1,13 @@
+// ============================================
+// File: screens/tabs/home_tab.dart
+// Home Dashboard — redesigned dark theme
+// ============================================
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:intl/intl.dart';
 import '../../providers/session_provider.dart';
 import '../../providers/session_logger.dart';
+import '../../theme/app_theme.dart';
 import '../session_detail_screen.dart';
 
 class HomeTab extends StatelessWidget {
@@ -10,235 +16,462 @@ class HomeTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.grey[50],
-      appBar: AppBar(
-        title: const Text('Training Sessions'),
-        backgroundColor: Colors.blue,
-        foregroundColor: Colors.white,
-        elevation: 2,
-        actions: [
-          IconButton(
-            onPressed: () => _showAboutDialog(context),
-            icon: const Icon(Icons.info_outline),
-          ),
-        ],
-      ),
-      body: Column(
-        children: [
-          // Stats Overview Card
-          _buildStatsOverview(),
-          
-          // Sessions List
-          Expanded(
-            child: _buildSessionsList(),
-          ),
-        ],
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _refreshSessions(context),
-        icon: const Icon(Icons.refresh),
-        label: const Text('Refresh'),
-        backgroundColor: Colors.blue,
-        foregroundColor: Colors.white,
-      ),
-    );
-  }
+      backgroundColor: AppTheme.background,
+      body: SafeArea(
+        child: Consumer<SessionProvider>(
+          builder: (context, sessionProvider, child) {
+            final sessions = sessionProvider.sessions;
+            final sorted = sessions.toList()
+              ..sort((a, b) => b.date.compareTo(a.date));
 
-  Widget _buildStatsOverview() {
-    return Consumer<SessionProvider>(
-      builder: (context, sessionProvider, child) {
-        final sessions = sessionProvider.sessions;
-        
-        if (sessions.isEmpty) {
-          return const SizedBox.shrink();
-        }
+            return CustomScrollView(
+              slivers: [
+                // Header
+                SliverToBoxAdapter(child: _buildHeader(context)),
 
-        // Calculate stats
-        int totalSessions = sessions.length;
-        double totalDuration = sessions.fold(0.0, (sum, session) => sum + session.duration);
-        double avgDuration = totalDuration / totalSessions;
-        
-        // Find latest session
-        //SessionLog latestSession = sessions.first;
-        
-        return Card(
-          margin: const EdgeInsets.all(16),
-          elevation: 4,
-          child: Padding(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Icon(Icons.analytics, color: Colors.blue, size: 28),
-                    const SizedBox(width: 12),
-                    Text(
-                      'Training Overview',
-                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.bold,
-                        color: Colors.blue,
-                      ),
+                // Stats cards
+                SliverToBoxAdapter(child: _buildStatsCards(sessions)),
+
+                // Section title
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text(
+                          'RECENT SESSIONS',
+                          style: AppTheme.label,
+                        ),
+                        if (sessions.isNotEmpty)
+                          Text(
+                            '${sessions.length} total',
+                            style: TextStyle(
+                              color: AppTheme.textTertiary,
+                              fontSize: 12,
+                            ),
+                          ),
+                      ],
                     ),
-                  ],
+                  ),
                 ),
-                const SizedBox(height: 16),
-                
-                // Stats Grid
-                Row(
-                  children: [
-                    Expanded(
-                      child: _buildStatItem(
-                        'Total Sessions',
-                        totalSessions.toString(),
-                        Icons.fitness_center,
-                        Colors.green,
+
+                // Sessions list
+                if (sorted.isEmpty)
+                  SliverFillRemaining(
+                    hasScrollBody: false,
+                    child: _buildEmptyState(),
+                  )
+                else
+                  SliverPadding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    sliver: SliverList(
+                      delegate: SliverChildBuilderDelegate(
+                        (context, index) => _buildSessionCard(
+                          context,
+                          sorted[index],
+                          sessionProvider,
+                          index,
+                        ),
+                        childCount: sorted.length,
                       ),
                     ),
-                    Expanded(
-                      child: _buildStatItem(
-                        'Total Duration',
-                        '${(totalDuration / 60).toStringAsFixed(1)} min',
-                        Icons.timer,
-                        Colors.orange,
-                      ),
-                    ),
-                    Expanded(
-                      child: _buildStatItem(
-                        'Avg Duration',
-                        '${avgDuration.toStringAsFixed(1)}s',
-                        Icons.speed,
-                        Colors.purple,
-                      ),
-                    ),
-                  ],
+                  ),
+
+                const SliverToBoxAdapter(
+                  child: SizedBox(height: 100),
                 ),
               ],
-            ),
-          ),
-        );
-      },
+            );
+          },
+        ),
+      ),
     );
   }
 
-  Widget _buildStatItem(String title, String value, IconData icon, Color color) {
-    return Column(
-      children: [
-        Icon(icon, color: color, size: 24),
-        const SizedBox(height: 8),
-        Text(
-          title,
-          style: TextStyle(
-            fontSize: 12,
-            color: Colors.grey[600],
+  Widget _buildHeader(BuildContext context) {
+    final now = DateTime.now();
+    final greeting = now.hour < 12
+        ? 'Good Morning'
+        : now.hour < 17 ? 'Good Afternoon' : 'Good Evening';
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              ShaderMask(
+                shaderCallback: (bounds) => LinearGradient(
+                  colors: [AppTheme.primary, AppTheme.primary.withValues(alpha: 0.7)],
+                ).createShader(bounds),
+                child: const Text(
+                  'STASYS',
+                  style: TextStyle(
+                    fontSize: 28,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                    letterSpacing: 3,
+                  ),
+                ),
+              ),
+              IconButton(
+                onPressed: () => _showAboutDialog(context),
+                icon: Icon(Icons.info_outline, color: AppTheme.textSecondary, size: 22),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '$greeting, Shooter',
+            style: AppTheme.subtitle,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatsCards(List<SessionLog> sessions) {
+    if (sessions.isEmpty) return const SizedBox(height: 16);
+
+    int totalSessions = sessions.length;
+    double totalDuration = sessions.fold(0.0, (sum, s) => sum + s.duration);
+    double avgScore = sessions.isNotEmpty
+        ? sessions.map((s) => s.averageScore).reduce((a, b) => a + b) / sessions.length
+        : 0.0;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+      child: Row(
+        children: [
+          Expanded(
+            child: _StatCard(
+              icon: Icons.fitness_center,
+              iconColor: AppTheme.primary,
+              value: '$totalSessions',
+              label: 'Sessions',
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: _StatCard(
+              icon: Icons.timer_outlined,
+              iconColor: AppTheme.secondary,
+              value: _formatDuration(totalDuration),
+              label: 'Total Time',
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: _StatCard(
+              icon: Icons.star_outline,
+              iconColor: AppTheme.getScoreColor(avgScore),
+              value: avgScore > 0 ? '${avgScore.toInt()}' : '--',
+              label: 'Avg Score',
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _formatDuration(double seconds) {
+    if (seconds < 60) return '${seconds.toInt()}s';
+    if (seconds < 3600) return '${(seconds / 60).toInt()}m';
+    final h = (seconds / 3600).floor();
+    final m = ((seconds % 3600) / 60).floor();
+    return '${h}h ${m}m';
+  }
+
+  Widget _buildEmptyState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            width: 80,
+            height: 80,
+            decoration: BoxDecoration(
+              color: AppTheme.surfaceLight,
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              Icons.track_changes_outlined,
+              size: 36,
+              color: AppTheme.textTertiary,
+            ),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'No Sessions Yet',
+            style: AppTheme.title.copyWith(color: AppTheme.textSecondary),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Connect your STASYS device and start training',
+            style: AppTheme.subtitle,
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSessionCard(
+    BuildContext context,
+    SessionLog session,
+    SessionProvider provider,
+    int index,
+  ) {
+    final avgScore = session.averageScore;
+    final scoreColor = AppTheme.getScoreColor(avgScore);
+    final scoreLabel = AppTheme.getScoreLabel(avgScore);
+    final dateFormat = DateFormat('MMM d, yyyy');
+    final timeFormat = DateFormat('HH:mm');
+
+    return Dismissible(
+      key: Key(session.id),
+      direction: DismissDirection.endToStart,
+      background: Container(
+        alignment: Alignment.centerRight,
+        padding: const EdgeInsets.only(right: 20),
+        margin: const EdgeInsets.only(bottom: 10),
+        decoration: BoxDecoration(
+          color: AppTheme.error.withValues(alpha: 0.2),
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Icon(Icons.delete_outline, color: AppTheme.error),
+      ),
+      confirmDismiss: (direction) async {
+        return await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Delete Session?'),
+            content: const Text('This action cannot be undone.'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancel'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: Text('Delete', style: TextStyle(color: AppTheme.error)),
+              ),
+            ],
+          ),
+        ) ?? false;
+      },
+      onDismissed: (direction) {
+        provider.deleteSession(session);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Session deleted')),
+        );
+      },
+      child: GestureDetector(
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => SessionDetailScreen(session: session),
+            ),
+          );
+        },
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 10),
+          padding: const EdgeInsets.all(16),
+          decoration: AppTheme.cardDecoration(),
+          child: Row(
+            children: [
+              // Score circle
+              Container(
+                width: 52,
+                height: 52,
+                decoration: BoxDecoration(
+                  color: scoreColor.withValues(alpha: 0.12),
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: scoreColor.withValues(alpha: 0.3),
+                    width: 2,
+                  ),
+                ),
+                child: Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        avgScore > 0 ? '${avgScore.toInt()}' : '--',
+                        style: TextStyle(
+                          color: scoreColor,
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      if (avgScore > 0)
+                        Text(
+                          scoreLabel.substring(0, 1),
+                          style: TextStyle(
+                            color: scoreColor.withValues(alpha: 0.7),
+                            fontSize: 8,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 14),
+
+              // Session info
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      dateFormat.format(session.date),
+                      style: const TextStyle(
+                        color: AppTheme.textPrimary,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        _buildMiniChip(Icons.access_time, timeFormat.format(session.date)),
+                        const SizedBox(width: 8),
+                        _buildMiniChip(Icons.timer_outlined, '${session.duration.toStringAsFixed(0)}s'),
+                        const SizedBox(width: 8),
+                        _buildMiniChip(
+                          Icons.gps_fixed,
+                          session.firearmType.displayName,
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+
+              // Arrow
+              Icon(
+                Icons.chevron_right,
+                color: AppTheme.textTertiary,
+                size: 20,
+              ),
+            ],
           ),
         ),
-        const SizedBox(height: 4),
+      ),
+    );
+  }
+
+  Widget _buildMiniChip(IconData icon, String text) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 11, color: AppTheme.textTertiary),
+        const SizedBox(width: 3),
         Text(
-          value,
+          text,
           style: TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.bold,
-            color: color,
+            color: AppTheme.textTertiary,
+            fontSize: 11,
           ),
         ),
       ],
     );
   }
 
-  Widget _buildSessionsList() {
-    return Consumer<SessionProvider>(
-      builder: (context, sessionProvider, child) {
-        // Sort sessions by date (newest first)
-        final sortedSessions = sessionProvider.sessions
-            .toList()
-            ..sort((a, b) => b.date.compareTo(a.date));
-
-        if (sortedSessions.isEmpty) {
-          return Center(
-            child: Text(
-              'No sessions recorded yet',
-              style: TextStyle(color: Colors.grey),
-            ),
-          );
-        }
-
-        return ListView.builder(
-          itemCount: sortedSessions.length,
-          itemBuilder: (context, index) {
-            final session = sortedSessions[index];
-            final sessionNumber = sortedSessions.length - index;
-            final formattedTime = '${session.date.hour}:${session.date.minute.toString().padLeft(2, '0')}';
-            final formattedDate = '${session.date.day}/${session.date.month}/${session.date.year}';
-            
-            return GestureDetector(
-              onLongPress: () => _showDeleteDialog(context, sessionProvider, session),
-              child: ListTile(
-                leading: Icon(Icons.analytics, color: Colors.blue),
-                title: Text('Session $sessionNumber - $formattedTime'),
-                subtitle: Text(formattedDate),
-                trailing: Icon(Icons.chevron_right, color: Colors.grey),
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => SessionDetailScreen(session: session),
-                  ),
-                ),
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
-
-  void _showDeleteDialog(BuildContext context, SessionProvider sessionProvider, SessionLog session) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Delete Session?'),
-        content: Text('Are you sure you want to delete this session?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () {
-              sessionProvider.deleteSession(session);
-              Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('Session deleted')),
-              );
-            },
-            child: Text('Delete', style: TextStyle(color: Colors.red)),
-          ),
-        ],
-      ),
-    );
-  }
-
   void _showAboutDialog(BuildContext context) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text('About STASYS'),
-        content: Text('Sports Training Analysis System v1.0'),
+      builder: (ctx) => AlertDialog(
+        title: ShaderMask(
+          shaderCallback: (bounds) => LinearGradient(
+            colors: [AppTheme.primary, AppTheme.primary.withValues(alpha: 0.7)],
+          ).createShader(bounds),
+          child: const Text(
+            'STASYS',
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              color: Colors.white,
+              letterSpacing: 2,
+            ),
+          ),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Shooter Stability Analysis System',
+              style: AppTheme.subtitle,
+            ),
+            const SizedBox(height: 12),
+            Text('Version 3.1', style: AppTheme.body),
+            const SizedBox(height: 4),
+            Text(
+              'DIY dry/live fire training with shot scoring',
+              style: TextStyle(color: AppTheme.textSecondary, fontSize: 13),
+            ),
+          ],
+        ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text('OK'),
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Close'),
           ),
         ],
       ),
     );
   }
+}
 
-  void _refreshSessions(BuildContext context) {
-    final sessionProvider = Provider.of<SessionProvider>(context, listen: false);
-    sessionProvider.loadSessions();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Sessions refreshed')),
+// ============================================
+// Stat Card Widget
+// ============================================
+class _StatCard extends StatelessWidget {
+  final IconData icon;
+  final Color iconColor;
+  final String value;
+  final String label;
+
+  const _StatCard({
+    required this.icon,
+    required this.iconColor,
+    required this.value,
+    required this.label,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: AppTheme.cardDecoration(),
+      child: Column(
+        children: [
+          Icon(icon, color: iconColor, size: 22),
+          const SizedBox(height: 8),
+          Text(
+            value,
+            style: const TextStyle(
+              color: AppTheme.textPrimary,
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            label,
+            style: TextStyle(
+              color: AppTheme.textTertiary,
+              fontSize: 10,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

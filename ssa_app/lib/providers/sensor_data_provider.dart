@@ -18,6 +18,10 @@ class SensorDataProvider extends ChangeNotifier {
   Isolate? _dataIsolate;
   ReceivePort? _mainReceivePort;
   SendPort? _isolateSendPort;
+  Completer<void>? _isolateReadyCompleter;
+
+  // Queue messages sent before isolate SendPort was received
+  final List<SensorDataMessage> _pendingMessages = [];
   
     // Konfigurasi
   final int _displayWindowSeconds = 5;
@@ -104,25 +108,42 @@ class SensorDataProvider extends ChangeNotifier {
   /// Initialize background isolate
   Future<void> _initializeIsolate() async {
     _mainReceivePort = ReceivePort();
-    
+
+    // CRITICAL: Attach listener BEFORE spawning isolate.
+    // The isolate sends SendPort synchronously on startup.
+    // If we spawn first and await, the isolate might send before listener is ready.
+    _mainReceivePort!.listen(_handleIsolateMessage);
+    debugPrint("[PROVIDER] Listener attached, spawning isolate...");
+
     final config = SensorIsolateConfig(
       mainSendPort: _mainReceivePort!.sendPort,
       displayWindowSeconds: 5, // 5 detik window
       uiUpdateIntervalMs: 50, // Update setiap 50ms = 20 FPS
     );
-    
+
     _dataIsolate = await Isolate.spawn(
       SensorDataIsolate.entryPoint,
       config,
     );
-    
-    _mainReceivePort!.listen(_handleIsolateMessage);
+
+    debugPrint("[PROVIDER] Isolate spawned, waiting for SendPort...");
   }
   
   /// Handle messages dari isolate
   void _handleIsolateMessage(dynamic message) {
     if (message is SendPort) {
+      debugPrint("[PROVIDER] ✅ Received SendPort from isolate! Isolate is READY.");
       _isolateSendPort = message;
+      _isolateReadyCompleter?.complete();
+
+      // Flush any queued messages
+      if (_pendingMessages.isNotEmpty) {
+        debugPrint("[PROVIDER] 🔄 Flushing ${_pendingMessages.length} pending message(s)...");
+        for (final msg in _pendingMessages) {
+          _isolateSendPort!.send(msg);
+        }
+        _pendingMessages.clear();
+      }
       return;
     }
     
@@ -143,14 +164,17 @@ class SensorDataProvider extends ChangeNotifier {
           _handleDiffUpdate(message.data!);
           break;
         case 'calibration_started':
+          debugPrint("[PROVIDER] Received calibration_started from isolate");
           _isCalibrating = true;
           notifyListeners();
           break;
         case 'calibration_progress':
           _calibrationSamplesCount = message.data!['count'];
+          debugPrint("[PROVIDER] Calibration progress: $_calibrationSamplesCount/${message.data!['total']}");
           notifyListeners();
           break;
         case 'calibration_complete':
+          debugPrint("[PROVIDER] Calibration COMPLETE!");
           _isCalibrating = false;
           _isCalibrated = true;
           notifyListeners();
@@ -298,20 +322,31 @@ class SensorDataProvider extends ChangeNotifier {
     }
 
     // Forward ke isolate untuk processing
-    _isolateSendPort?.send(SensorDataMessage('sensor_data', {
-      'ax': ax,
-      'ay': ay,
-      'az': az,
-      'gx': gx,
-      'gy': gy,
-      'gz': gz,
-      'piezo': piezo,
-      'battery': battery,
-    }));
+    if (_isolateSendPort != null) {
+      _isolateSendPort!.send(SensorDataMessage('sensor_data', {
+        'ax': ax,
+        'ay': ay,
+        'az': az,
+        'gx': gx,
+        'gy': gy,
+        'gz': gz,
+        'piezo': piezo,
+        'battery': battery,
+      }));
+    }
   }
 
   void startCalibration() {
-    _isolateSendPort?.send(SensorDataMessage('start_calibration'));
+    debugPrint("[PROVIDER] startCalibration() called, _isolateSendPort: ${_isolateSendPort != null ? 'OK' : 'NULL'}");
+
+    if (_isolateSendPort == null) {
+      // Isolate not ready — queue message and it will be flushed when SendPort arrives
+      debugPrint("[PROVIDER] ⚠️ Isolate not ready, queuing calibration message");
+      _pendingMessages.add(SensorDataMessage('start_calibration'));
+      return;
+    }
+
+    _isolateSendPort!.send(SensorDataMessage('start_calibration'));
   }
   
   void startRecording() {

@@ -516,6 +516,8 @@ class SensorDataIsolate {
           if (message.data != null) _processSensorData(message.data!);
           break;
         case 'start_calibration':
+          // Debug via isolate-to-main message is complex, skip for now
+          // Just call _startCalibration which handles the flow
           _startCalibration();
           break;
         case 'start_recording':
@@ -571,6 +573,14 @@ class SensorDataIsolate {
       _offsetGyroY += gy;
       _offsetGyroZ += gz;
       _calibrationSamplesCount++;
+
+      // Send progress update every 10 samples
+      if (_calibrationSamplesCount % 10 == 0) {
+        _mainSendPort.send(SensorDataMessage('calibration_progress', {
+          'count': _calibrationSamplesCount,
+          'total': _samplesToCollect,
+        }));
+      }
 
       if (_calibrationSamplesCount >= _samplesToCollect) {
         _offsetGyroX /= _samplesToCollect;

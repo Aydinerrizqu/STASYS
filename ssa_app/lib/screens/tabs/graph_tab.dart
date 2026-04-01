@@ -2,10 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:ssa_app/providers/bluetooth_provider.dart';
 import 'package:ssa_app/providers/sensor_data_provider.dart';
-import 'package:ssa_app/widgets/control_panel.dart';
-import 'package:ssa_app/widgets/status_bar.dart';
-import '../../widgets/gyro_realtime_chart.dart';
-import '../../widgets/muzzle_trace_widget.dart';
+import 'package:ssa_app/widgets/gyro_realtime_chart.dart';
+import 'package:ssa_app/widgets/muzzle_trace_widget.dart';
 
 class GraphTab extends StatefulWidget {
   const GraphTab({super.key});
@@ -33,47 +31,79 @@ class _GraphTabState extends State<GraphTab> {
         padding: const EdgeInsets.all(16.0),
         child: Column(
           children: [
-            // Status Bar
-            Consumer<BluetoothProvider>(
-              builder: (context, btProvider, child) {
-                return StatusBar(
-                  isConnected: btProvider.isConnected,
-                  deviceName: btProvider.selectedDevice?.name ?? 'No Device',
-                  onConnect: () => _showDeviceList(context, btProvider),
-                  onDisconnect: () => btProvider.disconnect(),
-                );
-              },
-            ),
-            const SizedBox(height: 16),
-
-            // Control Panel
+            // Control Panel — Record / Calibrate / Save (atas langsung)
             Consumer<SensorDataProvider>(
               builder: (context, sensorData, child) {
-                return ControlPanel(
-                  isRecording: sensorData.isRecording,
-                  isCalibrating: sensorData.isCalibrating,
-                  onRecord: () => sensorData.toggleRecording(),
-                  onCalibrate: () => sensorData.startCalibration(),
-                  onSave: () async {
-                    try {
-                      await sensorData.saveCurrentSession();
-                      if (mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Session saved successfully!')),
-                        );
-                      }
-                    } catch (e) {
-                      if (mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('Failed to save session: $e')),
-                        );
-                      }
-                    }
+                return Consumer<BluetoothProvider>(
+                  builder: (context, btProvider, child) {
+                    return Row(
+                      children: [
+                        Expanded(
+                          child: _ActionButton(
+                            icon: sensorData.isRecording ? Icons.stop : Icons.fiber_manual_record,
+                            label: sensorData.isRecording ? 'Stop' : 'Record',
+                            color: sensorData.isRecording ? Colors.red : Colors.blue,
+                            enabled: btProvider.isConnected && btProvider.isAuthenticated,
+                            onTap: () => sensorData.toggleRecording(),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: _ActionButton(
+                            icon: sensorData.isCalibrating ? Icons.sync : Icons.tune,
+                            label: sensorData.isCalibrating
+                                ? 'Calibrating... (${sensorData.calibrationSamplesCount}/${sensorData.samplesToCollect})'
+                                : 'Calibrate',
+                            color: Colors.orange,
+                            enabled: btProvider.isConnected && btProvider.isAuthenticated && !sensorData.isCalibrating,
+                            isLoading: sensorData.isCalibrating,
+                            onTap: () {
+                              debugPrint("[GRAPH] Calibrate button tapped — isAuth: ${btProvider.isAuthenticated}");
+                              if (!btProvider.isAuthenticated) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('Connect and authenticate first!')),
+                                );
+                                return;
+                              }
+                              debugPrint("[GRAPH] Calling sensorData.startCalibration()...");
+                              sensorData.startCalibration();
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: _ActionButton(
+                            icon: Icons.save_outlined,
+                            label: 'Save',
+                            color: Colors.green,
+                            enabled: btProvider.isConnected && sensorData.canSaveSession,
+                            onTap: () async {
+                              final scaffold = ScaffoldMessenger.of(context);
+                              try {
+                                await sensorData.saveCurrentSession();
+                                if (mounted) {
+                                  scaffold.showSnackBar(
+                                    const SnackBar(content: Text('Session saved successfully!')),
+                                  );
+                                }
+                              } catch (e) {
+                                if (mounted) {
+                                  scaffold.showSnackBar(
+                                    SnackBar(content: Text('Failed to save session: $e')),
+                                  );
+                                }
+                              }
+                            },
+                          ),
+                        ),
+                      ],
+                    );
                   },
                 );
               },
             ),
-            const SizedBox(height: 16),
+
+            const SizedBox(height: 12),
 
             // Chart toggle
             _buildChartToggle(),
@@ -144,74 +174,71 @@ class _GraphTabState extends State<GraphTab> {
       ),
     );
   }
+}
 
-  // Fungsi helper untuk menampilkan dialog pemilihan perangkat Bluetooth
-  void _showDeviceList(BuildContext context, BluetoothProvider btProvider) {
-    showDialog(
-      context: context,
-      builder: (BuildContext dialogContext) {
-        return AlertDialog(
-          title: const Text('Select a Device'),
-          content: SizedBox(
-            width: double.maxFinite,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Daftar perangkat yang sudah di-bond
-                Expanded(
-                  child: Consumer<BluetoothProvider>(
-                    builder: (context, provider, child) {
-                      if (provider.isScanning) {
-                        return const Center(child: CircularProgressIndicator());
-                      }
-                      if (provider.devicesList.isEmpty) {
-                        return const Center(child: Text('No devices found. Try scanning.'));
-                      }
-                      return ListView.builder(
-                        shrinkWrap: true,
-                        itemCount: provider.devicesList.length,
-                        itemBuilder: (context, index) {
-                          final device = provider.devicesList[index];
-                          return ListTile(
-                            title: Text(device.name ?? 'Unknown Device'),
-                            subtitle: Text(device.address),
-                            onTap: () async {
-                              Navigator.of(dialogContext).pop(); // Tutup dialog
-                              bool success = await provider.connectToDevice(device);
-                              if (!success && mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text('Failed to connect to device.')),
-                                );
-                              }
-                            },
-                          );
-                        },
-                      );
-                    },
-                  ),
+// ============================================
+// Action Button Widget
+// ============================================
+class _ActionButton extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color color;
+  final bool enabled;
+  final bool isLoading;
+  final VoidCallback onTap;
+
+  const _ActionButton({
+    required this.icon,
+    required this.label,
+    required this.color,
+    required this.enabled,
+    this.isLoading = false,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: enabled ? onTap : null,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        decoration: BoxDecoration(
+          color: enabled ? color : Colors.grey[300],
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            if (isLoading)
+              SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Colors.white,
                 ),
-                const Divider(),
-                // Tombol untuk scan perangkat baru
-                ElevatedButton.icon(
-                  onPressed: () {
-                    btProvider.startScan();
-                  },
-                  icon: const Icon(Icons.search),
-                  label: const Text('Scan for new devices'),
+              )
+            else
+              Icon(
+                icon,
+                size: 18,
+                color: enabled ? Colors.white : Colors.grey[500],
+              ),
+            const SizedBox(width: 6),
+            Flexible(
+              child: Text(
+                label,
+                style: TextStyle(
+                  color: enabled ? Colors.white : Colors.grey[500],
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
                 ),
-              ],
-            ),
-          ),
-          actions: <Widget>[
-            TextButton(
-              child: const Text('Cancel'),
-              onPressed: () {
-                Navigator.of(dialogContext).pop();
-              },
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
           ],
-        );
-      },
+        ),
+      ),
     );
   }
 }

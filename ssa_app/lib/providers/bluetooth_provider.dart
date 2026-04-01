@@ -7,10 +7,22 @@ import 'package:crypto/crypto.dart';
 import 'dart:math';
 import 'dart:async';
 import 'dart:convert';
-//import 'dart:isolate';
+
+// ================= AUTH STATE MACHINE =================
+enum AuthState {
+  idle,           // Not in auth mode
+  waitingForHash, // READY received, waiting for hash response
+  done,           // Auth successful
+  failed,         // Auth failed
+}
 
 class BluetoothProvider extends ChangeNotifier {
-  
+
+  AuthState _authState = AuthState.idle;
+  Completer<String>? _authCompleter;
+  String? _lastChallenge;
+
+  // ================= PACKET PARSING =================
   final List<int> _binaryBuffer = [];
   // Packet size: header(2) + 6 floats(24) + piezo uint16(2) + battery(1) + checksum(1) = 30 bytes
   static const int packetSize = 30;
@@ -19,20 +31,13 @@ class BluetoothProvider extends ChangeNotifier {
   static const int header2 = 0xBB;
 
   static const String _secretKey = "12ebaf10h12fa9123z21sti";
-  
-  SensorDataProvider _sensorDataProvider;
-  
-  // Variable untuk Isolate
-  // Isolate? _parserIsolate;
-  // SendPort? _isolateSendPort;
-  // ReceivePort? _mainReceivePort;
 
-  // ADDED: Stream subscription untuk kontrol yang lebih baik
+  SensorDataProvider _sensorDataProvider;
   StreamSubscription<Uint8List>? _dataSubscription;
-  
+
   BluetoothProvider({required SensorDataProvider sensorDataProvider})
       : _sensorDataProvider = sensorDataProvider;
-  
+
   set sensorDataProvider(SensorDataProvider provider) {
     _sensorDataProvider = provider;
   }
@@ -43,7 +48,6 @@ class BluetoothProvider extends ChangeNotifier {
   bool _isConnected = false;
   bool _isScanning = false;
   bool _isAuthenticated = false;
-  Completer<String>? _authCompleter;
   
   // Statistics
   int _totalPacketsReceived = 0;
@@ -133,20 +137,24 @@ class BluetoothProvider extends ChangeNotifier {
     }
 
     try {
+      // Reset all state for fresh connection
       _selectedDevice = device;
+      _authState = AuthState.idle;
+      _authCompleter = null;
+      _messageBuffer = '';
+      _binaryBuffer.clear();
+      _isAuthenticated = false;
       notifyListeners();
-      
+
       BluetoothConnection conn = await BluetoothConnection.toAddress(device.address);
       _connection = conn;
       _isConnected = true;
-      _isAuthenticated = false;
-      
+
       // Reset statistics
       _totalPacketsReceived = 0;
       _invalidPacketsCount = 0;
       _checksumErrorsCount = 0;
       _consecutiveErrors = 0;
-      //_lastPacketTime = null;
       
       notifyListeners();
       
@@ -201,30 +209,64 @@ class BluetoothProvider extends ChangeNotifier {
     _isAuthenticated = false;
     _connection = null;
     _selectedDevice = null;
+    _binaryBuffer.clear();
+    _messageBuffer = '';
+    _authCompleter = null;
+    _authState = AuthState.idle;
     _sensorDataProvider.resetTimeReference();
     notifyListeners();
   }
 
   void _onDataReceived(Uint8List data) {
-    // Reset consecutive errors on successful data receipt
     _consecutiveErrors = 0;
-    
-    // MODE 1: AUTH (Text-based)
-    if (!_isAuthenticated) {
+
+    // MODE 1: AUTH (Text-based, state machine)
+    // ESP32 sends: "READY" → "2.0-OVERSAMPLE" → [challenge] → hash(64 hex chars)
+    if (!_isAuthenticated && _authState != AuthState.done && _authState != AuthState.failed) {
       try {
-        String incoming = utf8.decode(data);
+        String incoming = utf8.decode(data, allowMalformed: true);
         _messageBuffer += incoming;
 
-        if (_messageBuffer.contains('\n')) {
-          List<String> lines = _messageBuffer.split('\n');
-          _messageBuffer = lines.last; 
-          
-          for (int i = 0; i < lines.length - 1; i++) {
-            String command = lines[i].trim();
-            if (command.isNotEmpty) {
-              debugPrint("[BT-AUTH] Received: $command");
-              _authCompleter?.complete(command);
-            }
+        while (_messageBuffer.contains('\n')) {
+          int newlineIdx = _messageBuffer.indexOf('\n');
+          String line = _messageBuffer.substring(0, newlineIdx).trim();
+          _messageBuffer = _messageBuffer.substring(newlineIdx + 1);
+
+          if (line.isEmpty) continue;
+          debugPrint("[BT-AUTH] Received: $line");
+
+          // State machine: only act on expected lines
+          switch (_authState) {
+            case AuthState.idle:
+              // Waiting for "READY" from ESP32
+              if (line == "READY") {
+                debugPrint("[BT-AUTH] Got READY, waiting for version...");
+                _authState = AuthState.waitingForHash;
+              }
+              break;
+
+            case AuthState.waitingForHash:
+              // After READY/version, ESP32 sends hash (64 hex chars)
+              // OR it might send "READY" again if it restarted
+              if (line == "READY") {
+                debugPrint("[BT-AUTH] Got READY again, staying in hash wait...");
+                // Still in waitingForHash state — ESP32 will send hash
+              } else if (line.length == 64 && RegExp(r'^[0-9a-fA-F]+$').hasMatch(line)) {
+                // This is the hash response — complete the future
+                debugPrint("[BT-AUTH] Got hash response!");
+                if (_authCompleter != null && !_authCompleter!.isCompleted) {
+                  _authCompleter!.complete(line);
+                }
+                _authState = AuthState.done;
+              } else {
+                // Version string or unexpected — stay in hash wait
+                debugPrint("[BT-AUTH] Version/info line, still waiting for hash...");
+              }
+              break;
+
+            case AuthState.done:
+            case AuthState.failed:
+              break;
           }
         }
       } catch (e) {
@@ -236,12 +278,11 @@ class BluetoothProvider extends ChangeNotifier {
     // MODE 2: BINARY DATA
     _binaryBuffer.addAll(data);
 
-    // OPTIMIZATION: Process multiple packets at once
-    int packetsProcessed = 0;
-    // ignore: constant_identifier_names
-    const int MAX_PACKETS_PER_CYCLE = 5; // Limit untuk mencegah blocking
+    // Process ALL available packets — no limit per cycle.
+    // Bluetooth data rate is 100Hz, _onDataReceived fires frequently enough
+    // that limiting to 5 packets causes buffer overflow at ~4+ calls/sec.
 
-    while (_binaryBuffer.length >= packetSize && packetsProcessed < MAX_PACKETS_PER_CYCLE) {
+    while (_binaryBuffer.length >= packetSize) {
       // Validate header
       if (_binaryBuffer[0] != header1 || _binaryBuffer[1] != header2) {
         // Try to find next valid header
@@ -309,17 +350,6 @@ class BluetoothProvider extends ChangeNotifier {
       }
 
       _binaryBuffer.removeRange(0, packetSize);
-      packetsProcessed++;
-    }
-    
-    // ADDED: Warning if buffer is growing (indicates processing bottleneck)
-    if (_binaryBuffer.length > packetSize * 10) {
-      debugPrint("⚠️ Buffer overflow: ${_binaryBuffer.length} bytes (${_binaryBuffer.length ~/ packetSize} packets)");
-      // Emergency clear old data
-      final keepSize = packetSize * 5;
-      if (_binaryBuffer.length > keepSize) {
-        _binaryBuffer.removeRange(0, _binaryBuffer.length - keepSize);
-      }
     }
   }
   
@@ -361,47 +391,76 @@ class BluetoothProvider extends ChangeNotifier {
     if (_connection == null) return false;
 
     try {
+      // Reset auth state and wait for ESP32 to send "READY"
+      _authState = AuthState.idle;
       _authCompleter = Completer<String>();
+      _messageBuffer = '';
+      _binaryBuffer.clear();
 
-      debugPrint("🔐 Waiting for ESP32...");
-      await Future.delayed(const Duration(seconds: 2));
+      debugPrint("🔐 Waiting for ESP32 to send READY...");
 
+      // Wait for ESP32 "READY" (state machine will catch it in _onDataReceived)
+      await Future.delayed(const Duration(seconds: 3));
+
+      // Check if we received READY
+      if (_authState != AuthState.waitingForHash) {
+        debugPrint("🔐 Did not receive READY from ESP32 in time");
+        _authState = AuthState.failed;
+        return false;
+      }
+
+      // Send challenge
       String challenge = _generateRandomString(16);
+      _lastChallenge = challenge;
       debugPrint("🔐 Sending challenge: '$challenge'");
       await sendDataToESP32("$challenge\n");
 
+      // Wait for hash response
       String espResponse = await _authCompleter!.future.timeout(
-        const Duration(seconds: 10), 
+        const Duration(seconds: 10),
         onTimeout: () {
-          throw TimeoutException("Authentication timeout");
-        }
+          debugPrint("🔐 Auth timeout — no hash received");
+          return 'TIMEOUT';
+        },
       );
+
+      if (espResponse == 'TIMEOUT') {
+        _authState = AuthState.failed;
+        return false;
+      }
 
       debugPrint("🔐 Response hash: '$espResponse'");
 
+      // Verify hash locally: SHA256(challenge + secretKey)
       String toHash = challenge + _secretKey;
       var bytes = utf8.encode(toHash);
       var digest = sha256.convert(bytes);
-      String expectedResponse = digest.toString();
+      String expectedHash = digest.toString();
 
-      debugPrint("🔐 Expected hash: '$expectedResponse'");
+      debugPrint("🔐 Expected hash: '$expectedHash'");
 
-      bool isMatch = espResponse == expectedResponse;
-      debugPrint("🔐 Match: ${isMatch ? 'YES ✓' : 'NO ✗'}");
+      bool isMatch = espResponse == expectedHash;
+      debugPrint("🔐 Match: ${isMatch ? 'YES' : 'NO'}");
 
       if (isMatch) {
         debugPrint("🔐 Sending AUTH_SUCCESS");
         await sendDataToESP32("AUTH_SUCCESS\n");
 
         _isAuthenticated = true;
+        _authState = AuthState.done;
         _binaryBuffer.clear();
-        _messageBuffer = "";
+        _messageBuffer = '';
         notifyListeners();
+        debugPrint("✅ Authentication successful!");
+      } else {
+        _authState = AuthState.failed;
+        debugPrint("❌ Hash mismatch — authentication failed");
       }
 
       return isMatch;
     } catch (e) {
       debugPrint("🔐 Auth failed: $e");
+      _authState = AuthState.failed;
       return false;
     } finally {
       _authCompleter = null;

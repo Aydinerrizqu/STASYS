@@ -13,9 +13,9 @@ ssa_app/
 ├── lib/
 │   ├── main.dart                    # App entry, MultiProvider setup
 │   ├── providers/
-│   │   ├── bluetooth_provider.dart   # Bluetooth connection, packet parsing (30 bytes)
+│   │   ├── bluetooth_provider.dart   # Bluetooth connection, packet parsing (30 bytes), auth state machine
 │   │   ├── sensor_data_provider.dart # UI state, isolate communication
-│   │   ├── sensor_data_isolate.dart # Background processing, shot detection, scoring
+│   │   ├── sensor_data_isolate.dart # Background processing, shot detection, scoring, calibration
 │   │   ├── settings_provider.dart   # Firearm type, training mode, preferences
 │   │   ├── session_provider.dart    # Session list management
 │   │   └── session_logger.dart      # Save/load sessions to SharedPreferences
@@ -23,19 +23,22 @@ ssa_app/
 │   │   ├── main_screen.dart         # Bottom nav + drawer navigation
 │   │   └── tabs/
 │   │       ├── home_tab.dart        # Home / dashboard
-│   │       ├── graph_tab.dart       # Live gyro + muzzle trace (toggle)
+│   │       ├── graph_tab.dart       # Live gyro + muzzle trace (toggle), inline action buttons
 │   │       ├── shot_timer_tab.dart  # Shot timer with countdown & splits
 │   │       ├── connection_tab.dart   # Bluetooth device selection
 │   │       └── settings_tab.dart    # Firearm type, training mode, graph duration
 │   ├── widgets/
 │   │   ├── gyro_realtime_chart.dart # Syncfusion line chart (X/Y/Z gyro)
 │   │   ├── muzzle_trace_widget.dart # CustomPainter XY muzzle trace
-│   │   ├── control_panel.dart       # Record/Calibrate/Save buttons
-│   │   └── status_bar.dart          # Connection status display
+│   │   ├── control_panel.dart       # Record/Calibrate/Save buttons (deprecated — inline in graph_tab.dart)
+│   │   └── status_bar.dart          # Connection status display (deprecated — removed from graph_tab.dart)
 │   ├── models/
 │   │   └── data_models.dart         # DataPoint, SessionLog, ShotResult, FirearmType, TrainingMode
 │   └── Utils/
 │       └── ring_buffer.dart          # Efficient circular buffer for sliding window
+│
+├── lib/theme/app_theme.dart         # Dark theme (on redesign/v1 branch only)
+└── lib/screens/main_shell.dart       # 5-tab shell navigation (on redesign/v1 branch only)
 ```
 
 ---
@@ -50,6 +53,7 @@ ESP32 (Bluetooth)
 BluetoothProvider (bluetooth_provider.dart)
     │ Parses packet: ax,ay,az,gx,gy,gz,piezo,battery
     │ Validates checksum, sensor ranges
+    │ Auth state machine (AuthState enum)
     ▼
 SensorDataProvider (sensor_data_provider.dart)
     │ Forwards to isolate, updates battery
@@ -59,7 +63,7 @@ SensorDataIsolate (sensor_data_isolate.dart)
     │ - Ring buffer management
     │ - Shot detection state machine
     │ - MantisX-style scoring
-    │ - Calibration
+    │ - Calibration (50 samples → calibration_progress every 10)
     ▼
 UI (Consumer widgets)
     │ Listens to SensorDataProvider via ChangeNotifier
@@ -88,6 +92,31 @@ Screen updates: charts, score display, shot list
 | 29 | checksum | uint8 | XOR of bytes 2-28 |
 
 **Max gyro validation**: 10.0 rad/s (500 dps ≈ 8.73 rad/s with margin)
+
+### Authentication Protocol
+
+```
+Flutter -> ESP32: <16-char random challenge>\n
+ESP32 -> Flutter: READY\n
+ESP32 -> Flutter: 2.0-OVERSAMPLE\n  (Flutter sends challenge after READY received)
+ESP32 -> Flutter: SHA256(challenge + SECRET_KEY) in hex\n
+Flutter -> ESP32: AUTH_SUCCESS\n
+```
+
+**Secret Key**: `12ebaf10h12fa9123z21sti`
+
+**Auth State Machine** (`bluetooth_provider.dart`):
+```dart
+enum AuthState {
+  idle,           // Not in auth mode
+  waitingForHash, // READY received, waiting for hash response
+  done,           // Auth successful
+  failed,         // Auth failed
+}
+```
+- ESP32 may send "READY" multiple times (after reboot) — state machine handles this
+- Completer only completed on 64-char hex hash response (NOT on every line)
+- On disconnect: all auth state, buffers, and completer are reset for reconnect
 
 ---
 
@@ -138,6 +167,17 @@ Located in `providers/sensor_data_isolate.dart` → `ShotDetector` class.
 
 ---
 
+## Calibration
+
+- Collects 50 gyro samples while sensor is stationary
+- Isolate sends `calibration_progress` every 10 samples
+- Isolate sends `calibration_complete` with offsets when done
+- UI shows: `Calibrating... (15/50)` countdown
+- Calibration button requires `btProvider.isAuthenticated == true` before enabling
+- Calibration offsets subtracted from raw gyro data in isolate processing
+
+---
+
 ## Provider Communication
 
 ### BluetoothProvider → SensorDataProvider
@@ -167,13 +207,14 @@ SensorDataMessage('request_full_sync')
 ### Isolate → SensorDataProvider
 
 ```dart
-SensorDataMessage('ui_update', {...})         // Display data
+SensorDataMessage('ui_update', {...})              // Display data
 SensorDataMessage('calibration_started')
+SensorDataMessage('calibration_progress', {count, total})  // Every 10 samples
 SensorDataMessage('calibration_complete', {offsets})
-SensorDataMessage('shot_detected', {shot})    // New shot scored
+SensorDataMessage('shot_detected', {shot})           // New shot scored
 SensorDataMessage('recording_started')
 SensorDataMessage('recording_stopped')
-SensorDataMessage('session_data', {...})      // Full session on save
+SensorDataMessage('session_data', {...})             // Full session on save
 SensorDataMessage('reset_complete')
 ```
 
@@ -211,6 +252,7 @@ Per-shot scoring:
 - 3 lines: X (blue), Y (red), Z (green) gyro data
 - 5-second sliding window
 - Score indicator badge
+- Uses `List.from()` copy to avoid concurrent modification during updates
 
 ### MuzzleTraceWidget
 - Custom `CustomPainter` for real-time XY plot
@@ -224,6 +266,22 @@ Per-shot scoring:
 - Running timer with millisecond precision
 - Shot split times list
 - Color-coded split performance (green < 500ms, red > 2000ms)
+- **NOTE**: `_onShotDetected` callback not yet connected to SensorDataProvider
+
+---
+
+## Graph Tab Layout
+
+The graph tab uses inline widgets instead of imported sub-widgets:
+
+```dart
+// Control buttons at top (inline _ActionButton widget)
+Record/Calibrate/Save → Consumer<SensorDataProvider> + Consumer<BluetoothProvider>
+Chart toggle: Gyro (SfCartesianChart) | Trace (CustomPainter XY)
+
+// StatusBar widget is REMOVED from graph_tab.dart
+// ControlPanel widget is DEPRECATED — use inline _ActionButton pattern
+```
 
 ---
 
@@ -251,7 +309,7 @@ Per-shot scoring:
 ## Testing Without Hardware
 
 - Python app: Auto-falls back to `MockSerial` when connection fails
-- Flutter app: Use simulator/emulator, real device required for Bluetooth
+- Flutter app: Real device required for Bluetooth
 - Shot detection: MockSerial generates random sensor data
 
 ---
@@ -269,3 +327,78 @@ path_provider: ^2.1.1                  # File paths
 crypto: ^3.0.3                        # SHA256 auth
 intl: ^0.19.0                          # Formatting
 ```
+
+---
+
+## Active Branches
+
+| Branch | Status | Description |
+|--------|--------|-------------|
+| `develop` | Active (main dev) | Original UI + auth/calibration fixes |
+| `redesign/v1` | Separate | Professional dark theme, new navigation shell |
+| `main` | Base | Initial commit only |
+
+**Workflow**: Test Bluetooth hardware on `develop` branch. Apply redesign from `redesign/v1` once validated.
+
+---
+
+## Known Issues / TODOs
+
+### Done / Fixed
+- [x] **Buffer overflow** — removed `MAX_PACKETS_PER_CYCLE = 5` limit. All packets now processed per cycle.
+- [x] **Bluetooth auth state machine** — added `AuthState` enum, fixed "Future already completed" bug, fixed reconnect.
+- [x] **Graph tab redesign** — StatusBar removed, inline `_ActionButton` for Record/Calibrate/Save.
+- [x] **Calibration progress UI** — isolate sends `calibration_progress` every 10 samples, countdown displayed.
+- [x] **Isolate SendPort race condition** — listener attached BEFORE isolate spawned to prevent lost messages.
+
+### In Progress
+- [ ] **Calibration still not working** — `_isolateSendPort` is `NULL` when calibration is triggered. Debug logs show:
+  - `[PROVIDER] ✅ Received SendPort from isolate! Isolate is READY.` never appears
+  - Calibration message queued but never flushed
+  - Root cause: isolate may be sending `SendPort` before listener is ready despite the "attach first" fix
+  - **TODO**: Verify isolate startup order, consider using a separate `ReceivePort` just for the initial `SendPort` handshake
+
+### Pending
+- [ ] **Shot timer `_onShotDetected` not connected**: `shot_timer_tab.dart` has the callback defined but not wired to `SensorDataProvider`.
+- [ ] **Demo mode not implemented**: "Explore App" button for testing without hardware not yet built.
+- [ ] **Battery monitoring**: Battery percentage received in packets but not consistently displayed in UI.
+- [ ] **Export service**: `export_service.dart` not yet implemented.
+- [ ] **Redesign branch not merged**: Dark theme (`app_theme.dart`) and new navigation shell (`main_shell.dart`) exist only on `redesign/v1` branch — not yet merged to `develop`.
+- [ ] Python uses Hardcore scoring, Flutter uses MantisX-style — consider unifying.
+
+### Debug Logging (for calibration troubleshooting)
+All debug logs use `[PROVIDER]` and `[GRAPH]` tags:
+```
+[PROVIDER] Listener attached, spawning isolate...
+[PROVIDER] Isolate spawned, waiting for SendPort...
+[PROVIDER] ✅ Received SendPort from isolate! Isolate is READY.    ← Should appear
+[PROVIDER] 🔄 Flushing N pending message(s)...                      ← If messages were queued
+[PROVIDER] startCalibration() called, _isolateSendPort: OK/NULL     ← KEY CHECK
+[PROVIDER] ⚠️ Isolate not ready, queuing calibration message       ← If port not ready
+[PROVIDER] Received calibration_started from isolate
+[PROVIDER] Calibration progress: 10/50 ... 20/50 ... 50/50
+[PROVIDER] Calibration COMPLETE!
+[GRAPH] Calibrate button tapped — isAuth: true/false
+```
+
+### Calibration Data Flow
+```
+User taps Calibrate
+  → graph_tab.dart: sensorData.startCalibration()
+    → sensor_data_provider.dart: _isolateSendPort?.send('start_calibration')
+      → sensor_data_isolate.dart: _handleMessage('start_calibration') → _startCalibration()
+        → isolate sets _isCalibrating = true, sends 'calibration_started'
+          → provider receives 'calibration_started' → _isCalibrating = true, notifyListeners()
+            → UI shows "Calibrating..." button
+        → isolate accumulates 50 gyro samples
+          → every 10 samples: sends 'calibration_progress'
+          → at 50 samples: sends 'calibration_complete' with offsets
+            → provider receives 'calibration_complete' → _isCalibrated = true, notifyListeners()
+              → UI shows calibrated state
+```
+
+### Calibration Requirements
+1. `_isolateSendPort` must be non-null (SendPort received from isolate)
+2. Calibration message must reach isolate
+3. Isolate must receive binary sensor data (gyro samples) during calibration
+4. 50 samples collected → offsets applied → `_isCalibrated = true`

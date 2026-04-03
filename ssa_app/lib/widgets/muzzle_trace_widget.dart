@@ -27,12 +27,14 @@ class MuzzleTraceWidget extends StatefulWidget {
 }
 
 class _MuzzleTraceWidgetState extends State<MuzzleTraceWidget> {
-  // Integrated gyro trace
+  // Integrated gyro trace — resets on each new shot
   double _currX = 0.0; // Windage (left/right)
   double _currY = 0.0; // Elevation (up/down)
 
   final List<_TracePoint> _recentTrace = [];
   static const int _maxTracePoints = 200;
+  // Window: only integrate last 2 seconds of gyro data per shot
+  static const int _traceWindowMs = 2000;
 
   // Phase coloring
   bool _isHold = true;
@@ -212,31 +214,42 @@ class _MuzzleTraceWidgetState extends State<MuzzleTraceWidget> {
   }
 
   void _processLatestData(SensorDataProvider provider) {
-    // Get latest gyro values
     if (provider.gyroXData.isEmpty) return;
 
-    final latestGx = provider.gyroXData.last.value;
-    // latestGy available but integrated separately via gyroYData
-    final latestGz = provider.gyroZData.last.value;
-    final latestTs = provider.gyroXData.last.timestamp;
+    // Only process data within our trace window (last 2 seconds)
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    final windowStart = nowMs - _traceWindowMs;
 
-    // Integrate: X = Σ(-Gz * dt), Y = Σ(-Gx * dt)
-    const dt = 0.01; // 100Hz
-    _currX += (-latestGz) * dt;
-    _currY += (-latestGx) * dt;
+    // Filter to windowed data
+    final windowedGx = provider.gyroXData.where((p) => p.timestamp >= windowStart).toList();
+    final windowedGz = provider.gyroZData.where((p) => p.timestamp >= windowStart).toList();
 
-    // Add to trace
-    final phase = _isRecoil ? TracePhase.recoil : (_isPress ? TracePhase.press : TracePhase.hold);
-    _recentTrace.add(_TracePoint(_currX, _currY, latestTs, phase));
+    if (windowedGx.isEmpty) return;
 
-    // Trim trace
-    if (_recentTrace.length > _maxTracePoints) {
+    // Reintegrate from scratch within the window
+    _currX = 0.0;
+    _currY = 0.0;
+    _recentTrace.clear();
+
+    for (int i = 0; i < windowedGx.length; i++) {
+      final gx = windowedGx[i].value;
+      final gz = windowedGz[i].value;
+      final ts = windowedGx[i].timestamp;
+
+      const dt = 0.01; // 100Hz
+      _currX += (-gz) * dt;
+      _currY += (-gx) * dt;
+
+      final phase = _isRecoil ? TracePhase.recoil : (_isPress ? TracePhase.press : TracePhase.hold);
+      _recentTrace.add(_TracePoint(_currX, _currY, ts, phase));
+    }
+
+    // Trim if still too many points
+    while (_recentTrace.length > _maxTracePoints) {
       _recentTrace.removeAt(0);
     }
 
     // Update phase based on shot detector state
-    // (In the future, this could come from the isolate's shot detector)
-    // For now, we switch to recoil briefly after a shot
     if (_lastShot != null) {
       _isHold = false;
       _isPress = false;

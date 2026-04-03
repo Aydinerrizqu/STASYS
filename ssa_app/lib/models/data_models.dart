@@ -36,19 +36,27 @@ enum TrainingMode {
   }
 }
 
-// --- Shot Result Model (for scoring) ---
+// --- Shot Result Model (for scoring & analysis) ---
 class ShotResult {
   final DateTime timestamp;
   final double totalScore;       // 0-100
   final double holdScore;       // 0-100
   final double pressScore;       // 0-100
   final double recoilScore;      // 0-100
-  final double elevationScore;   // 0-100 (Windage axis)
-  final double windageScore;     // 0-100 (Elevation axis)
-  final double travelDistance;   // degrees total
+  final double elevationScore;   // 0-100
+  final double windageScore;     // 0-100
+  final double travelDistance;   // radians
   final double peakJerk;         // max single jump
   final FirearmType firearmType;
   final TrainingMode trainingMode;
+
+  // Phase trace data — normalized to break point (m radians)
+  final List<double>? holdX;
+  final List<double>? holdY;
+  final List<double>? pressX;
+  final List<double>? pressY;
+  final List<double>? recoilX;
+  final List<double>? recoilY;
 
   ShotResult({
     required this.timestamp,
@@ -62,6 +70,12 @@ class ShotResult {
     required this.peakJerk,
     required this.firearmType,
     required this.trainingMode,
+    this.holdX,
+    this.holdY,
+    this.pressX,
+    this.pressY,
+    this.recoilX,
+    this.recoilY,
   });
 
   Map<String, dynamic> toMap() {
@@ -77,6 +91,12 @@ class ShotResult {
       'peakJerk': peakJerk,
       'firearmType': firearmType.name,
       'trainingMode': trainingMode.name,
+      'holdX': holdX,
+      'holdY': holdY,
+      'pressX': pressX,
+      'pressY': pressY,
+      'recoilX': recoilX,
+      'recoilY': recoilY,
     };
   }
 
@@ -93,7 +113,18 @@ class ShotResult {
       peakJerk: (map['peakJerk'] as num).toDouble(),
       firearmType: FirearmType.fromString(map['firearmType'] ?? 'pistol'),
       trainingMode: TrainingMode.fromString(map['trainingMode'] ?? 'dryFire'),
+      holdX: _listFromDynamic(map['holdX']),
+      holdY: _listFromDynamic(map['holdY']),
+      pressX: _listFromDynamic(map['pressX']),
+      pressY: _listFromDynamic(map['pressY']),
+      recoilX: _listFromDynamic(map['recoilX']),
+      recoilY: _listFromDynamic(map['recoilY']),
     );
+  }
+
+  static List<double>? _listFromDynamic(dynamic list) {
+    if (list == null) return null;
+    return (list as List).map((e) => (e as num).toDouble()).toList();
   }
 }
 

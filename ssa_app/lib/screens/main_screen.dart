@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'tabs/home_tab.dart';
 import 'tabs/graph_tab.dart';
 import 'tabs/shot_timer_tab.dart';
+import 'tabs/analysis_tab.dart';
 import 'tabs/connection_tab.dart';
 import 'tabs/settings_tab.dart';
 
@@ -22,6 +23,7 @@ class MainScreenState extends State<MainScreen> {
     HomeTab(),
     GraphTab(),
     ShotTimerTab(),
+    AnalysisTab(),
     ConnectionTab(),
     SettingsTab(),
   ];
@@ -31,6 +33,7 @@ class MainScreenState extends State<MainScreen> {
     'Home',
     'Graph',
     'Shot Timer',
+    'Analysis',
     'Connection',
     'Settings',
   ];
@@ -96,22 +99,31 @@ class MainScreenState extends State<MainScreen> {
                 _onItemTapped(2);
               },
             ),
-            // Menu Item 4: Connection
+            // Menu Item 4: Analysis
             ListTile(
-              leading: const Icon(Icons.bluetooth),
-              title: const Text('Connection'),
+              leading: const Icon(Icons.assessment),
+              title: const Text('Analysis'),
               selected: _currentIndex == 3,
               onTap: () {
                 _onItemTapped(3);
               },
             ),
-            // Menu Item 5: Settings
+            // Menu Item 5: Connection
             ListTile(
-              leading: const Icon(Icons.settings),
-              title: const Text('Settings'),
+              leading: const Icon(Icons.bluetooth),
+              title: const Text('Connection'),
               selected: _currentIndex == 4,
               onTap: () {
                 _onItemTapped(4);
+              },
+            ),
+            // Menu Item 6: Settings
+            ListTile(
+              leading: const Icon(Icons.settings),
+              title: const Text('Settings'),
+              selected: _currentIndex == 5,
+              onTap: () {
+                _onItemTapped(5);
               },
             ),
           ],

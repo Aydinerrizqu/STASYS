@@ -402,6 +402,12 @@ class ShotDetector {
       peakJerk: peakJerk,
       firearmType: firearmType,
       trainingMode: trainingMode,
+      holdX: holdX,
+      holdY: holdY,
+      pressX: pressX,
+      pressY: pressY,
+      recoilX: recoilX,
+      recoilY: recoilY,
     );
   }
 
@@ -485,7 +491,7 @@ class SensorDataIsolate {
     final isolate = SensorDataIsolate._internal(config);
 
     final receivePort = ReceivePort();
-    config.mainSendPort.send(SensorDataMessage('send_port', {'port': receivePort.sendPort}));
+    config.mainSendPort.send(receivePort.sendPort);
 
     receivePort.listen((message) {
       if (message is SensorDataMessage) {
@@ -556,6 +562,29 @@ class SensorDataIsolate {
       _trainingMode = TrainingMode.fromString(data['trainingMode']);
       _shotDetector.trainingMode = _trainingMode;
     }
+    if (data.containsKey('displayWindowSeconds')) {
+      final newWindow = data['displayWindowSeconds'] as int;
+      if (newWindow != _displayWindowSeconds) {
+        _displayWindowSeconds = newWindow;
+        _rebuildBuffers();
+      }
+    }
+  }
+
+  void _rebuildBuffers() {
+    final bufferSize = _displayWindowSeconds * _assumedDataRateHz;
+    _fullGyroX = RingBuffer<DataPoint>(bufferSize);
+    _fullGyroY = RingBuffer<DataPoint>(bufferSize);
+    _fullGyroZ = RingBuffer<DataPoint>(bufferSize);
+    _fullAccelX = RingBuffer<DataPoint>(bufferSize);
+    _fullAccelY = RingBuffer<DataPoint>(bufferSize);
+    _fullAccelZ = RingBuffer<DataPoint>(bufferSize);
+    _newGyroX.clear();
+    _newGyroY.clear();
+    _newGyroZ.clear();
+    _newAccelX.clear();
+    _newAccelY.clear();
+    _newAccelZ.clear();
   }
 
   void _processSensorData(Map<String, dynamic> data) {
@@ -720,12 +749,15 @@ class SensorDataIsolate {
   void _startRecording() {
     _isRecording = true;
     _sessionShots.clear();
-    _clearSessionData();
+    // NOTE: Don't clear session data — user may have previous data they want to keep
+    // _clearSessionData() called only on explicit clear or new session start
     _mainSendPort.send(SensorDataMessage('recording_started'));
   }
 
   void _stopRecording() {
     _isRecording = false;
+    // Send session data immediately so provider can enable Save button
+    _sendSessionData();
     _mainSendPort.send(SensorDataMessage('recording_stopped'));
   }
 

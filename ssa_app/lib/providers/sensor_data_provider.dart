@@ -47,6 +47,9 @@ class SensorDataProvider extends ChangeNotifier {
   ShotResult? _latestShot;
   ShotResult? get latestShot => _latestShot;
 
+  // Shot detection callback (for shot timer)
+  VoidCallback? onShotDetected;
+
   // Status
   bool _isRecording = false;
   bool _isCalibrated = false;
@@ -85,6 +88,9 @@ class SensorDataProvider extends ChangeNotifier {
   int get totalDataPoints => _totalDataPoints;
   int get uiUpdatesReceived => _uiUpdatesReceived;
 
+  // Session shots (for analysis tab)
+  List<ShotResult> get sessionShots => List.unmodifiable(_sessionShots);
+
   SensorDataProvider({
     required SessionLogger logger,
     SettingsProvider? settings,
@@ -102,6 +108,7 @@ class SensorDataProvider extends ChangeNotifier {
     _isolateSendPort?.send(SensorDataMessage('update_settings', {
       'firearmType': settings.firearmType.name,
       'trainingMode': settings.trainingMode.name,
+      'displayWindowSeconds': settings.maxSamples,
     }));
   }
 
@@ -181,6 +188,7 @@ class SensorDataProvider extends ChangeNotifier {
           break;
         case 'session_data':
           _handleSessionData(message.data!);
+          notifyListeners();
           break;
         case 'shot_detected':
           _handleShotDetected(message.data!);
@@ -211,7 +219,8 @@ class SensorDataProvider extends ChangeNotifier {
   }
   // --- FUNGSI BARU: Menangani diff_update ---
   void _handleDiffUpdate(Map<String, dynamic> data) {
-    final cutoffTimestamp = DateTime.now().subtract(const Duration(seconds: 5)).millisecondsSinceEpoch.toDouble();
+    final windowSecs = _settingsProvider?.maxSamples ?? 5;
+    final cutoffTimestamp = DateTime.now().subtract(Duration(seconds: windowSecs)).millisecondsSinceEpoch.toDouble();
 
     _gyroXData.addAll(List<DataPoint>.from(data['gyroX']));
     _gyroXData.removeWhere((p) => p.timestamp < cutoffTimestamp);
@@ -287,6 +296,7 @@ class SensorDataProvider extends ChangeNotifier {
   void _handleShotDetected(Map<String, dynamic> data) {
     _latestShot = ShotResult.fromMap(data['shot'] as Map<String, dynamic>);
     _sessionShots.add(_latestShot!);
+    onShotDetected?.call();
     notifyListeners();
   }
 

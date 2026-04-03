@@ -43,6 +43,8 @@ class _ShotTimerTabState extends State<ShotTimerTab> {
         _isCalibrated = sensor.isCalibrated;
       });
       sensor.addListener(_onSensorUpdate);
+      // Wire shot detection callback
+      sensor.onShotDetected = _onShotDetected;
     });
   }
 
@@ -58,6 +60,9 @@ class _ShotTimerTabState extends State<ShotTimerTab> {
   @override
   void dispose() {
     _timer?.cancel();
+    final sensor = context.read<SensorDataProvider>();
+    sensor.onShotDetected = null;
+    sensor.removeListener(_onSensorUpdate);
     super.dispose();
   }
 

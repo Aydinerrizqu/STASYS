@@ -25,6 +25,7 @@ ssa_app/
 │   │       ├── home_tab.dart        # Home / dashboard
 │   │       ├── graph_tab.dart       # Live gyro + muzzle trace (toggle), inline action buttons
 │   │       ├── shot_timer_tab.dart  # Shot timer with countdown & splits
+│   │       ├── analysis_tab.dart     # Post-shot analysis: big score + 3-phase chart + session history
 │   │       ├── connection_tab.dart   # Bluetooth device selection
 │   │       └── settings_tab.dart    # Firearm type, training mode, graph duration
 │   ├── widgets/
@@ -266,7 +267,16 @@ Per-shot scoring:
 - Running timer with millisecond precision
 - Shot split times list
 - Color-coded split performance (green < 500ms, red > 2000ms)
-- **NOTE**: `_onShotDetected` callback not yet connected to SensorDataProvider
+- Wired to `SensorDataProvider.onShotDetected` callback
+
+### AnalysisTab
+- **Dedicated Analysis tab** in drawer navigation
+- **Big score display**: Large centered score number, color-coded (green >90, yellow >70, red)
+- **3-Phase Chart**: CustomPainter plotting Hold (red), Press (yellow), Recoil (cyan) curves normalized to break point. Auto-scales to max deviation.
+- **Phase scores**: Hold, Press, Recoil, Elevation, Windage chips
+- **Session history list**: Scrollable list of all shots — tap to select. Shows: shot number, time, split, score badge, phase scores
+- **Session stats**: Shot count + average score
+- `ShotResult` now includes `holdX/Y`, `pressX/Y`, `recoilX/Y` lists for plotting
 
 ---
 
@@ -350,16 +360,18 @@ intl: ^0.19.0                          # Formatting
 - [x] **Graph tab redesign** — StatusBar removed, inline `_ActionButton` for Record/Calibrate/Save.
 - [x] **Calibration progress UI** — isolate sends `calibration_progress` every 10 samples, countdown displayed.
 - [x] **Isolate SendPort race condition** — listener attached BEFORE isolate spawned to prevent lost messages.
+- [x] **Calibration SendPort type mismatch** — isolate sent `SensorDataMessage('send_port', {port})` but provider checked `if (message is SendPort)`. Fixed: isolate now sends raw `SendPort` directly. **Confirmed fixed by user testing.**
+- [x] **Session save not working** — isolate `_stopRecording()` now sends `session_data` immediately before clearing. Provider now calls `notifyListeners()` after `_handleSessionData`. `_clearSessionData()` no longer called in `_stopRecording()`.
+- [x] **Shot timer not detecting shots** — `sensor_data_provider.dart` now has `onShotDetected` callback. `shot_timer_tab.dart` wires it up in `initState` and clears in `dispose`.
+- [x] **Gyro graph duration hardcoded 5s** — `updateDependencies()` now sends `displayWindowSeconds` to isolate. `_handleDiffUpdate()` uses `_settingsProvider.maxSamples` instead of hardcoded 5. Isolate rebuilds buffers on window change.
+- [x] **Muzzle trace showing full session (too long)** — trace widget now filters gyro data to 2-second rolling window (`_traceWindowMs = 2000`). Reintegrates from windowed data to prevent drift. **Confirmed fixed by user testing.**
+- [x] **Post-shot analysis tab** — Added dedicated Analysis tab (drawer navigation) with: big score display, 3-phase CustomPainter chart (Hold/Press/Recoil curves), session history list with tappable shots, session stats. `ShotResult` model extended with `holdX/Y`, `pressX/Y`, `recoilX/Y` trace lists. Isolate sends phase trace data on shot detection.
 
 ### In Progress
-- [ ] **Calibration still not working** — `_isolateSendPort` is `NULL` when calibration is triggered. Debug logs show:
-  - `[PROVIDER] ✅ Received SendPort from isolate! Isolate is READY.` never appears
-  - Calibration message queued but never flushed
-  - Root cause: isolate may be sending `SendPort` before listener is ready despite the "attach first" fix
-  - **TODO**: Verify isolate startup order, consider using a separate `ReceivePort` just for the initial `SendPort` handshake
+- _None currently_
 
 ### Pending
-- [ ] **Shot timer `_onShotDetected` not connected**: `shot_timer_tab.dart` has the callback defined but not wired to `SensorDataProvider`.
+- [ ] **Trace window sync with Python** — Flutter trace shows 2s window (absolute coords). Python shows 0.5s (cursor-normalized). May want to align.
 - [ ] **Demo mode not implemented**: "Explore App" button for testing without hardware not yet built.
 - [ ] **Battery monitoring**: Battery percentage received in packets but not consistently displayed in UI.
 - [ ] **Export service**: `export_service.dart` not yet implemented.

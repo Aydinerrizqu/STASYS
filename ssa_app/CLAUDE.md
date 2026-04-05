@@ -1,5 +1,9 @@
 # STASYS Flutter App - Development Guide
 
+> **Note**: This is the Flutter-specific companion to the root `CLAUDE.md`.
+> For firmware architecture, communication protocol details, and firmware build
+> instructions, see the parent `CLAUDE.md` at the project root.
+
 ## Project Purpose
 
 Mobile companion app for the STASYS shooter stability analyzer. Primary platform for live training sessions.
@@ -13,162 +17,104 @@ ssa_app/
 ├── lib/
 │   ├── main.dart                    # App entry, MultiProvider setup
 │   ├── providers/
-│   │   ├── bluetooth_provider.dart   # Bluetooth connection, packet parsing (30 bytes), auth state machine
-│   │   ├── sensor_data_provider.dart # UI state, isolate communication
-│   │   ├── sensor_data_isolate.dart # Background processing, shot detection, scoring, calibration
-│   │   ├── settings_provider.dart   # Firearm type, training mode, preferences
-│   │   ├── session_provider.dart    # Session list management
-│   │   └── session_logger.dart      # Save/load sessions to SharedPreferences
-│   ├── screens/
-│   │   ├── main_screen.dart         # Bottom nav + drawer navigation
-│   │   └── tabs/
-│   │       ├── home_tab.dart        # Home / dashboard
-│   │       ├── graph_tab.dart       # Live gyro + muzzle trace (toggle), inline action buttons
-│   │       ├── shot_timer_tab.dart  # Shot timer with countdown & splits
-│   │       ├── analysis_tab.dart     # Post-shot analysis: big score + 3-phase chart + session history
-│   │       ├── connection_tab.dart   # Bluetooth device selection
-│   │       └── settings_tab.dart    # Firearm type, training mode, graph duration
+│   │   ├── bluetooth_provider.dart   # 8-state packet parser, CRC16-CCITT, HMAC-SHA256 auth
+│   │   ├── sensor_data_provider.dart  # UI state, isolate communication
+│   │   ├── sensor_data_isolate.dart # Shot detection + 3-phase analysis (hold/press/recoil)
+│   │   ├── settings_provider.dart     # Firearm type, training mode, preferences
+│   │   ├── session_provider.dart      # Session list management
+│   │   └── session_logger.dart        # Save/load sessions to SharedPreferences
+│   ├── screens/tabs/
+│   │   ├── home_tab.dart            # Home / dashboard
+│   │   ├── graph_tab.dart           # Real-time gyro + muzzle trace + post-shot inline
+│   │   ├── shot_timer_tab.dart      # Shot timer with countdown & splits
+│   │   ├── analysis_tab.dart         # Post-shot analysis: big score + 3-phase chart + history
+│   │   ├── connection_tab.dart        # Bluetooth device selection
+│   │   └── settings_tab.dart         # Firearm type, training mode, graph duration
 │   ├── widgets/
-│   │   ├── gyro_realtime_chart.dart # Syncfusion line chart (X/Y/Z gyro)
-│   │   ├── muzzle_trace_widget.dart # CustomPainter XY muzzle trace
-│   │   ├── control_panel.dart       # Record/Calibrate/Save buttons (deprecated — inline in graph_tab.dart)
-│   │   └── status_bar.dart          # Connection status display (deprecated — removed from graph_tab.dart)
-│   ├── models/
-│   │   └── data_models.dart         # DataPoint, SessionLog, ShotResult, FirearmType, TrainingMode
-│   └── Utils/
-│       └── ring_buffer.dart          # Efficient circular buffer for sliding window
+│   │   ├── muzzle_trace_widget.dart  # Real-time XY trace (2s rolling window, 3-phase coloring)
+│   │   ├── shot_analysis_panel.dart  # 3-phase chart CustomPainter + phase scores
+│   │   └── shot_history_list.dart     # Session shot list with tappable cards
+│   └── models/
+│       └── data_models.dart          # DataPoint, SessionLog, ShotResult, FirearmType, TrainingMode
 │
-├── lib/theme/app_theme.dart         # Dark theme (on redesign/v1 branch only)
+├── lib/theme/app_theme.dart          # Dark theme (on redesign/v1 branch only)
 └── lib/screens/main_shell.dart       # 5-tab shell navigation (on redesign/v1 branch only)
 ```
 
 ---
 
-## Data Flow
+## Communication Protocol (NEW: Packet-Based)
 
+> **See parent CLAUDE.md: Communication Protocol > Binary Packet Format**
+
+### Packet Format
 ```
-ESP32 (Bluetooth)
-    │
-    │ Binary 30-byte packets @ 100Hz
-    ▼
-BluetoothProvider (bluetooth_provider.dart)
-    │ Parses packet: ax,ay,az,gx,gy,gz,piezo,battery
-    │ Validates checksum, sensor ranges
-    │ Auth state machine (AuthState enum)
-    ▼
-SensorDataProvider (sensor_data_provider.dart)
-    │ Forwards to isolate, updates battery
-    ▼
-SensorDataIsolate (sensor_data_isolate.dart)
-    │ Runs on separate Dart isolate (background)
-    │ - Ring buffer management
-    │ - Shot detection state machine
-    │ - MantisX-style scoring
-    │ - Calibration (50 samples → calibration_progress every 10)
-    ▼
-UI (Consumer widgets)
-    │ Listens to SensorDataProvider via ChangeNotifier
-    │ Reacts to notifyListeners() calls
-    ▼
-Screen updates: charts, score display, shot list
+[0xAA][0x55][TYPE:1][LEN_LO:1][LEN_HI:1][payload:N][CRC_LO:1][CRC_HI:1]
+  CRC16-CCITT over TYPE(1)+LEN_LO(1)+LEN_HI(1)+payload(N) = 3+N bytes (init=0xFFFF, poly=0x1021)
 ```
 
----
+### Parser State Machine (8 states)
+`waitSync0 → waitSync1 → readType → readLenLo → readLenHi → readPayload → readCrcLo → readCrcHi`
 
-## Bluetooth Protocol (CRITICAL)
+Located in `bluetooth_provider.dart`:
+- `_ParserState` enum (8 values)
+- `_recvBuffer` — accumulates bytes
+- `_feedParserByte()` — byte-level state machine
+- `_crc16Ccitt()` / `_updateCrc()` — running CRC computation
+- Debug logging active: `[RX]` raw chunks, `[BT] CRC FAIL` with byte dump (first mismatch only)
 
-**Packet Size**: 30 bytes
-**Format**: `'<ffffffHB'` (little-endian)
+### DATA_RAW_SAMPLE Handling
+- Payload **must be 24 bytes** (verified: `sizeof(PktRawSample) = 24` on ESP32)
+- Length field: `0x18, 0x00` (little-endian 24)
+- Offsets: counter(0-3), timestamp(4-7), accel_x/y/z(8-13), gyro_x/y/z(14-19), piezo(20-21), reserved(22-23)
+- Conversion: accel(raw int16) / 8192.0 * 9.81 → m/s², gyro(raw int16) / 65.5 * 0.0174533 → rad/s
 
-| Byte Offset | Field | Type | Notes |
-|-------------|-------|------|-------|
-| 2-5 | ax | float | m/s² |
-| 6-9 | ay | float | m/s² |
-| 10-13 | az | float | m/s² |
-| 14-17 | gx | float | rad/s (500dps / 65.5 * 0.01745) |
-| 18-21 | gy | float | rad/s |
-| 22-25 | gz | float | rad/s |
-| 26-27 | piezo | uint16 | Peak ADC value (little-endian) |
-| 28 | battery | uint8 | Percentage |
-| 29 | checksum | uint8 | XOR of bytes 2-28 |
-
-**Max gyro validation**: 10.0 rad/s (500 dps ≈ 8.73 rad/s with margin)
-
-### Authentication Protocol
-
+### Auth State Machine (4 states)
 ```
-Flutter -> ESP32: <16-char random challenge>\n
-ESP32 -> Flutter: READY\n
-ESP32 -> Flutter: 2.0-OVERSAMPLE\n  (Flutter sends challenge after READY received)
-ESP32 -> Flutter: SHA256(challenge + SECRET_KEY) in hex\n
-Flutter -> ESP32: AUTH_SUCCESS\n
+idle → waitingForChallenge → authenticated/failed
 ```
 
-**Secret Key**: `12ebaf10h12fa9123z21sti`
+Flow:
+1. Flutter connects → ESP32 sends EVT_AUTH_CHALLENGE (0x14)
+2. Flutter: HMAC-SHA256(challenge + session_id) → CMD_AUTH (0x06)
+3. ESP32: EVT_AUTH_SUCCESS (0x15) → Flutter authenticated
+4. Flutter calls `startSession()` → CMD_START_SESSION → ESP32 sends EVT_SESSION_STARTED (0x10)
+5. ESP32 streams DATA_RAW_SAMPLE (0x20) @ 100Hz
 
-**Auth State Machine** (`bluetooth_provider.dart`):
-```dart
-enum AuthState {
-  idle,           // Not in auth mode
-  waitingForHash, // READY received, waiting for hash response
-  done,           // Auth successful
-  failed,         // Auth failed
-}
-```
-- ESP32 may send "READY" multiple times (after reboot) — state machine handles this
-- Completer only completed on 64-char hex hash response (NOT on every line)
-- On disconnect: all auth state, buffers, and completer are reset for reconnect
+5. ESP32 streams DATA_RAW_SAMPLE (0x20) @ 100Hz — All packets now pass CRC.
 
 ---
 
 ## Scoring System
 
-### MantisX-Style Soft Curve
-
-Located in `providers/sensor_data_isolate.dart` → `ScoringConfig` class.
-
-Uses `sqrt`-based penalties for gradual, forgiving score distribution:
-- Score 95-100: Elite (near-perfect)
-- Score 85-94: Expert
-- Score 70-84: Advanced
-- Score 50-69: Intermediate
-- Score 0-49: Beginner
-
-### Firearm Types & Multipliers
-
-| Type | Difficulty Multiplier | Notes |
-|------|---------------------|-------|
-| Pistol | 1.0 | Baseline |
-| Rifle | 0.7 | More stable platform |
-| Archery | 1.3 | Most strict |
-| Shotgun | 0.9 | Follow-through focus |
-
-### Training Modes
-
-| Mode | Adjustment | Trigger Method |
-|------|-----------|---------------|
-| Dry Fire | 1.0x | Piezo ADC > threshold |
-| Live Fire | 0.8x (more forgiving) | Accelerometer jerk > threshold |
+> **See parent CLAUDE.md: Key Algorithms > MantisX-Style Scoring**
+>
+> Flutter app uses **MantisX-style soft curve** scoring (sqrt-based penalties).
+> Python app uses **Hardcore** scoring (hard penalties). Both can read the same SQLite DB.
 
 ---
 
 ## Shot Detection State Machine
 
-```
-IDLE → ARMING → ARMED → POST_GATHER → COOLDOWN → IDLE
-```
+> **See parent CLAUDE.md: Key Algorithms > Shot Detection State Machine**
+>
+> Flutter implementation: `providers/sensor_data_isolate.dart` → `ShotDetector` class.
+>
+> ### Thresholds
+> - **Stability Window**: 200ms
+> - **Gyro Limit**: 4.0 rad/s (ARMING state)
+> - **Trigger**: Piezo > 100 (dry fire) or jerk > 12.0 (live fire)
+> - **Cooldown**: 500ms
 
-Located in `providers/sensor_data_isolate.dart` → `ShotDetector` class.
-
-### Thresholds
-- **Stability Window**: 200ms
-- **Gyro Limit**: 4.0 rad/s (ARMING state)
-- **Trigger**: Piezo > 100 (dry fire) or jerk > 12.0 (live fire)
-- **Cooldown**: 500ms
+> **Note**: Shot detection runs in **Flutter isolate**, NOT in firmware.
+> Firmware sends `EVT_SHOT_DETECTED` (0x12) with peaks for logging/debugging only.
+> Full 3-phase analysis (hold/press/recoil) requires full time-series — computed in isolate.
 
 ---
 
 ## Calibration
+
+Located in `providers/sensor_data_isolate.dart` → `_startCalibration()`.
 
 - Collects 50 gyro samples while sensor is stationary
 - Isolate sends `calibration_progress` every 10 samples
@@ -177,45 +123,42 @@ Located in `providers/sensor_data_isolate.dart` → `ShotDetector` class.
 - Calibration button requires `btProvider.isAuthenticated == true` before enabling
 - Calibration offsets subtracted from raw gyro data in isolate processing
 
+**Calibration Requirements:**
+1. `_isolateSendPort` must be non-null (SendPort received from isolate)
+2. Calibration message must reach isolate
+3. Isolate must receive binary sensor data (gyro samples) during calibration
+4. 50 samples collected → offsets applied → `_isCalibrated = true`
+
 ---
 
 ## Provider Communication
 
 ### BluetoothProvider → SensorDataProvider
-
 ```dart
-// BluetoothProvider calls:
 sensorDataProvider.updateAllData(
-  ax: ax, ay: ay, az: az,
-  gx: gx, gy: gy, gz: gz,
-  battery: battery,
-  piezo: piezo,  // uint16 from firmware
+  ax, ay, az, gx, gy, gz, battery, piezo  // from DATA_RAW_SAMPLE (24 bytes)
 );
 ```
 
-### SensorDataProvider → Isolate
-
-Uses `SensorDataMessage` class:
+### SensorDataProvider ↔ Isolate
 ```dart
+// Provider → Isolate
 SensorDataMessage('sensor_data', {ax, ay, az, gx, gy, gz, piezo, battery})
 SensorDataMessage('start_calibration')
 SensorDataMessage('start_recording')
 SensorDataMessage('stop_recording')
 SensorDataMessage('update_settings', {firearmType, trainingMode})
 SensorDataMessage('request_full_sync')
-```
 
-### Isolate → SensorDataProvider
-
-```dart
-SensorDataMessage('ui_update', {...})              // Display data
+// Isolate → Provider
+SensorDataMessage('ui_update', {...})
 SensorDataMessage('calibration_started')
 SensorDataMessage('calibration_progress', {count, total})  // Every 10 samples
 SensorDataMessage('calibration_complete', {offsets})
-SensorDataMessage('shot_detected', {shot})           // New shot scored
+SensorDataMessage('shot_detected', {shot})
 SensorDataMessage('recording_started')
 SensorDataMessage('recording_stopped')
-SensorDataMessage('session_data', {...})             // Full session on save
+SensorDataMessage('session_data', {...})
 SensorDataMessage('reset_complete')
 ```
 
@@ -225,10 +168,7 @@ SensorDataMessage('reset_complete')
 
 - **SharedPreferences** for app settings
 - **SessionLogger** stores `SessionLog` objects as JSON in SharedPreferences
-- **Key strings**:
-  - `firearmType`: 'pistol', 'rifle', 'shotgun', 'archery'
-  - `trainingMode`: 'dryFire', 'liveFire'
-  - `maxSamples`: graph window duration (3-15 seconds)
+- **Key strings**: `firearmType`, `trainingMode`, `maxSamples`
 
 ---
 
@@ -243,84 +183,53 @@ Per-shot scoring:
 - `elevationScore`, `windageScore`
 - `travelDistance`, `peakJerk`
 - `firearmType`, `trainingMode`, `timestamp`
+- `holdX/Y`, `pressX/Y`, `recoilX/Y` trace lists for 3-phase analysis plotting
 
 ---
 
 ## Widgets
 
 ### GyroRealtimeChart
-- Syncfusion `SfCartesianChart`
-- 3 lines: X (blue), Y (red), Z (green) gyro data
-- 5-second sliding window
+- Syncfusion `SfCartesianChart`, 3 lines: X/Y/Z gyro
+- Configurable sliding window (3-15 seconds)
 - Score indicator badge
-- Uses `List.from()` copy to avoid concurrent modification during updates
 
 ### MuzzleTraceWidget
 - Custom `CustomPainter` for real-time XY plot
-- Integrated gyro trace (X = -Gz, Y = -Gx)
 - 3-phase coloring: Hold (red), Press (yellow), Recoil (cyan)
-- Concentric circle grid
-- Current position dot with glow effect
+- 2-second rolling window
+- Concentric circle grid + current position dot
+
+### ShotAnalysisPanel
+- 3-phase CustomPainter chart (Hold/Press/Recoil curves)
+- Phase scores chips + big score display
+
+### ShotHistoryList
+- Scrollable shot cards with tappable selection
+- Session stats: shot count + average score
 
 ### ShotTimerTab
 - Countdown: 3s, 5s, 10s selectable
-- Running timer with millisecond precision
-- Shot split times list
-- Color-coded split performance (green < 500ms, red > 2000ms)
-- Wired to `SensorDataProvider.onShotDetected` callback
-
-### AnalysisTab
-- **Dedicated Analysis tab** in drawer navigation
-- **Big score display**: Large centered score number, color-coded (green >90, yellow >70, red)
-- **3-Phase Chart**: CustomPainter plotting Hold (red), Press (yellow), Recoil (cyan) curves normalized to break point. Auto-scales to max deviation.
-- **Phase scores**: Hold, Press, Recoil, Elevation, Windage chips
-- **Session history list**: Scrollable list of all shots — tap to select. Shows: shot number, time, split, score badge, phase scores
-- **Session stats**: Shot count + average score
-- `ShotResult` now includes `holdX/Y`, `pressX/Y`, `recoilX/Y` lists for plotting
-
----
-
-## Graph Tab Layout
-
-The graph tab uses inline widgets instead of imported sub-widgets:
-
-```dart
-// Control buttons at top (inline _ActionButton widget)
-Record/Calibrate/Save → Consumer<SensorDataProvider> + Consumer<BluetoothProvider>
-Chart toggle: Gyro (SfCartesianChart) | Trace (CustomPainter XY)
-
-// StatusBar widget is REMOVED from graph_tab.dart
-// ControlPanel widget is DEPRECATED — use inline _ActionButton pattern
-```
+- Color-coded split performance
 
 ---
 
 ## Common Tasks
 
-### Adding a new shot metric
-1. Add field to `ShotResult` class in `data_models.dart`
-2. Calculate in `ShotDetector._analyzeShot()` in `sensor_data_isolate.dart`
-3. Display in `muzzle_trace_widget.dart` score chips or `gyro_realtime_chart.dart`
-
-### Adding a new drill
-1. Add to `Drill` model (create if not exists)
-2. Add drill list to `drills_tab.dart`
-3. Pass drill parameters to `SensorDataIsolate` via `SensorDataMessage`
-
 ### Changing Bluetooth packet format
-1. Update `bluetooth_provider.dart` byte offsets
-2. Update `SensorDataProvider.updateAllData()` signature
-3. Update `sensor_data_isolate.dart` `_processSensorData()`
-4. Update firmware `.ino` to match
-5. Update protocol docs in parent CLAUDE.md
+1. Update `bluetooth_provider.dart` parser state machine + offsets
+2. Update `_handleRawSample()` data conversion
+3. Update `SensorDataProvider.updateAllData()` signature
+4. Update `sensor_data_isolate.dart` `_processSensorData()`
+5. Update firmware `protocol.h/cpp` and `DATA_RAW_SAMPLE` packet format
+6. Update protocol docs in parent `CLAUDE.md`
 
 ---
 
 ## Testing Without Hardware
 
-- Python app: Auto-falls back to `MockSerial` when connection fails
 - Flutter app: Real device required for Bluetooth
-- Shot detection: MockSerial generates random sensor data
+- No mock mode currently implemented
 
 ---
 
@@ -344,73 +253,71 @@ intl: ^0.19.0                          # Formatting
 
 | Branch | Status | Description |
 |--------|--------|-------------|
-| `develop` | Active (main dev) | Original UI + auth/calibration fixes |
-| `redesign/v1` | Separate | Professional dark theme, new navigation shell |
+| `develop` | Active | New packet protocol + PlatformIO firmware |
+| `redesign/v1` | Separate | Dark theme, new navigation shell |
 | `main` | Base | Initial commit only |
-
-**Workflow**: Test Bluetooth hardware on `develop` branch. Apply redesign from `redesign/v1` once validated.
 
 ---
 
 ## Known Issues / TODOs
 
 ### Done / Fixed
-- [x] **Buffer overflow** — removed `MAX_PACKETS_PER_CYCLE = 5` limit. All packets now processed per cycle.
-- [x] **Bluetooth auth state machine** — added `AuthState` enum, fixed "Future already completed" bug, fixed reconnect.
-- [x] **Graph tab redesign** — StatusBar removed, inline `_ActionButton` for Record/Calibrate/Save.
-- [x] **Calibration progress UI** — isolate sends `calibration_progress` every 10 samples, countdown displayed.
-- [x] **Isolate SendPort race condition** — listener attached BEFORE isolate spawned to prevent lost messages.
-- [x] **Calibration SendPort type mismatch** — isolate sent `SensorDataMessage('send_port', {port})` but provider checked `if (message is SendPort)`. Fixed: isolate now sends raw `SendPort` directly. **Confirmed fixed by user testing.**
-- [x] **Session save not working** — isolate `_stopRecording()` now sends `session_data` immediately before clearing. Provider now calls `notifyListeners()` after `_handleSessionData`. `_clearSessionData()` no longer called in `_stopRecording()`.
-- [x] **Shot timer not detecting shots** — `sensor_data_provider.dart` now has `onShotDetected` callback. `shot_timer_tab.dart` wires it up in `initState` and clears in `dispose`.
-- [x] **Gyro graph duration hardcoded 5s** — `updateDependencies()` now sends `displayWindowSeconds` to isolate. `_handleDiffUpdate()` uses `_settingsProvider.maxSamples` instead of hardcoded 5. Isolate rebuilds buffers on window change.
-- [x] **Muzzle trace showing full session (too long)** — trace widget now filters gyro data to 2-second rolling window (`_traceWindowMs = 2000`). Reintegrates from windowed data to prevent drift. **Confirmed fixed by user testing.**
-- [x] **Post-shot analysis tab** — Added dedicated Analysis tab (drawer navigation) with: big score display, 3-phase CustomPainter chart (Hold/Press/Recoil curves), session history list with tappable shots, session stats. `ShotResult` model extended with `holdX/Y`, `pressX/Y`, `recoilX/Y` trace lists. Isolate sends phase trace data on shot detection.
+- [x] **Buffer overflow** — removed `MAX_PACKETS_PER_CYCLE = 5` limit.
+- [x] **Bluetooth auth state machine** — added `AuthState` enum, fixed reconnect.
+- [x] **Graph tab redesign** — StatusBar removed, inline `_ActionButton`.
+- [x] **Calibration progress UI** — isolate sends `calibration_progress` every 10 samples.
+- [x] **Isolate SendPort race condition** — listener attached BEFORE isolate spawned.
+- [x] **Calibration SendPort type mismatch** — isolate sends raw `SendPort` directly.
+- [x] **Session save not working** — isolate sends `session_data` before clearing.
+- [x] **Shot timer not detecting shots** — `onShotDetected` callback wired.
+- [x] **Gyro graph duration hardcoded 5s** — uses `_settingsProvider.maxSamples`.
+- [x] **Muzzle trace too long** — 2-second rolling window (`_traceWindowMs = 2000`).
+- [x] **Post-shot analysis tab** — 3-phase chart + shot history list.
+- [x] **Protocol migration** — 8-state CRC16-CCITT parser in `bluetooth_provider.dart`.
+- [x] **PlatformIO firmware scaffold** — all modules, uploaded to ESP32.
+- [x] **Extracted widgets** — `ShotAnalysisPanel` and `ShotHistoryList`.
+- [x] **esp_bt_gap.h not found** — GAP callback removed.
+- [x] **Preferences::getString() wrong args** — fixed in config.cpp.
+- [x] **sensor.cpp goto crosses initialization** — declarations moved.
+- [x] **mbedtls/hmac.h not found** — security.cpp stubbed.
+- [x] **RecoveryTask watchdog timeout** — added `esp_task_wdt_reset()` in loop.
+- [x] **CMD_START_SESSION guard blocking auth** — removed `_isAuthenticated` check.
+- [x] **Firmware not sending EVT_AUTH_CHALLENGE** — added to dispatchCommand.
+- [x] **PktRawSample sizeof mismatch** — changed to 24 bytes (was: temperature → compiler-packed to 24 not 26).
+- [x] **ESP32 TX serial debug flooding** — limited to first 3 packets.
+- [x] **CRC scope mismatch** — Firmware computed CRC over `2+len`, Flutter over `3+len`. Fixed firmware `encodePacket()`.
+- [x] **EVT_SENSOR_HEALTH (0x13) unknown** — Added handler in `_handlePacket()` switch.
 
 ### In Progress
-- _None currently_
+- [ ] **Android BT fragmentation** — ~0.01% CRC error on DATA_RAW packets from Android BT buffer chunking.
 
 ### Pending
-- [ ] **Trace window sync with Python** — Flutter trace shows 2s window (absolute coords). Python shows 0.5s (cursor-normalized). May want to align.
-- [ ] **Demo mode not implemented**: "Explore App" button for testing without hardware not yet built.
-- [ ] **Battery monitoring**: Battery percentage received in packets but not consistently displayed in UI.
-- [ ] **Export service**: `export_service.dart` not yet implemented.
-- [ ] **Redesign branch not merged**: Dark theme (`app_theme.dart`) and new navigation shell (`main_shell.dart`) exist only on `redesign/v1` branch — not yet merged to `develop`.
-- [ ] Python uses Hardcore scoring, Flutter uses MantisX-style — consider unifying.
+- [ ] **Trace window sync with Python** — Flutter 2s window vs Python 0.5s cursor-normalized.
+- [ ] **Demo mode not implemented** — testing without hardware not yet built.
+- [ ] **Battery monitoring** — battery % received but not displayed consistently.
+- [ ] **Export service** — `export_service.dart` not yet implemented.
+- [ ] **Redesign branch not merged** — dark theme not in `develop`.
 
-### Debug Logging (for calibration troubleshooting)
-All debug logs use `[PROVIDER]` and `[GRAPH]` tags:
+---
+
+## Debug Logging
+
+Bluetooth debug logs in `bluetooth_provider.dart`:
 ```
-[PROVIDER] Listener attached, spawning isolate...
-[PROVIDER] Isolate spawned, waiting for SendPort...
-[PROVIDER] ✅ Received SendPort from isolate! Isolate is READY.    ← Should appear
-[PROVIDER] 🔄 Flushing N pending message(s)...                      ← If messages were queued
-[PROVIDER] startCalibration() called, _isolateSendPort: OK/NULL     ← KEY CHECK
-[PROVIDER] ⚠️ Isolate not ready, queuing calibration message       ← If port not ready
-[PROVIDER] Received calibration_started from isolate
-[PROVIDER] Calibration progress: 10/50 ... 20/50 ... 50/50
-[PROVIDER] Calibration COMPLETE!
-[GRAPH] Calibrate button tapped — isAuth: true/false
+[BT] Sent CMD_START_SESSION
+[BT] Sent CMD_AUTH with HMAC-SHA256
+[BT] Auth successful
+[BT] Session started: ...
+[BT] CRC FAIL: type=0x20, len=24, bytes=...  (first mismatch only)
+[RX] raw len=N: ...  (first 3 BT receive chunks only)
 ```
 
-### Calibration Data Flow
+### Auth Flow Data Flow (verified working)
 ```
-User taps Calibrate
-  → graph_tab.dart: sensorData.startCalibration()
-    → sensor_data_provider.dart: _isolateSendPort?.send('start_calibration')
-      → sensor_data_isolate.dart: _handleMessage('start_calibration') → _startCalibration()
-        → isolate sets _isCalibrating = true, sends 'calibration_started'
-          → provider receives 'calibration_started' → _isCalibrating = true, notifyListeners()
-            → UI shows "Calibrating..." button
-        → isolate accumulates 50 gyro samples
-          → every 10 samples: sends 'calibration_progress'
-          → at 50 samples: sends 'calibration_complete' with offsets
-            → provider receives 'calibration_complete' → _isCalibrated = true, notifyListeners()
-              → UI shows calibrated state
+Flutter connect → ESP32 sends EVT_AUTH_CHALLENGE (0x14)
+  → _handleAuthChallenge() → HMAC-SHA256 → _sendPacket(CMD_AUTH)
+  → ESP32 sends EVT_AUTH_SUCCESS (0x15) + EVT_SESSION_STARTED (0x10)
+  → Flutter: _authState = authenticated, _sessionActive = true
+  → DATA_RAW_SAMPLE (0x20) streams @ 100Hz
+    → _handleRawSample() → int16→float → sensorDataProvider.updateAllData()
 ```
-
-### Calibration Requirements
-1. `_isolateSendPort` must be non-null (SendPort received from isolate)
-2. Calibration message must reach isolate
-3. Isolate must receive binary sensor data (gyro samples) during calibration
-4. 50 samples collected → offsets applied → `_isCalibrated = true`

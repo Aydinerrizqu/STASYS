@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:ssa_app/providers/bluetooth_provider.dart';
 import 'package:ssa_app/providers/sensor_data_provider.dart';
-import 'package:ssa_app/widgets/gyro_realtime_chart.dart';
 import 'package:ssa_app/widgets/muzzle_trace_widget.dart';
+import 'package:ssa_app/widgets/shot_analysis_panel.dart';
+import 'package:ssa_app/widgets/shot_history_list.dart';
+import '../../models/data_models.dart';
 
 class GraphTab extends StatefulWidget {
   const GraphTab({super.key});
@@ -13,7 +15,8 @@ class GraphTab extends StatefulWidget {
 }
 
 class _GraphTabState extends State<GraphTab> {
-  int _selectedChartIndex = 0; // 0=Gyro, 1=Muzzle Trace
+  ShotResult? _selectedShot;
+  int? _selectedShotIndex;
 
   @override
   void initState() {
@@ -21,6 +24,49 @@ class _GraphTabState extends State<GraphTab> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<BluetoothProvider>().initializeBluetooth();
     });
+  }
+
+  void _updateSelection(ShotResult? shot) {
+    final sensor = context.read<SensorDataProvider>();
+    final shots = sensor.sessionShots;
+
+    if (shot != null) {
+      final idx = shots.indexOf(shot);
+      if (idx >= 0) {
+        setState(() {
+          _selectedShot = shot;
+          _selectedShotIndex = idx;
+        });
+        return;
+      }
+    }
+
+    // Fallback: select latest shot
+    if (shots.isNotEmpty) {
+      setState(() {
+        _selectedShot = shots.last;
+        _selectedShotIndex = shots.length - 1;
+      });
+    } else {
+      setState(() {
+        _selectedShot = null;
+        _selectedShotIndex = null;
+      });
+    }
+  }
+
+  Color _getScoreColor(double score) {
+    if (score >= 95) return Colors.amber;
+    if (score >= 85) return Colors.green;
+    if (score >= 70) return Colors.blue;
+    if (score >= 50) return Colors.orange;
+    return Colors.red;
+  }
+
+  String _formatTime(DateTime dt) {
+    return '${dt.hour.toString().padLeft(2, '0')}:'
+        '${dt.minute.toString().padLeft(2, '0')}:'
+        '${dt.second.toString().padLeft(2, '0')}';
   }
 
   @override
@@ -31,7 +77,7 @@ class _GraphTabState extends State<GraphTab> {
         padding: const EdgeInsets.all(16.0),
         child: Column(
           children: [
-            // Control Panel — Record / Calibrate / Save (atas langsung)
+            // Control Panel — Record / Calibrate / Save
             Consumer<SensorDataProvider>(
               builder: (context, sensorData, child) {
                 return Consumer<BluetoothProvider>(
@@ -105,68 +151,66 @@ class _GraphTabState extends State<GraphTab> {
 
             const SizedBox(height: 12),
 
-            // Chart toggle
-            _buildChartToggle(),
+            // Real-time Muzzle Trace
+            Expanded(
+              child: MuzzleTraceWidget(zoom: 0.05),
+            ),
+
             const SizedBox(height: 12),
 
-            // Chart area
+            // Post-shot analysis
             Expanded(
-              child: IndexedStack(
-                index: _selectedChartIndex,
-                children: const [
-                  GyroRealtimeChart(),
-                  MuzzleTraceWidget(zoom: 0.05),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+              child: Consumer<SensorDataProvider>(
+                builder: (context, sensor, child) {
+                  final shots = sensor.sessionShots;
 
-  Widget _buildChartToggle() {
-    return Container(
-      padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        color: Colors.grey[200],
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _toggleButton(0, 'Gyro', Icons.show_chart),
-          _toggleButton(1, 'Trace', Icons.gps_fixed),
-        ],
-      ),
-    );
-  }
+                  // Auto-select latest shot when shots change
+                  if (shots.isNotEmpty && (_selectedShot == null || !shots.contains(_selectedShot))) {
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      _updateSelection(shots.last);
+                    });
+                  }
 
-  Widget _toggleButton(int index, String label, IconData icon) {
-    final isSelected = _selectedChartIndex == index;
-    return GestureDetector(
-      onTap: () => setState(() => _selectedChartIndex = index),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        decoration: BoxDecoration(
-          color: isSelected ? Colors.blue : Colors.transparent,
-          borderRadius: BorderRadius.circular(6),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              icon,
-              size: 16,
-              color: isSelected ? Colors.white : Colors.grey[600],
-            ),
-            const SizedBox(width: 4),
-            Text(
-              label,
-              style: TextStyle(
-                color: isSelected ? Colors.white : Colors.grey[600],
-                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                fontSize: 13,
+                  if (shots.isEmpty) {
+                    return Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.analytics_outlined, size: 48, color: Colors.grey[300]),
+                          const SizedBox(height: 8),
+                          Text(
+                            'No shots recorded yet',
+                            style: TextStyle(fontSize: 16, color: Colors.grey[500]),
+                          ),
+                        ],
+                      ),
+                    );
+                  }
+
+                  return Column(
+                    children: [
+                      Expanded(
+                        flex: 3,
+                        child: ShotAnalysisPanel(
+                          shot: _selectedShot,
+                          shotIndex: _selectedShotIndex,
+                          getScoreColor: _getScoreColor,
+                        ),
+                      ),
+                      Expanded(
+                        flex: 2,
+                        child: ShotHistoryList(
+                          shots: shots,
+                          selectedShot: _selectedShot,
+                          onShotSelected: _updateSelection,
+                          getScoreColor: _getScoreColor,
+                          formatTime: _formatTime,
+                          formatScore: (s) => s.toInt().toString(),
+                        ),
+                      ),
+                    ],
+                  );
+                },
               ),
             ),
           ],

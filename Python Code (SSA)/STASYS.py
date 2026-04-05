@@ -41,6 +41,34 @@ BAUD_RATE = 115200
 PACKET_SIZE = 30
 DT = 0.01 # 10ms (100Hz from Firmware)
 
+# ================= NEW PROTOCOL CONSTANTS =================
+PKT_SYNC0 = 0xAA
+PKT_SYNC1 = 0x55
+
+# Packet types (new STSYS32 protocol)
+PKT_TYPE_CMD_START_SESSION    = 0x01
+PKT_TYPE_CMD_STOP_SESSION     = 0x02
+PKT_TYPE_CMD_AUTH             = 0x06
+PKT_TYPE_EVT_SESSION_STARTED   = 0x10
+PKT_TYPE_EVT_SESSION_STOPPED   = 0x11
+PKT_TYPE_EVT_SHOT_DETECTED    = 0x12
+PKT_TYPE_EVT_AUTH_CHALLENGE   = 0x14
+PKT_TYPE_EVT_AUTH_SUCCESS     = 0x15
+PKT_TYPE_DATA_RAW_SAMPLE      = 0x20
+
+# CRC16-CCITT
+def crc16_ccitt(data):
+    crc = 0xFFFF
+    for byte in data:
+        crc ^= byte << 8
+        for _ in range(8):
+            if crc & 0x8000:
+                crc = (crc << 1) ^ 0x1021
+            else:
+                crc = crc << 1
+            crc &= 0xFFFF
+    return crc
+
 # --- MANTIS-LIKE DETECTION SETTINGS ---
 STABILITY_WINDOW_MS = 200    
 STABILITY_GYRO_LIMIT = 4.0   
@@ -77,13 +105,14 @@ class MockSerial:
         self.in_waiting = 0
         self.buffer = b""
         self.last_update = time.time()
-        
-        # Sim state
-        self.x = 0
-        self.y = 0
         self.noise_seed = 0
+        self.authenticated = False
+        self.session_active = False
+        self.shot_count = 0
 
     def write(self, data):
+        # Handle incoming commands from app
+        # For mock, we simulate auth and session start
         pass
 
     def readline(self):
@@ -98,36 +127,42 @@ class MockSerial:
         return b""
 
     def update_sim(self):
-        # Generate 100Hz packets
+        # Generate 100Hz DATA_RAW_SAMPLE packets (new protocol)
         now = time.time()
         if now - self.last_update > 0.01:
             self.last_update = now
-            self.in_waiting += PACKET_SIZE
-            
-            # Generate fake sensor data
             self.noise_seed += 0.1
-            
-            # Slight drift (Gyro)
-            gx = math.sin(self.noise_seed * 0.5) * 0.5 + random.uniform(-0.1, 0.1)
-            gy = math.cos(self.noise_seed * 0.3) * 0.5 + random.uniform(-0.1, 0.1)
-            gz = 0.0
-            
-            # Accel (Gravity + Noise)
-            ax = random.uniform(-0.2, 0.2)
-            ay = random.uniform(-0.2, 0.2)
-            az = 9.8
-            
+
+            # Generate fake sensor data (raw int16 MPU6050 values)
+            # Accel: 4G range = 8192 LSB/g, so 1 m/s² ≈ 835 LSB
+            ax_raw = int(random.uniform(-835*0.2, 835*0.2))
+            ay_raw = int(random.uniform(-835*0.2, 835*0.2))
+            az_raw = int(835 * 9.8)  # ~1g gravity
+            # Gyro: 500dps = 65.5 LSB/deg/s, convert to rad/s
+            gx_raw = int((math.sin(self.noise_seed * 0.5) * 0.5 + random.uniform(-0.1, 0.1))) * 65.5
+            gy_raw = int((math.cos(self.noise_seed * 0.3) * 0.5 + random.uniform(-0.1, 0.1))) * 65.5
+            gz_raw = 0
             piezo = int(random.uniform(0, 50))
-            bat = 85
-            
-            # Pack
-            payload = struct.pack('<ffffffHB', ax, ay, az, gx, gy, gz, piezo, bat)
-            
-            # Checksum
-            calc_sum = 0
-            for b in payload: calc_sum ^= b
-            
-            self.buffer += b'\xAA\xBB' + payload + bytes([calc_sum])
+            temp = 350  # Room temp
+
+            # Build PktRawSample (24 bytes)
+            # Matches C struct layout: counter(4)+ts(4)+accel(6)+gyro(6)+piezo(2)+temp(2)
+            pkt = struct.pack('<IIhhhhhhHH',
+                0, 0,  # counter, timestamp
+                ax_raw, ay_raw, az_raw,  # accel
+                gx_raw, gy_raw, gz_raw,  # gyro
+                piezo, temp  # piezo, temp
+            )
+
+            # Encode with new protocol framing
+            payload_len = len(pkt)
+            frame = bytes([PKT_SYNC0, PKT_SYNC1, PKT_TYPE_DATA_RAW_SAMPLE,
+                         payload_len & 0xFF, (payload_len >> 8) & 0xFF]) + pkt
+            crc = crc16_ccitt(frame[2:])  # CRC over type+len+payload
+            frame += bytes([crc & 0xFF, (crc >> 8) & 0xFF])
+
+            self.buffer += frame
+            self.in_waiting += len(frame)
 
 # ================= CORE LOGIC =================
 
@@ -153,36 +188,127 @@ def log_shot_db(session_id, score, cant, mode):
     conn.close()
 
 def parse_binary_packet(ser):
+    """Old protocol parser (kept for backward compatibility with old firmware)."""
     try:
-        # Mock Serial update hook
         if hasattr(ser, 'update_sim'):
             ser.update_sim()
 
         if ser.in_waiting >= PACKET_SIZE:
             header = ser.read(2)
-            if header != b'\xAA\xBB': 
+            if header != b'\xAA\xBB':
                 return None
-            
+
             raw_payload = ser.read(PACKET_SIZE - 2)
             if len(raw_payload) != PACKET_SIZE - 2: return None
-            
+
             received_checksum = raw_payload[-1]
             data = raw_payload[:-1]
-            
+
             calc_sum = 0
             for b in data: calc_sum ^= b
             if calc_sum != received_checksum: return None
 
             unpacked = struct.unpack('<ffffffHB', data)
-            return list(unpacked) 
+            return list(unpacked)
     except Exception as e:
         print(e)
     return None
 
+
+# ================= NEW PROTOCOL DECODER =================
+class ProtocolDecoder:
+    """State-machine-based protocol decoder for STSYS32."""
+
+    STATE_WAIT_SYNC0 = 0
+    STATE_WAIT_SYNC1 = 1
+    STATE_READ_TYPE  = 2
+    STATE_READ_LEN_LO = 3
+    STATE_READ_LEN_HI = 4
+    STATE_READ_PAYLOAD = 5
+    STATE_READ_CRC_LO  = 6
+    STATE_READ_CRC_HI  = 7
+
+    def __init__(self, callback):
+        self.callback = callback  # called with (type, payload_bytes)
+        self.state = self.STATE_WAIT_SYNC0
+        self.buffer = bytearray()
+        self.payload_len = 0
+        self.crc_computed = 0xFFFF
+        self.crc_received = 0
+        self.packet_type = 0
+
+    def update_crc(self, crc, byte):
+        crc ^= byte << 8
+        for _ in range(8):
+            if crc & 0x8000:
+                crc = (crc << 1) ^ 0x1021
+            else:
+                crc = crc << 1
+            crc &= 0xFFFF
+        return crc
+
+    def feed(self, data):
+        """Feed raw bytes from serial."""
+        for b in data:
+            self._feed_byte(b)
+
+    def _feed_byte(self, b):
+        if self.state == self.STATE_WAIT_SYNC0:
+            if b == PKT_SYNC0:
+                self.state = self.STATE_WAIT_SYNC1
+
+        elif self.state == self.STATE_WAIT_SYNC1:
+            if b == PKT_SYNC1:
+                self.state = self.STATE_READ_TYPE
+                self.buffer.clear()
+                self.crc_computed = 0xFFFF
+            elif b != PKT_SYNC0:
+                self.state = self.STATE_WAIT_SYNC0
+
+        elif self.state == self.STATE_READ_TYPE:
+            self.packet_type = b
+            self.crc_computed = self.update_crc(self.crc_computed, b)
+            self.state = self.STATE_READ_LEN_LO
+
+        elif self.state == self.STATE_READ_LEN_LO:
+            self.payload_len = b
+            self.crc_computed = self.update_crc(self.crc_computed, b)
+            self.state = self.STATE_READ_LEN_HI
+
+        elif self.state == self.STATE_READ_LEN_HI:
+            self.payload_len |= (b << 8)
+            self.crc_computed = self.update_crc(self.crc_computed, b)
+            if self.payload_len > 64:
+                self.payload_len = 64
+            self.buffer.clear()
+            if self.payload_len == 0:
+                self.state = self.STATE_READ_CRC_LO
+            else:
+                self.state = self.STATE_READ_PAYLOAD
+
+        elif self.state == self.STATE_READ_PAYLOAD:
+            self.buffer.append(b)
+            self.crc_computed = self.update_crc(self.crc_computed, b)
+            if len(self.buffer) >= self.payload_len:
+                self.state = self.STATE_READ_CRC_LO
+
+        elif self.state == self.STATE_READ_CRC_LO:
+            self.crc_received = b
+            self.state = self.STATE_READ_CRC_HI
+
+        elif self.state == self.STATE_READ_CRC_HI:
+            self.crc_received |= (b << 8)
+            if self.crc_computed == self.crc_received:
+                self.callback(self.packet_type, bytes(self.buffer))
+            else:
+                print(f'CRC mismatch: expected {self.crc_computed:04X}, got {self.crc_received:04X}')
+            self.state = self.STATE_WAIT_SYNC0
+
 def perform_auth(ser):
+    """Old text-based auth (for old firmware). Returns True for mock serial."""
     if hasattr(ser, 'update_sim'): return True
 
-    print("Handshaking...")
+    print("Handshaking (old protocol)...")
     try:
         start = time.time()
         got_ready = False
@@ -192,23 +318,19 @@ def perform_auth(ser):
                 line = ser.readline().decode('utf-8', errors='ignore').strip()
 
                 if not got_ready:
-                    # Wait for READY signal (firmware may also send version string)
                     if "READY" in line.upper():
                         got_ready = True
                         print(f"  <- {line}")
-                        # Flush any remaining lines (like FIRMWARE_VERSION)
                         while ser.in_waiting:
                             extra = ser.readline().decode('utf-8', errors='ignore').strip()
                             print(f"  <- (extra) {extra}")
                             if not extra:
                                 break
-                        # Send challenge
                         c = ''.join(random.choices(string.ascii_letters + string.digits, k=16))
                         print(f"  -> Challenge: {c}")
                         ser.write(f"{c}\n".encode('utf-8'))
                 else:
-                    # Already got READY — wait for hash response
-                    if line and len(line) == 64:  # SHA256 hex is always 64 chars
+                    if line and len(line) == 64:
                         print(f"  <- Response hash: {line[:16]}...")
                         exp = hashlib.sha256((c + SECRET_KEY.decode('utf-8')).encode('utf-8')).hexdigest()
                         if hmac.compare_digest(line.lower(), exp.lower()):
@@ -216,12 +338,35 @@ def perform_auth(ser):
                             return True
                         else:
                             print(f"  Auth FAILED (hash mismatch). Retrying...")
-                            got_ready = False  # Reset, wait for next READY
-                            start = time.time()  # Reset timeout
+                            got_ready = False
+                            start = time.time()
 
             time.sleep(0.01)
     except Exception as e:
         print(f"Auth error: {e}")
+    return False
+
+
+def perform_auth_new(ser, decoder):
+    """New packet-based auth for STSYS32 firmware.
+    Waits for EVT_AUTH_CHALLENGE (0x14), computes HMAC-SHA256, sends CMD_AUTH (0x06).
+    Returns True for mock serial (which doesn't do auth).
+    """
+    if hasattr(ser, 'update_sim'): return True
+
+    print("Authenticating with STSYS32 protocol...")
+    start = time.time()
+    timeout = 5.0
+
+    while time.time() - start < timeout:
+        # Process incoming data
+        if ser.in_waiting > 0:
+            data = ser.read(ser.in_waiting)
+            decoder.feed(data)
+
+        time.sleep(0.01)
+
+    print("Auth timed out")
     return False
 
 class ShotDetector:
@@ -442,6 +587,154 @@ class MainWindow(QMainWindow):
         self.timer.timeout.connect(self.update_loop)
         self.timer.start(10)
 
+        # New protocol decoder
+        self.decoder = ProtocolDecoder(self._on_packet)
+        self._use_new_protocol = True
+        self._session_active = False
+
+    # ================= NEW PROTOCOL HANDLERS =================
+    def _send_packet(self, pkt_type, payload=b''):
+        """Build and send a framed packet."""
+        frame = bytes([PKT_SYNC0, PKT_SYNC1, pkt_type,
+                     len(payload) & 0xFF, (len(payload) >> 8) & 0xFF]) + payload
+        crc = crc16_ccitt(frame[2:])
+        frame += bytes([crc & 0xFF, (crc >> 8) & 0xFF])
+        self.ser.write(frame)
+
+    def _on_packet(self, pkt_type, payload):
+        """Handle decoded packets."""
+        if pkt_type == PKT_TYPE_EVT_AUTH_CHALLENGE:
+            # Extract session_id (4 bytes LE) + challenge (16 bytes)
+            session_id = struct.unpack('<I', payload[0:4])[0]
+            challenge = payload[4:20]
+            # Compute HMAC-SHA256(key, challenge + session_id_bytes)
+            session_bytes = list(payload[0:4])
+            auth_input = challenge + bytes(session_bytes)
+            token = hmac.new(SECRET_KEY, auth_input, hashlib.sha256).digest()
+            # Build CMD_AUTH packet
+            auth_payload = bytes(session_bytes) + token
+            self._send_packet(PKT_TYPE_CMD_AUTH, auth_payload)
+            print(f"[PY] Auth challenge received, sent CMD_AUTH")
+
+        elif pkt_type == PKT_TYPE_EVT_AUTH_SUCCESS:
+            print(f"[PY] Auth successful")
+            self._send_packet(PKT_TYPE_CMD_START_SESSION)  # Auto-start session
+            self._session_active = True
+
+        elif pkt_type == PKT_TYPE_EVT_SESSION_STARTED:
+            if len(payload) >= 4:
+                session_id = struct.unpack('<I', payload[0:4])[0]
+                print(f"[PY] Session started: {session_id}")
+                self._session_active = True
+
+        elif pkt_type == PKT_TYPE_EVT_SESSION_STOPPED:
+            print(f"[PY] Session stopped")
+            self._session_active = False
+
+        elif pkt_type == PKT_TYPE_EVT_SHOT_DETECTED:
+            if len(payload) >= 30:
+                shot_num = struct.unpack('<H', payload[8:10])[0]
+                piezo_peak = struct.unpack('<H', payload[10:12])[0]
+                recoil_axis = payload[24]
+                recoil_sign = payload[25]
+                print(f"[PY] Shot from firmware: #{shot_num}, piezo={piezo_peak}, axis={recoil_axis}")
+
+        elif pkt_type == PKT_TYPE_DATA_RAW_SAMPLE:
+            self._handle_raw_sample(payload)
+
+    def _handle_raw_sample(self, payload):
+        """Process DATA_RAW_SAMPLE packet (26 bytes).
+        Converts raw int16 MPU6050 values to float (same as old protocol).
+        """
+        if len(payload) < 26:
+            return
+
+        ax_raw, ay_raw, az_raw = struct.unpack('<hhh', payload[8:14])
+        gx_raw, gy_raw, gz_raw = struct.unpack('<hhh', payload[14:20])
+        piezo = struct.unpack('<H', payload[20:22])[0]
+
+        # Convert raw int16 to float (same as old protocol output)
+        ax = ax_raw / 8192.0 * 9.81
+        ay = ay_raw / 8192.0 * 9.81
+        az = az_raw / 8192.0 * 9.81
+        gx = gx_raw / 65.5 * 0.0174533
+        gy = gy_raw / 65.5 * 0.0174533
+        gz = gz_raw / 65.5 * 0.0174533
+        bat = 85  # Mock doesn't track battery
+
+        # Pass as packet format for ShotDetector (same as old)
+        packet = [ax, ay, az, gx, gy, gz, piezo, bat]
+
+        # Calibration
+        if self.calibrating:
+            self.calib_buffer.append(packet)
+            if len(self.calib_buffer) >= 100:
+                if self.detector.calibrate(self.calib_buffer):
+                    self.calibrating = False
+                    self.btn_calib.setText("CALIBRATED")
+                    self.btn_calib.setStyleSheet("background: #007ACC;")
+                else:
+                    self.calib_buffer = []
+            return
+
+        # Shot detection
+        shot_res, bat_res, rot, jerk, pz = self.detector.process(packet)
+        self.lbl_telem.setText(f"Jerk: {jerk:.1f}\nPiezo: {pz}\nRot: {rot:.2f}\nBat: {bat_res}%")
+
+        s = self.detector.state
+        if s == "IDLE":
+            self.lbl_status.setText("WAITING FOR STABILITY")
+            self.lbl_status.setStyleSheet("background: #555; color: #AAA;")
+        elif s == "ARMING":
+            self.lbl_status.setText("STEADY...")
+            self.lbl_status.setStyleSheet("background: #AA5500; color: white;")
+        elif s == "ARMED":
+            self.lbl_status.setText("READY")
+            self.lbl_status.setStyleSheet("background: #00AA00; color: white; border: 2px solid #0F0;")
+        elif s == "POST_GATHER":
+            self.lbl_status.setText("DETECTED - GATHERING")
+            self.lbl_status.setStyleSheet("background: #00AA00; color: white; border: 2px solid #FFF;")
+        elif s == "COOLDOWN":
+            self.lbl_status.setText("SHOT RECORDED")
+            self.lbl_status.setStyleSheet("background: #0000AA; color: white;")
+
+        if shot_res:
+            score = shot_res['score']
+            piezo_val = shot_res['piezo']
+            self._session_scores.append(score)
+            self.lbl_big_score.setText(f"{int(score)}")
+            c_hex = "#00FF00" if score > 90 else "#FFFF00" if score > 70 else "#FF0000"
+            self.lbl_big_score.setStyleSheet(f"font-size: 80pt; font-weight: bold; color: {c_hex};")
+            self.curve_hold.setData(shot_res['hold'][0], shot_res['hold'][1])
+            self.curve_press.setData(shot_res['press'][0], shot_res['press'][1])
+            self.curve_recoil.setData(shot_res['recoil'][0], shot_res['recoil'][1])
+            self.hit_marker.setData([0], [0])
+            self.list_history.insertItem(0, f"{datetime.now().strftime('%H:%M:%S')} - Score: {score:.1f} (Pz:{piezo_val})")
+            log_shot_db(self.session_id, score, 0.0, "Auto")
+            avg = sum(self._session_scores) / len(self._session_scores)
+            self.lbl_shot_count.setText(f"Shots: {len(self._session_scores)}")
+            self.lbl_avg_score.setText(f"Avg: {avg:.1f}")
+
+        # Live trace update
+        recent_x = list(self.detector.trace_x)
+        recent_y = list(self.detector.trace_y)
+        if recent_x:
+            cx = recent_x[-1]
+            cy = recent_y[-1]
+            if self.detector.is_calibrated:
+                short_x = recent_x[-50:]
+                short_y = recent_y[-50:]
+                disp_x = [x - cx for x in short_x]
+                disp_y = [y - cy for y in short_y]
+                self.live_curve.setData(disp_x, disp_y)
+                self.cursor.setData([0], [0])
+            if self.live_window and self.live_window.isVisible():
+                long_x = recent_x[-100:]
+                long_y = recent_y[-100:]
+                mon_x = [x - cx for x in long_x]
+                mon_y = [y - cy for y in long_y]
+                self.live_window.update_data(mon_x, mon_y, self.detector.is_calibrated)
+
     def init_ui(self):
         self.setWindowTitle('STASYS PRO - Shot Analysis')
         self.resize(1200, 800)
@@ -568,59 +861,16 @@ class MainWindow(QMainWindow):
             self.live_window.show(); self.btn_live_mon.setText("CLOSE LIVE MONITOR")
 
     def update_loop(self):
-        count = 0
-        while (hasattr(self.ser, 'update_sim') or self.ser.in_waiting >= PACKET_SIZE) and count < 10:
-            count += 1
-            pkt = parse_binary_packet(self.ser)
-            if not pkt: continue
-            
-            if self.calibrating:
-                self.calib_buffer.append(pkt)
-                if len(self.calib_buffer) >= 100: 
-                    if self.detector.calibrate(self.calib_buffer):
-                        self.calibrating = False; self.btn_calib.setText("CALIBRATED"); self.btn_calib.setStyleSheet("background: #007ACC;")
-                    else:
-                        self.calib_buffer = [] 
-                continue
+        # Feed incoming data to protocol decoder
+        # MockSerial.update_sim() generates packets in new protocol format
+        if hasattr(self.ser, 'update_sim'):
+            self.ser.update_sim()
 
-            shot_res, bat, rot, jerk, piezo = self.detector.process(pkt)
-            self.lbl_telem.setText(f"Jerk: {jerk:.1f}\nPiezo: {piezo}\nRot: {rot:.2f}\nBat: {bat}%")
-            
-            s = self.detector.state
-            if s == "IDLE": self.lbl_status.setText("WAITING FOR STABILITY"); self.lbl_status.setStyleSheet("background: #555; color: #AAA;")
-            elif s == "ARMING": self.lbl_status.setText("STEADY..."); self.lbl_status.setStyleSheet("background: #AA5500; color: white;")
-            elif s == "ARMED": self.lbl_status.setText("READY"); self.lbl_status.setStyleSheet("background: #00AA00; color: white; border: 2px solid #0F0;")
-            elif s == "POST_GATHER": self.lbl_status.setText("DETECTED - GATHERING"); self.lbl_status.setStyleSheet("background: #00AA00; color: white; border: 2px solid #FFF;")
-            elif s == "COOLDOWN": self.lbl_status.setText("SHOT RECORDED"); self.lbl_status.setStyleSheet("background: #0000AA; color: white;")
-
-            if shot_res:
-                score = shot_res['score']; piezo_val = shot_res['piezo']
-                self._session_scores.append(score)
-                self.lbl_big_score.setText(f"{int(score)}")
-                c_hex = "#00FF00" if score > 90 else "#FFFF00" if score > 70 else "#FF0000"
-                self.lbl_big_score.setStyleSheet(f"font-size: 80pt; font-weight: bold; color: {c_hex};")
-                self.curve_hold.setData(shot_res['hold'][0], shot_res['hold'][1])
-                self.curve_press.setData(shot_res['press'][0], shot_res['press'][1])
-                self.curve_recoil.setData(shot_res['recoil'][0], shot_res['recoil'][1])
-                self.hit_marker.setData([0], [0])
-                self.list_history.insertItem(0, f"{datetime.now().strftime('%H:%M:%S')} - Score: {score:.1f} (Pz:{piezo_val})")
-                log_shot_db(self.session_id, score, 0.0, "Auto")
-                # Update session stats
-                avg = sum(self._session_scores) / len(self._session_scores)
-                self.lbl_shot_count.setText(f"Shots: {len(self._session_scores)}")
-                self.lbl_avg_score.setText(f"Avg: {avg:.1f}")
-            
-            recent_x = list(self.detector.trace_x); recent_y = list(self.detector.trace_y)
-            if recent_x:
-                cx = recent_x[-1]; cy = recent_y[-1]
-                if self.detector.is_calibrated:
-                    short_x = recent_x[-50:]; short_y = recent_y[-50:]
-                    disp_x = [x - cx for x in short_x]; disp_y = [y - cy for y in short_y]
-                    self.live_curve.setData(disp_x, disp_y); self.cursor.setData([0], [0])
-                if self.live_window and self.live_window.isVisible():
-                    long_x = recent_x[-100:]; long_y = recent_y[-100:]
-                    mon_x = [x - cx for x in long_x]; mon_y = [y - cy for y in long_y]
-                    self.live_window.update_data(mon_x, mon_y, self.detector.is_calibrated)
+        if self.ser.in_waiting > 0:
+            data = self.ser.read(self.ser.in_waiting)
+            self.decoder.feed(data)
+        # All packet processing (calibration, shot detection, UI updates)
+        # is done in _on_packet() called by decoder callback
 
 if __name__ == '__main__':
     setup_database()
@@ -629,8 +879,15 @@ if __name__ == '__main__':
     print(f"Attempting connection to {BLUETOOTH_COM_PORT}...")
     try:
         ser = serial.Serial(BLUETOOTH_COM_PORT, BAUD_RATE, timeout=0.5)
-        if perform_auth(ser):
-            print("Hardware Verified.")
+        # Try new protocol auth first (STSYS32), fall back to old
+        decoder = ProtocolDecoder(lambda t, p: None)  # temp decoder during auth
+        if perform_auth_new(ser, decoder):
+            print("Hardware Verified (STSYS32 protocol).")
+            win = MainWindow(ser)
+            win.show()
+            sys.exit(app.exec_())
+        elif perform_auth(ser):
+            print("Hardware Verified (Legacy protocol).")
             win = MainWindow(ser)
             win.show()
             sys.exit(app.exec_())
@@ -642,5 +899,7 @@ if __name__ == '__main__':
         ser = MockSerial()
         win = MainWindow(ser)
         win.setWindowTitle(win.windowTitle() + " [SIMULATION MODE]")
+        win.show()
+        sys.exit(app.exec_())
         win.show()
         sys.exit(app.exec_())

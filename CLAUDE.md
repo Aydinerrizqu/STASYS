@@ -22,24 +22,31 @@ STASYS is a DIY shooter training device inspired by MantisX ($99-$249). It consi
 d:\Aydiner\Projek Flutter SSA\
 ├── ssa_app/                         # Flutter mobile app (PRIMARY)
 │   └── lib/
-│       ├── main.dart                    # App entry, MultiProvider setup
+│       ├── main.dart                    # App entry, MultiProvider + GoRouter
+│       ├── router/app_router.dart       # GoRouter ShellRoute (3-tab nav)
 │       ├── theme/app_theme.dart         # Dark STSYS theme (#FFB693 primary, #131313 bg)
 │       ├── providers/
 │       │   ├── bluetooth_provider.dart  # 8-state packet parser, CRC16-CCITT, HMAC-SHA256 auth
-│       │   ├── sensor_data_provider.dart # UI state, isolate communication
+│       │   ├── sensor_data_provider.dart # UI state, isolate communication, demo mode
 │       │   ├── sensor_data_isolate.dart  # Shot detection + 3-phase analysis
-│       │   ├── settings_provider.dart
+│       │   ├── settings_provider.dart    # + isDemoMode, setDemoMode()
 │       │   ├── session_provider.dart
 │       │   └── session_logger.dart
 │       ├── screens/
-│       │   ├── main_screen.dart         # Bottom nav bar (HOME/LIVE/HISTORY/SETTINGS)
-│       │   └── session_detail_screen.dart
-│       ├── screens/tabs/
-│       │   ├── home_tab.dart            # Dashboard
-│       │   ├── graph_tab.dart            # 2 tabs: TRACE (muzzle trace) + POST SHOT
-│       │   ├── connection_tab.dart        # Bluetooth device selection
-│       │   ├── settings_tab.dart         # Firearm type, training mode
-│       │   └── shot_timer_tab.dart       # Shot timer with countdown & splits
+│       │   ├── splash_screen.dart        # STSYS branding, 2s auto-navigate
+│       │   ├── connection_screen.dart     # BT scan/connect + Explore App
+│       │   ├── main_shell.dart          # 3-tab NavigationBar shell
+│       │   ├── tracking_screen.dart     # Mode selection (4 firearm cards)
+│       │   ├── tracking_mode_view.dart   # Live graph + mode change dialog
+│       │   ├── history_screen.dart      # Session list + clear all + refresh
+│       │   ├── settings_screen.dart     # BT scan overlay + settings
+│       │   └── session_detail_screen.dart # POST SHOT 3-phase + shot chips
+│       ├── screens/tabs/                # (legacy — used by tracking_mode_view)
+│       │   ├── home_tab.dart
+│       │   ├── graph_tab.dart            # TRACE (muzzle trace) + POST SHOT (3-phase)
+│       │   ├── connection_tab.dart
+│       │   ├── settings_tab.dart
+│       │   └── shot_timer_tab.dart
 │       └── widgets/
 │           ├── muzzle_trace_widget.dart  # MantisX-style live trace
 │           ├── shot_analysis_panel.dart  # 3-phase post-shot chart
@@ -261,8 +268,10 @@ Preferences (built-in)
 ## Known Issues / TODOs
 
 ### Pending
-- [ ] **Frame freeze / gralloc4 GPU buffer failure** — Partially addressed via Phase 1 & 2 performance optimizations. Remaining: GPU/driver incompatibility with Impeller rendering engine. **Not app code issue**. Test on different device.
+- [ ] **Frame freeze / gralloc4 GPU buffer failure** — GPU/driver incompatibility with Impeller rendering engine. **Not app code issue**. Test on different device.
 - [ ] **Android BT fragmentation** — DATA_RAW_SAMPLE CRC errors ~0.01% (1 in ~9400 packets). Non-critical — sensor data still flows at 99.99% integrity.
+- [ ] **Export service** — `export_service.dart` not yet implemented.
+- [ ] **Trace window sync with Python** — Flutter 2s window vs Python 0.5s cursor-normalized.
 
 ### Migration Status
 
@@ -270,7 +279,21 @@ Preferences (built-in)
 |-----------|---------|--------|
 | `Firmware_STSYS32/` | New (CRC16-CCITT) | Complete, uploaded to ESP32 |
 | `Python Code (SSA)/STASYS.py` | New | ProtocolDecoder class added |
-| `ssa_app/` Flutter | New | bluetooth_provider.dart updated |
+| `ssa_app/` Flutter | New | App shell redesign + GoRouter + demo mode |
+
+### App Shell Redesign (2026-04-09)
+- [x] GoRouter with ShellRoute (3-tab bottom nav: Tracking/History/Settings)
+- [x] SplashScreen (STSYS branding, 2s auto-navigate)
+- [x] ConnectionScreen (BT scan/connect + Explore App demo mode)
+- [x] TrackingScreen (mode selection 4 firearm cards + live graph)
+- [x] TrackingModeView (live TRACE + POST SHOT tabs + mode change dialog)
+- [x] HistoryScreen (session list + swipe delete + clear all + refresh button)
+- [x] SettingsScreen (BT scan overlay + firearm type + training mode)
+- [x] SessionDetailScreen (POST SHOT 3-phase + horizontal shot chips)
+- [x] Demo mode (random gyro/accel + auto shot 4-8s + score 65-95)
+- [x] Shot selection persistence (hasUserSelected flag)
+- [x] Battery indicator in all headers
+- [x] Demo mode: BT scan redirects to connection, connect auto-disables demo
 
 ### Historical / Fixed
 - [x] esp_bt_gap.h not found in PlatformIO — GAP callback removed
@@ -282,10 +305,10 @@ Preferences (built-in)
 - [x] Firmware not sending EVT_AUTH_CHALLENGE — added to dispatchCommand
 - [x] PktRawSample sizeof mismatch — changed to 24 bytes
 - [x] ESP32 TX serial debug flooding — limited to first 3 packets
-- [x] **CRC scope mismatch** — Firmware computed CRC over `TYPE+LEN(2 bytes only)+payload`. Fixed firmware `encodePacket()` to use `3+len`.
+- [x] **CRC scope mismatch** — Fixed firmware `encodePacket()` to use `3+len`.
 - [x] **EVT_SENSOR_HEALTH (0x13)** — Added handler in Flutter `_handlePacket()`.
 - [x] Dark STSYS theme applied — `app_theme.dart` with STSYS palette, Manrope/Inter fonts
-- [x] Muzzle trace enhancement (uncommitted) — 2s window, opacity fade, motion blur, dynamic dot sizing
+- [x] Muzzle trace enhancement — opacity fade, motion blur, dynamic dot sizing
 
 ### Flutter Performance (Phase 1 & 2 — 2026-04-07)
 - Eliminated ~1,100 Paint/Color/TextPainter allocations/sec

@@ -84,6 +84,7 @@ class BluetoothProvider extends ChangeNotifier {
   bool _isConnected = false;
   bool _isScanning = false;
   bool _isAuthenticated = false;
+  String _deviceName = '';
 
   // Statistics
   int _totalPacketsReceived = 0;
@@ -99,6 +100,7 @@ class BluetoothProvider extends ChangeNotifier {
   bool get isConnected => _isConnected;
   bool get isScanning => _isScanning;
   bool get isAuthenticated => _isAuthenticated;
+  String get connectedDeviceName => _deviceName.isNotEmpty ? _deviceName : (_selectedDevice?.name ?? 'STASYS');
   int get totalPacketsReceived => _totalPacketsReceived;
   int get invalidPacketsCount => _invalidPacketsCount;
   int get checksumErrorsCount => _checksumErrorsCount;
@@ -429,6 +431,7 @@ class BluetoothProvider extends ChangeNotifier {
     int dataMode = payload[8];
     int streamRate = payload[9] | (payload[10] << 8);
     String deviceName = String.fromCharCodes(payload.sublist(11, 31)).replaceAll('\x00', '').trim();
+    _deviceName = deviceName;
 
     debugPrint('[CFG] === FIRMWARE CONFIG ===');
     debugPrint('[CFG] sample_rate=$sampleRate Hz');

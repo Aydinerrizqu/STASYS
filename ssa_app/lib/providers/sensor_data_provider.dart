@@ -65,6 +65,20 @@ class SensorDataProvider extends ChangeNotifier {
   int _totalDataPoints = 0;
   int _uiUpdatesReceived = 0;
   double _currentStabilityScore = 100.0;
+
+  // Demo mode
+  bool _isDemoMode = false;
+  Timer? _demoTimer;
+  double _demoGyroX = 0;
+  double _demoGyroY = 0;
+  double _demoGyroZ = 0;
+  double _demoAccelX = 0;
+  double _demoAccelY = 0;
+  double _demoAccelZ = 9.81;
+  bool _demoInRecoil = false;
+  double _demoTime = 0;
+  DateTime? _demoLastShotTime;
+  int _demoShotCount = 0;
   
   // Getters
   List<DataPoint> get gyroXData => _gyroXData;
@@ -472,10 +486,154 @@ class SensorDataProvider extends ChangeNotifier {
   @override
   void dispose() {
     _recordingTimer?.cancel();
+    _demoTimer?.cancel();
     _isolateSendPort?.send(SensorDataMessage('reset'));
     _mainReceivePort?.close();
     _dataIsolate?.kill(priority: Isolate.immediate);
     super.dispose();
+  }
+
+  // ============================================
+  // Demo Mode
+  // ============================================
+  void setDemoMode(bool value) {
+    if (_isDemoMode == value) return;
+    _isDemoMode = value;
+    if (value) {
+      _startDemoTimer();
+    } else {
+      _stopDemoTimer();
+    }
+    notifyListeners();
+  }
+
+  bool get isDemoMode => _isDemoMode;
+
+  void _startDemoTimer() {
+    _demoTime = 0;
+    _demoShotCount = 0;
+    _demoLastShotTime = DateTime.now().subtract(const Duration(seconds: 5));
+    _demoGyroX = 0;
+    _demoGyroY = 0;
+    _demoGyroZ = 0;
+    _demoAccelX = 0.2;
+    _demoAccelY = 0.1;
+    _demoAccelZ = 9.81;
+
+    _demoTimer = Timer.periodic(const Duration(milliseconds: 33), (_) {
+      if (!_isDemoMode) return;
+      _tickDemo();
+    });
+  }
+
+  void _stopDemoTimer() {
+    _demoTimer?.cancel();
+    _demoTimer = null;
+    // Clear data
+    _gyroXData = [];
+    _gyroYData = [];
+    _gyroZData = [];
+    _accelXData = [];
+    _accelYData = [];
+    _accelZData = [];
+    _sessionShots = [];
+    _latestShot = null;
+    notifyListeners();
+  }
+
+  void _tickDemo() {
+    _demoTime += 0.033;
+    final now = DateTime.now();
+
+    // Base noise: small random gyro drift
+    _demoGyroX += (_nextRand() * 0.05 - 0.025);
+    _demoGyroY += (_nextRand() * 0.05 - 0.025);
+    _demoGyroZ += (_nextRand() * 0.03 - 0.015);
+    // Clamp to realistic range
+    _demoGyroX = _demoGyroX.clamp(-2.0, 2.0);
+    _demoGyroY = _demoGyroY.clamp(-2.0, 2.0);
+    _demoGyroZ = _demoGyroZ.clamp(-1.0, 1.0);
+
+    // Accelerometer: slight tilt + recoil spikes
+    _demoAccelX = 0.2 + (_nextRand() * 0.1);
+    _demoAccelY = 0.1 + (_nextRand() * 0.1);
+
+    // Auto-generate shot every 4-8 seconds
+    final timeSinceLastShot = now.difference(_demoLastShotTime ?? now).inMilliseconds;
+    if (timeSinceLastShot > 4000 + (_nextRand() * 4000).round()) {
+      _triggerDemoShot();
+      _demoLastShotTime = now;
+    }
+
+    _gyroXData = [..._gyroXData, DataPoint(_demoTime, _demoGyroX)];
+    _gyroYData = [..._gyroYData, DataPoint(_demoTime, _demoGyroY)];
+    _gyroZData = [..._gyroZData, DataPoint(_demoTime, _demoGyroZ)];
+    _accelXData = [..._accelXData, DataPoint(_demoTime, _demoAccelX)];
+    _accelYData = [..._accelYData, DataPoint(_demoTime, _demoAccelY)];
+    _accelZData = [..._accelZData, DataPoint(_demoTime, _demoAccelZ)];
+
+    // Keep only last 200 points (~6.6s at 33ms)
+    if (_gyroXData.length > 200) {
+      _gyroXData = _gyroXData.sublist(_gyroXData.length - 200);
+      _gyroYData = _gyroYData.sublist(_gyroYData.length - 200);
+      _gyroZData = _gyroZData.sublist(_gyroZData.length - 200);
+      _accelXData = _accelXData.sublist(_accelXData.length - 200);
+      _accelYData = _accelYData.sublist(_accelYData.length - 200);
+      _accelZData = _accelZData.sublist(_accelZData.length - 200);
+    }
+
+    _uiUpdatesReceived++;
+    notifyListeners();
+  }
+
+  void _triggerDemoShot() {
+    _demoShotCount++;
+
+    // Generate random score 60-95
+    final score = 60.0 + _nextRand() * 35.0;
+    final hold = score * (0.8 + _nextRand() * 0.2);
+    final press = score * (0.7 + _nextRand() * 0.3);
+    final recoil = score * (0.6 + _nextRand() * 0.4);
+    final elev = score * (0.7 + _nextRand() * 0.3);
+    final wind = score * (0.7 + _nextRand() * 0.3);
+
+    // Generate phase trace data
+    final holdX = List.generate(10, (i) => (_nextRand() - 0.5) * 0.01);
+    final holdY = List.generate(10, (i) => (_nextRand() - 0.5) * 0.01);
+    final pressX = List.generate(10, (i) => (_nextRand() - 0.5) * 0.02);
+    final pressY = List.generate(10, (i) => (_nextRand() - 0.5) * 0.02);
+    final recoilX = List.generate(10, (i) => (_nextRand() - 0.5) * 0.03);
+    final recoilY = List.generate(10, (i) => (_nextRand() - 0.5) * 0.03);
+
+    final shot = ShotResult(
+      timestamp: DateTime.now(),
+      totalScore: score,
+      holdScore: hold,
+      pressScore: press,
+      recoilScore: recoil,
+      elevationScore: elev,
+      windageScore: wind,
+      travelDistance: (1 - score / 100) * 0.1,
+      peakJerk: (1 - score / 100) * 5,
+      firearmType: _settingsProvider?.firearmType ?? FirearmType.pistol,
+      trainingMode: _settingsProvider?.trainingMode ?? TrainingMode.dryFire,
+      holdX: holdX,
+      holdY: holdY,
+      pressX: pressX,
+      pressY: pressY,
+      recoilX: recoilX,
+      recoilY: recoilY,
+    );
+
+    _sessionShots = [..._sessionShots, shot];
+    _latestShot = shot;
+    _totalDataPoints++;
+    onShotDetected?.call();
+  }
+
+  double _nextRand() {
+    // Simple pseudo-random using current time for demo
+    return ((DateTime.now().microsecondsSinceEpoch % 1000) / 1000.0);
   }
 }
 

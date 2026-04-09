@@ -4,8 +4,9 @@ import 'providers/sensor_data_provider.dart';
 import 'providers/bluetooth_provider.dart';
 import 'providers/session_provider.dart';
 import 'providers/settings_provider.dart';
-import 'screens/main_screen.dart';
 import 'providers/session_logger.dart';
+import 'router/app_router.dart';
+import 'theme/app_theme.dart';
 
 void main() {
   runApp(const MyApp());
@@ -47,13 +48,11 @@ class MyApp extends StatelessWidget {
           },
         ),
       ],
-      child: MaterialApp(
+      child: MaterialApp.router(
         title: 'STASYS App',
-        theme: ThemeData(
-          primarySwatch: Colors.blue,
-          visualDensity: VisualDensity.adaptivePlatformDensity,
-        ),
-        home: const MainScreen(),
+        debugShowCheckedModeBanner: false,
+        theme: StsysTheme.darkTheme,
+        routerConfig: router,
       ),
     );
   }

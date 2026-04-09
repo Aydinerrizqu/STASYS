@@ -16,11 +16,15 @@ class SettingsProvider extends ChangeNotifier {
   FirearmType _firearmType = FirearmType.pistol;
   TrainingMode _trainingMode = TrainingMode.dryFire;
 
+  // Demo mode
+  bool _isDemoMode = false;
+
   // Getters
   int get maxSamples => _maxSamples;
   double get stableAxisLimit => _stableAxisLimit;
   FirearmType get firearmType => _firearmType;
   TrainingMode get trainingMode => _trainingMode;
+  bool get isDemoMode => _isDemoMode;
 
   SettingsProvider() {
     _loadSettings();
@@ -56,6 +60,12 @@ class SettingsProvider extends ChangeNotifier {
     if (_trainingMode == mode) return;
     _trainingMode = mode;
     await _prefs.setString('trainingMode', mode.name);
+    notifyListeners();
+  }
+
+  void setDemoMode(bool value) {
+    if (_isDemoMode == value) return;
+    _isDemoMode = value;
     notifyListeners();
   }
 }

@@ -1,3 +1,26 @@
+# PlatformIO / ESP32 Firmware
+Firmware_STSYS32/.pio/
+!.pio/lib/
+!.pio/build/esp32dev/partitions.bin
+
+# Assets & References
+Gambar_ui/
+Video tracking mantisx refrence/
+
+# Claude Code
+.claude/
+
+# Flutter assets
+ssa_app/assets/
+
+# Misc
+*.mp4
+*.mov
+*.avi
+
+# Claude Code
+.claude/
+
 # Python
 venv/
 __pycache__/

@@ -4,7 +4,7 @@ import '../models/data_models.dart';
 // ============================================
 // SHOT HISTORY LIST
 // ============================================
-class ShotHistoryList extends StatelessWidget {
+class ShotHistoryList extends StatefulWidget {
   final List<ShotResult> shots;
   final ShotResult? selectedShot;
   final void Function(ShotResult) onShotSelected;
@@ -21,6 +21,41 @@ class ShotHistoryList extends StatelessWidget {
     required this.formatTime,
     required this.formatScore,
   });
+
+  @override
+  State<ShotHistoryList> createState() => _ShotHistoryListState();
+}
+
+class _ShotHistoryListState extends State<ShotHistoryList> {
+  double _cachedAvg = 0;
+  int _cachedCount = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _computeStats();
+  }
+
+  @override
+  void didUpdateWidget(ShotHistoryList oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Recompute only when shots reference changes
+    if (!identical(oldWidget.shots, widget.shots)) {
+      _computeStats();
+    }
+  }
+
+  void _computeStats() {
+    if (widget.shots.isEmpty) {
+      _cachedAvg = 0;
+      _cachedCount = 0;
+      return;
+    }
+    double sum = 0;
+    for (final s in widget.shots) { sum += s.totalScore; }
+    _cachedCount = widget.shots.length;
+    _cachedAvg = sum / _cachedCount;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -43,26 +78,26 @@ class ShotHistoryList extends StatelessWidget {
                   ),
                 ),
                 const Spacer(),
-                _buildStats(shots),
+                _buildStats(),
               ],
             ),
           ),
           // Shot cards
           Expanded(
             child: ListView.builder(
-              itemCount: shots.length,
+              itemCount: widget.shots.length,
               itemBuilder: (context, index) {
-                final i = shots.length - 1 - index; // Most recent first
-                final shot = shots[i];
-                final isSelected = shot == selectedShot;
+                final i = widget.shots.length - 1 - index; // Most recent first
+                final shot = widget.shots[i];
+                final isSelected = shot == widget.selectedShot;
                 return ShotCard(
                   shot: shot,
                   shotNumber: i + 1,
                   isSelected: isSelected,
-                  onTap: () => onShotSelected(shot),
-                  getScoreColor: getScoreColor,
-                  formatTime: formatTime,
-                  prevShot: i > 0 ? shots[i - 1] : null,
+                  onTap: () => widget.onShotSelected(shot),
+                  getScoreColor: widget.getScoreColor,
+                  formatTime: widget.formatTime,
+                  prevShot: i > 0 ? widget.shots[i - 1] : null,
                 );
               },
             ),
@@ -72,9 +107,8 @@ class ShotHistoryList extends StatelessWidget {
     );
   }
 
-  Widget _buildStats(List<ShotResult> shots) {
-    if (shots.isEmpty) return const SizedBox.shrink();
-    final avg = shots.map((s) => s.totalScore).reduce((a, b) => a + b) / shots.length;
+  Widget _buildStats() {
+    if (_cachedCount == 0) return const SizedBox.shrink();
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
@@ -82,7 +116,7 @@ class ShotHistoryList extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
       ),
       child: Text(
-        '${shots.length} shots | Avg: ${avg.toStringAsFixed(1)}',
+        '$_cachedCount shots | Avg: ${_cachedAvg.toStringAsFixed(1)}',
         style: TextStyle(fontSize: 11, color: Colors.grey[700], fontWeight: FontWeight.w500),
       ),
     );

@@ -16,36 +16,43 @@ Mobile companion app for the STASYS shooter stability analyzer. Primary platform
 ssa_app/
 ├── lib/
 │   ├── main.dart                    # App entry, MultiProvider setup
+│   ├── theme/app_theme.dart          # Dark STSYS theme (#FFB693 primary, #131313 bg, Manrope/Inter fonts)
 │   ├── providers/
 │   │   ├── bluetooth_provider.dart   # 8-state packet parser, CRC16-CCITT, HMAC-SHA256 auth
+│   │   │                              # + getConfig(), setDataMode(), CMD_SET_CONFIG, EVT_SENSOR_HEALTH (0x13)
 │   │   ├── sensor_data_provider.dart  # UI state, isolate communication
-│   │   ├── sensor_data_isolate.dart # Shot detection + 3-phase analysis (hold/press/recoil)
+│   │   ├── sensor_data_isolate.dart  # Shot detection + 3-phase analysis (hold/press/recoil)
 │   │   ├── settings_provider.dart     # Firearm type, training mode, preferences
-│   │   ├── session_provider.dart      # Session list management
-│   │   └── session_logger.dart        # Save/load sessions to SharedPreferences
+│   │   ├── session_provider.dart     # Session list management
+│   │   └── session_logger.dart       # Save/load sessions to SharedPreferences
+│   ├── screens/
+│   │   ├── main_screen.dart          # Bottom nav bar (HOME / LIVE / HISTORY / SETTINGS)
+│   │   └── session_detail_screen.dart
 │   ├── screens/tabs/
-│   │   ├── home_tab.dart            # Home / dashboard
-│   │   ├── graph_tab.dart           # Real-time gyro + muzzle trace + post-shot inline
-│   │   ├── shot_timer_tab.dart      # Shot timer with countdown & splits
-│   │   ├── analysis_tab.dart         # Post-shot analysis: big score + 3-phase chart + history
+│   │   ├── home_tab.dart             # Dashboard
+│   │   ├── graph_tab.dart            # 2 tabs: TRACE (muzzle trace) + POST SHOT (3-phase analysis)
 │   │   ├── connection_tab.dart        # Bluetooth device selection
-│   │   └── settings_tab.dart         # Firearm type, training mode, graph duration
+│   │   ├── settings_tab.dart          # Firearm type, training mode
+│   │   └── shot_timer_tab.dart        # Shot timer with countdown & splits
 │   ├── widgets/
-│   │   ├── muzzle_trace_widget.dart  # Real-time XY trace (2s rolling window, 3-phase coloring)
-│   │   ├── shot_analysis_panel.dart  # 3-phase chart CustomPainter + phase scores
-│   │   └── shot_history_list.dart     # Session shot list with tappable cards
+│   │   ├── muzzle_trace_widget.dart   # MantisX-style live trace
+│   │   ├── shot_analysis_panel.dart  # 3-phase post-shot chart with ring overlay
+│   │   ├── shot_history_list.dart    # Session shot list with tappable cards
+│   │   ├── gyro_realtime_chart.dart   # Real-time gyro chart
+│   │   ├── interactive_chart.dart
+│   │   ├── control_panel.dart
+│   │   ├── status_bar.dart
+│   │   ├── benchmark_analysis_widget.dart
+│   │   └── debug_overlay.dart
 │   └── models/
 │       └── data_models.dart          # DataPoint, SessionLog, ShotResult, FirearmType, TrainingMode
-│
-├── lib/theme/app_theme.dart          # Dark theme (on redesign/v1 branch only)
-└── lib/screens/main_shell.dart       # 5-tab shell navigation (on redesign/v1 branch only)
 ```
 
 ---
 
-## Communication Protocol (NEW: Packet-Based)
+## Communication Protocol (Packet-Based)
 
-> **See parent CLAUDE.md: Communication Protocol > Binary Packet Format**
+> **See parent `CLAUDE.md`: Communication Protocol > Binary Packet Format**
 
 ### Packet Format
 ```
@@ -61,7 +68,11 @@ Located in `bluetooth_provider.dart`:
 - `_recvBuffer` — accumulates bytes
 - `_feedParserByte()` — byte-level state machine
 - `_crc16Ccitt()` / `_updateCrc()` — running CRC computation
-- Debug logging active: `[RX]` raw chunks, `[BT] CRC FAIL` with byte dump (first mismatch only)
+- `_sendPacket()` — builds outgoing frames (CRC over TYPE+LEN+payload)
+- `getConfig()` / `_handleRspConfig()` — fetch firmware config including `data_mode`
+- `setDataMode()` — send `CMD_SET_CONFIG` to change data_mode
+- `CMD_SET_CONFIG (0x05)` — set firmware config (sample rate, piezo threshold, data mode, etc.)
+- `EVT_SENSOR_HEALTH (0x13)` — handled silently (sensor health heartbeat ~10Hz)
 
 ### DATA_RAW_SAMPLE Handling
 - Payload **must be 24 bytes** (verified: `sizeof(PktRawSample) = 24` on ESP32)
@@ -75,40 +86,34 @@ idle → waitingForChallenge → authenticated/failed
 ```
 
 Flow:
-1. Flutter connects → ESP32 sends EVT_AUTH_CHALLENGE (0x14)
-2. Flutter: HMAC-SHA256(challenge + session_id) → CMD_AUTH (0x06)
-3. ESP32: EVT_AUTH_SUCCESS (0x15) → Flutter authenticated
-4. Flutter calls `startSession()` → CMD_START_SESSION → ESP32 sends EVT_SESSION_STARTED (0x10)
-5. ESP32 streams DATA_RAW_SAMPLE (0x20) @ 100Hz
-
-5. ESP32 streams DATA_RAW_SAMPLE (0x20) @ 100Hz — All packets now pass CRC.
+1. Flutter connects → ESP32 sends `EVT_AUTH_CHALLENGE (0x14)`
+2. Flutter: HMAC-SHA256(challenge + session_id) → `CMD_AUTH (0x06)`
+3. ESP32: `EVT_AUTH_SUCCESS (0x15)` → Flutter authenticated
+4. Flutter calls `startSession()` → `CMD_START_SESSION` → ESP32 sends `EVT_SESSION_STARTED (0x10)`
+5. ESP32 streams `DATA_RAW_SAMPLE (0x20)` @ 100Hz
 
 ---
 
 ## Scoring System
 
-> **See parent CLAUDE.md: Key Algorithms > MantisX-Style Scoring**
+> **See parent `CLAUDE.md`: Key Algorithms > MantisX-Style Scoring**
 >
 > Flutter app uses **MantisX-style soft curve** scoring (sqrt-based penalties).
-> Python app uses **Hardcore** scoring (hard penalties). Both can read the same SQLite DB.
 
 ---
 
 ## Shot Detection State Machine
 
-> **See parent CLAUDE.md: Key Algorithms > Shot Detection State Machine**
->
 > Flutter implementation: `providers/sensor_data_isolate.dart` → `ShotDetector` class.
->
-> ### Thresholds
-> - **Stability Window**: 200ms
-> - **Gyro Limit**: 4.0 rad/s (ARMING state)
-> - **Trigger**: Piezo > 100 (dry fire) or jerk > 12.0 (live fire)
-> - **Cooldown**: 500ms
+
+### Thresholds
+- **Stability Window**: 200ms
+- **Gyro Limit**: 4.0 rad/s (ARMING state)
+- **Trigger**: Piezo > 100 (dry fire) or jerk > 12.0 (live fire)
+- **Cooldown**: 500ms
 
 > **Note**: Shot detection runs in **Flutter isolate**, NOT in firmware.
-> Firmware sends `EVT_SHOT_DETECTED` (0x12) with peaks for logging/debugging only.
-> Full 3-phase analysis (hold/press/recoil) requires full time-series — computed in isolate.
+> Full 3-phase analysis (hold/press/recoil) is computed in isolate.
 
 ---
 
@@ -122,12 +127,6 @@ Located in `providers/sensor_data_isolate.dart` → `_startCalibration()`.
 - UI shows: `Calibrating... (15/50)` countdown
 - Calibration button requires `btProvider.isAuthenticated == true` before enabling
 - Calibration offsets subtracted from raw gyro data in isolate processing
-
-**Calibration Requirements:**
-1. `_isolateSendPort` must be non-null (SendPort received from isolate)
-2. Calibration message must reach isolate
-3. Isolate must receive binary sensor data (gyro samples) during calibration
-4. 50 samples collected → offsets applied → `_isCalibrated = true`
 
 ---
 
@@ -189,47 +188,58 @@ Per-shot scoring:
 
 ## Widgets
 
-### GyroRealtimeChart
-- Syncfusion `SfCartesianChart`, 3 lines: X/Y/Z gyro
-- Configurable sliding window (3-15 seconds)
-- Score indicator badge
-
 ### MuzzleTraceWidget
-- Custom `CustomPainter` for real-time XY plot
-- 3-phase coloring: Hold (red), Press (yellow), Recoil (cyan)
-- 2-second rolling window
-- Concentric circle grid + current position dot
+**Committed version** (`HEAD`):
+- **Live dot**: ACCELEROMETER (`accelX/Y`) — absolute tilt, NO drift
+- **Trace path**: GYRO integration with **2000ms window**, `_maxTracePoints = 200`
+- **Phase colors**: Hold=Red, Press=Yellow, Recoil=Cyan (old palette)
+- **Scoring rings**: 5 concentric zones (Elite/Expert/Advanced/Intermediate/Beginner)
 
-### ShotAnalysisPanel
-- 3-phase CustomPainter chart (Hold/Press/Recoil curves)
-- Phase scores chips + big score display
+**Uncommitted enhancement** (current working tree):
+- Same accelerometer dot + gyro trace
+- **Opacity fade**: oldest = 0.3α, newest = 1.0α (trace segments fade out)
+- **Motion blur**: 3 ghost trail dots behind current dot at decreasing opacity
+- **Dynamic dot sizing**: 5-8px based on movement velocity
+- **Sensitivity increased**: 0.05 → 0.08
+- **Dark STSYS colors**: Hold=#FFB693 (orange), Press=#8BCEFF (blue), Recoil=#FFB4AB (coral)
+- **Smart `shouldRepaint`**: checks dot position, trace length, phase, liveSpeed
+- **`RepaintBoundary`**: isolates painter repaints
+- **`Timer`**-based phase transitions (no Future.delayed closures)
+
+### MainScreen
+- Bottom Navigation Bar (4 tabs): HOME / LIVE / HISTORY / SETTINGS
+- AppBar with STASYS logo + `StatusBadge` (connection status)
+- Shot Timer tab removed from navigation
+
+### GraphTab (2 tabs: TRACE + POST SHOT)
+- **TRACE tab**: Real-time muzzle trace widget (always streaming)
+- **POST SHOT tab**: 3-phase analysis + session history
+  - Auto-updates to latest shot when new shot is detected
+  - Tap any shot in history list to view that shot's 3-phase chart
+  - Shows "NO SHOTS RECORDED" when session has no shots
+
+### ConnectionTab
+- Connection status card (connected/disconnected with device info)
+- SCAN + PAIRED action buttons with STSYS styling
+- Device list with connected indicator
+
+### HomeTab & SettingsTab
+- Full dark STSYS theme styling
+- Surface containers, Manrope/Inter typography
 
 ### ShotHistoryList
-- Scrollable shot cards with tappable selection
-- Session stats: shot count + average score
+- StatefulWidget with cached stats (avg score, shot count)
+- Tappable shot cards for 3-phase chart selection
 
 ### ShotTimerTab
 - Countdown: 3s, 5s, 10s selectable
 - Color-coded split performance
 
----
-
-## Common Tasks
-
-### Changing Bluetooth packet format
-1. Update `bluetooth_provider.dart` parser state machine + offsets
-2. Update `_handleRawSample()` data conversion
-3. Update `SensorDataProvider.updateAllData()` signature
-4. Update `sensor_data_isolate.dart` `_processSensorData()`
-5. Update firmware `protocol.h/cpp` and `DATA_RAW_SAMPLE` packet format
-6. Update protocol docs in parent `CLAUDE.md`
-
----
-
-## Testing Without Hardware
-
-- Flutter app: Real device required for Bluetooth
-- No mock mode currently implemented
+### GyroRealtimeChart
+- Syncfusion `SfCartesianChart`, 3 lines: X/Y/Z gyro
+- Configurable sliding window (3-15 seconds)
+- Direct provider references (no extra `List.from()` copies)
+- **Data decimation**: isolate sends max 150 points, ~70% data reduction
 
 ---
 
@@ -241,10 +251,10 @@ syncfusion_flutter_charts: ^30.2.7   # Charts
 fl_chart: ^1.0.0                      # Alternative charts
 provider: ^6.1.2                      # State management
 shared_preferences: ^2.2.2            # Local storage
-permission_handler: ^12.0.1            # Android permissions
+permission_handler: ^12.0.1           # Android permissions
 path_provider: ^2.1.1                  # File paths
 crypto: ^3.0.3                        # SHA256 auth
-intl: ^0.19.0                          # Formatting
+intl: ^0.19.0                         # Formatting
 ```
 
 ---
@@ -252,51 +262,47 @@ intl: ^0.19.0                          # Formatting
 ## Active Branches
 
 | Branch | Status | Description |
-|--------|--------|-------------|
-| `develop` | Active | New packet protocol + PlatformIO firmware |
-| `redesign/v1` | Separate | Dark theme, new navigation shell |
+|--------|---------|-------------|
+| `develop-migrasi-firmware-v3` | **Active** | Current working branch — committed: dark STSYS theme + dark nav, bottom nav redesign, connection_tab, graph_tab, home_tab, settings_tab redesign; uncommitted: muzzle trace enhancement (opacity fade, motion blur, dynamic dot, STSYS colors) |
+| `backup-dark-theme-redesign` | Backup | Full backup of all uncommitted changes pushed to remote |
+| `develop` | Staged | Dark theme elements pending merge |
 | `main` | Base | Initial commit only |
 
 ---
 
 ## Known Issues / TODOs
 
-### Done / Fixed
-- [x] **Buffer overflow** — removed `MAX_PACKETS_PER_CYCLE = 5` limit.
-- [x] **Bluetooth auth state machine** — added `AuthState` enum, fixed reconnect.
-- [x] **Graph tab redesign** — StatusBar removed, inline `_ActionButton`.
-- [x] **Calibration progress UI** — isolate sends `calibration_progress` every 10 samples.
-- [x] **Isolate SendPort race condition** — listener attached BEFORE isolate spawned.
-- [x] **Calibration SendPort type mismatch** — isolate sends raw `SendPort` directly.
-- [x] **Session save not working** — isolate sends `session_data` before clearing.
-- [x] **Shot timer not detecting shots** — `onShotDetected` callback wired.
-- [x] **Gyro graph duration hardcoded 5s** — uses `_settingsProvider.maxSamples`.
-- [x] **Muzzle trace too long** — 2-second rolling window (`_traceWindowMs = 2000`).
-- [x] **Post-shot analysis tab** — 3-phase chart + shot history list.
-- [x] **Protocol migration** — 8-state CRC16-CCITT parser in `bluetooth_provider.dart`.
-- [x] **PlatformIO firmware scaffold** — all modules, uploaded to ESP32.
-- [x] **Extracted widgets** — `ShotAnalysisPanel` and `ShotHistoryList`.
-- [x] **esp_bt_gap.h not found** — GAP callback removed.
-- [x] **Preferences::getString() wrong args** — fixed in config.cpp.
-- [x] **sensor.cpp goto crosses initialization** — declarations moved.
-- [x] **mbedtls/hmac.h not found** — security.cpp stubbed.
-- [x] **RecoveryTask watchdog timeout** — added `esp_task_wdt_reset()` in loop.
-- [x] **CMD_START_SESSION guard blocking auth** — removed `_isAuthenticated` check.
-- [x] **Firmware not sending EVT_AUTH_CHALLENGE** — added to dispatchCommand.
-- [x] **PktRawSample sizeof mismatch** — changed to 24 bytes (was: temperature → compiler-packed to 24 not 26).
-- [x] **ESP32 TX serial debug flooding** — limited to first 3 packets.
-- [x] **CRC scope mismatch** — Firmware computed CRC over `2+len`, Flutter over `3+len`. Fixed firmware `encodePacket()`.
-- [x] **EVT_SENSOR_HEALTH (0x13) unknown** — Added handler in `_handlePacket()` switch.
-
 ### In Progress
-- [ ] **Android BT fragmentation** — ~0.01% CRC error on DATA_RAW packets from Android BT buffer chunking.
+- [ ] **Shot history tap reverts to latest** — tapping a shot in history list doesn't persist, reverts to latest shot.
+- [ ] **Frame freeze / gralloc4 GPU failure** — GPU/driver incompatibility with Impeller rendering engine. **Not app code issue**. Test on different device.
 
 ### Pending
 - [ ] **Trace window sync with Python** — Flutter 2s window vs Python 0.5s cursor-normalized.
 - [ ] **Demo mode not implemented** — testing without hardware not yet built.
 - [ ] **Battery monitoring** — battery % received but not displayed consistently.
 - [ ] **Export service** — `export_service.dart` not yet implemented.
-- [ ] **Redesign branch not merged** — dark theme not in `develop`.
+- [ ] **MantisX feature parity** — drill modes, trend analysis, split time, session notes, etc.
+
+### Performance Optimizations (Phase 1 & 2 — 2026-04-07)
+**Goal**: Stable 60fps, production-ready code. All changes compile and APK builds successfully.
+
+#### Phase 1 — 6 fixes
+- [x] **`_handleDiffUpdate` O(n) removeWhere** → immutable list assignment. Eliminated O(n) scanning on main thread.
+- [x] **Data decimation** — isolate sends max 150 points (was ~500), ~70% data reduction via `_decimate()`.
+- [x] **Smart `shouldRepaint`** — `_MuzzleTracePainter` compares dot position, last trace point, phase color.
+- [x] **`RepaintBoundary`** — added around `MuzzleTraceWidget` CustomPaint.
+- [x] **postFrameCallback consolidation** — `_PostShotTabState` uses single `_scheduleShotUpdate()` with guard flag.
+- [x] **UI throttle** — reduced from 50ms (20Hz) to 33ms (~30Hz) for more headroom toward 60fps.
+
+#### Phase 2 — 9 fixes
+- [x] **CustomPainter Paint/Color allocations** — All painters pre-allocate Paint/TextPainter as static fields. **~1,100 object allocations/sec eliminated.**
+- [x] **`RepaintBoundary` on chart painters** — Added to `_LatestShotPanel` and `ShotAnalysisPanel`.
+- [x] **ShotHistoryList cached stats** — Converted to `StatefulWidget`, avg/count computed once.
+- [x] **Home tab redundant sort removed** — `SessionProvider.loadSessions()` already sorts.
+- [x] **`_handleDiffUpdate` direct cast** — `List<DataPoint>.from()` → direct `as List<DataPoint>` cast. **~180 list allocations/sec eliminated.**
+- [x] **`_analyzeShot()` Float64List** — Replaced `List<double>.from()`, `sublist()`, `map().toList()` with `Float64List` typed arrays. **~20 list allocations per shot eliminated.**
+- [x] **Recording timer `ValueNotifier`** — `_recordingTimer` updates `recordingDurationNotifier` instead of `notifyListeners()`. No global rebuild every second.
+- [x] **Timer replaces Future.delayed** — `_MuzzleTraceWidgetState` uses `Timer` with `_phaseResetTimer` cancellation.
 
 ---
 
@@ -308,11 +314,10 @@ Bluetooth debug logs in `bluetooth_provider.dart`:
 [BT] Sent CMD_AUTH with HMAC-SHA256
 [BT] Auth successful
 [BT] Session started: ...
-[BT] CRC FAIL: type=0x20, len=24, bytes=...  (first mismatch only)
-[RX] raw len=N: ...  (first 3 BT receive chunks only)
+[CFG] *** data_mode=N ***  (printed on connect)
 ```
 
-### Auth Flow Data Flow (verified working)
+### Auth Flow (verified working)
 ```
 Flutter connect → ESP32 sends EVT_AUTH_CHALLENGE (0x14)
   → _handleAuthChallenge() → HMAC-SHA256 → _sendPacket(CMD_AUTH)

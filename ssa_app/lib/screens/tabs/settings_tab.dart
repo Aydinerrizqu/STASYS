@@ -1,240 +1,522 @@
-// ============================================
-// File: screens/tabs/settings_tab.dart
-// ============================================
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/settings_provider.dart';
 import '../../models/data_models.dart';
+import '../../theme/app_theme.dart';
 
 class SettingsTab extends StatelessWidget {
   const SettingsTab({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Pengaturan'),
-        backgroundColor: Colors.grey[700],
-      ),
-      body: Consumer<SettingsProvider>(
-        builder: (context, settings, child) {
-          return ListView(
-            padding: const EdgeInsets.all(16.0),
+    return Consumer<SettingsProvider>(
+      builder: (context, settings, child) {
+        return SingleChildScrollView(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // --- TRAINING SETUP SECTION ---
-              const Text(
-                'TRAINING SETUP',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.grey,
-                  letterSpacing: 1.2,
-                ),
-              ),
-              const SizedBox(height: 8),
+              // Training Mode Section
+              _SectionHeader('OPERATIONAL MODE'),
+              const SizedBox(height: 12),
+              _ModeGrid(settings: settings),
 
-              // Firearm Type Selector
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Jenis Senjata',
-                        style: TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        'Mempengaruhi difficulty multiplier pada scoring',
-                        style: TextStyle(fontSize: 12, color: Colors.grey[500]),
-                      ),
-                      const SizedBox(height: 8),
-                      SegmentedButton<FirearmType>(
-                        segments: FirearmType.values.map((type) {
-                          return ButtonSegment<FirearmType>(
-                            value: type,
-                            label: Text(type.displayName),
-                          );
-                        }).toList(),
-                        selected: {settings.firearmType},
-                        onSelectionChanged: (selected) {
-                          settings.updateFirearmType(selected.first);
-                        },
-                        style: ButtonStyle(
-                          visualDensity: VisualDensity.compact,
-                        ),
-                      ),
-                    ],
+              const SizedBox(height: 24),
+
+              // Spatial Orientation
+              _SectionHeader('SPATIAL ORIENTATION'),
+              const SizedBox(height: 12),
+              _SpatialGrid(settings: settings),
+
+              const SizedBox(height: 24),
+
+              // Display Settings
+              _SectionHeader('DISPLAY'),
+              const SizedBox(height: 12),
+              _GraphDurationSlider(settings: settings),
+
+              const SizedBox(height: 24),
+
+              // Scoring Info
+              _SectionHeader('SCORING RANK'),
+              const SizedBox(height: 12),
+              _ScoringGuide(settings: settings),
+
+              const SizedBox(height: 32),
+
+              // Version footer
+              Center(
+                child: Text(
+                  'STASYS v3.1.0 • STASYS App',
+                  style: TextStyle(
+                    fontFamily: 'Inter',
+                    fontSize: 10,
+                    letterSpacing: 1.5,
+                    color: StsysTheme.onSurfaceVariant.withValues(alpha: 0.3),
                   ),
                 ),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 80),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
 
-              // Training Mode Selector
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Mode Latihan',
-                        style: TextStyle(fontWeight: FontWeight.bold),
+class _SectionHeader extends StatelessWidget {
+  final String text;
+  const _SectionHeader(this.text);
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      text,
+      style: const TextStyle(
+        fontFamily: 'Inter',
+        fontSize: 10,
+        fontWeight: FontWeight.w700,
+        letterSpacing: 2,
+        color: StsysTheme.onSurfaceVariant,
+      ),
+    );
+  }
+}
+
+class _ModeGrid extends StatelessWidget {
+  final SettingsProvider settings;
+  const _ModeGrid({required this.settings});
+
+  @override
+  Widget build(BuildContext context) {
+    // Map firearm types to visual labels
+    final modes = [
+      ('DA', FirearmType.pistol, 'DRY AS'),
+      ('AS', FirearmType.rifle, 'LIVE AS'),
+      ('DFA', FirearmType.archery, 'DRY FIREARM'),
+      ('FA', FirearmType.shotgun, 'LIVE FIREARM'),
+    ];
+
+    return GridView.count(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      crossAxisCount: 2,
+      mainAxisSpacing: 8,
+      crossAxisSpacing: 8,
+      childAspectRatio: 2.2,
+      children: modes.map((m) {
+        final isActive = settings.firearmType == m.$2;
+        return GestureDetector(
+          onTap: () => settings.updateFirearmType(m.$2),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              gradient: isActive ? StsysTheme.tacticalGradient : null,
+              color: isActive ? null : StsysTheme.surfaceContainerHigh,
+              borderRadius: BorderRadius.circular(12),
+              border: isActive
+                  ? null
+                  : Border.all(
+                      color: StsysTheme.outlineVariant.withValues(alpha: 0.15),
+                    ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  m.$1,
+                  style: TextStyle(
+                    fontFamily: 'Manrope',
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                    color: isActive
+                        ? StsysTheme.onPrimary
+                        : StsysTheme.onSurface,
+                  ),
+                ),
+                Text(
+                  m.$3,
+                  style: TextStyle(
+                    fontFamily: 'Inter',
+                    fontSize: 9,
+                    letterSpacing: 1,
+                    color: isActive
+                        ? StsysTheme.onPrimary.withValues(alpha: 0.7)
+                        : StsysTheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      }).toList(),
+    );
+  }
+}
+
+class _SpatialGrid extends StatelessWidget {
+  final SettingsProvider settings;
+  const _SpatialGrid({required this.settings});
+
+  @override
+  Widget build(BuildContext context) {
+    final mountOptions = ['TOP', 'BOT', 'LEFT', 'RIGHT'];
+    return Column(
+      children: [
+        Row(
+          children: mountOptions.map((label) {
+            final idx = mountOptions.indexOf(label);
+            return Expanded(
+              child: GestureDetector(
+                onTap: () {
+                  // TODO: implement mount mode
+                },
+                child: Container(
+                  margin: EdgeInsets.only(
+                    right: idx < mountOptions.length - 1 ? 8 : 0),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  decoration: BoxDecoration(
+                    color: idx == 0
+                        ? StsysTheme.primary.withValues(alpha: 0.15)
+                        : StsysTheme.surfaceContainerHigh,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: idx == 0
+                          ? StsysTheme.primary.withValues(alpha: 0.3)
+                          : Colors.transparent,
+                    ),
+                  ),
+                  child: Center(
+                    child: Text(
+                      label,
+                      style: TextStyle(
+                        fontFamily: 'Manrope',
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 1,
+                        color: idx == 0
+                            ? StsysTheme.primary
+                            : StsysTheme.onSurface.withValues(alpha: 0.5),
                       ),
-                      const SizedBox(height: 4),
-                      Text(
-                        'Dry Fire: gunakan piezo trigger. Live Fire: deteksi via accelerometer.',
-                        style: TextStyle(fontSize: 12, color: Colors.grey[500]),
-                      ),
-                      const SizedBox(height: 8),
-                      SegmentedButton<TrainingMode>(
-                        segments: TrainingMode.values.map((mode) {
-                          return ButtonSegment<TrainingMode>(
-                            value: mode,
-                            label: Text(mode.displayName),
-                          );
-                        }).toList(),
-                        selected: {settings.trainingMode},
-                        onSelectionChanged: (selected) {
-                          settings.updateTrainingMode(selected.first);
-                        },
-                        style: ButtonStyle(
-                          visualDensity: VisualDensity.compact,
-                        ),
-                      ),
-                    ],
+                    ),
                   ),
                 ),
               ),
-
-              const SizedBox(height: 16),
-              const Divider(),
-              const SizedBox(height: 8),
-
-              // --- DISPLAY SECTION ---
-              const Text(
-                'DISPLAY',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.grey,
-                  letterSpacing: 1.2,
+            );
+          }).toList(),
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            // Direction
+            Expanded(
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: StsysTheme.surfaceContainerLow,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  children: [
+                    Text(
+                      'DIRECTION',
+                      style: TextStyle(
+                        fontFamily: 'Inter',
+                        fontSize: 9,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 1.5,
+                        color: StsysTheme.onSurfaceVariant.withValues(alpha: 0.5),
+                      ),
+                    ),
+                    const Spacer(),
+                    _MiniToggle(
+                      labels: const ['FW', 'BW'],
+                      selectedIndex: 0,
+                      onChanged: (i) {},
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(height: 8),
-
-              // Graph Duration Slider
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          const Text(
-                            'Durasi Grafik',
-                            style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(width: 8),
+            // Calibration
+            Expanded(
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: StsysTheme.surfaceContainerLow,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'CALIBRATION',
+                      style: TextStyle(
+                        fontFamily: 'Inter',
+                        fontSize: 9,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 1.5,
+                        color: StsysTheme.onSurfaceVariant.withValues(alpha: 0.5),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    GestureDetector(
+                      onTap: () {},
+                      child: Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        decoration: BoxDecoration(
+                          color: StsysTheme.surfaceContainerHighest,
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(
+                            color: StsysTheme.outlineVariant.withValues(alpha: 0.3),
                           ),
-                          Text(
-                            '${settings.maxSamples} detik',
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              color: Colors.blue,
+                        ),
+                        child: Center(
+                          child: Text(
+                            'RESET AXIS',
+                            style: TextStyle(
+                              fontFamily: 'Manrope',
+                              fontSize: 10,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 1,
+                              color: StsysTheme.onSurface.withValues(alpha: 0.7),
                             ),
                           ),
-                        ],
+                        ),
                       ),
-                      Slider(
-                        value: settings.maxSamples.toDouble(),
-                        min: 3,
-                        max: 15,
-                        divisions: 4,
-                        label: '${settings.maxSamples} detik',
-                        onChanged: (double value) {
-                          settings.updateMaxSamples(value.toInt());
-                        },
-                      ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
 
-              const SizedBox(height: 16),
-              const Divider(),
-              const SizedBox(height: 8),
+class _MiniToggle extends StatelessWidget {
+  final List<String> labels;
+  final int selectedIndex;
+  final void Function(int) onChanged;
+  const _MiniToggle({
+    required this.labels,
+    required this.selectedIndex,
+    required this.onChanged,
+  });
 
-              // --- SCORING INFO ---
-              const Text(
-                'SCORING',
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: labels.asMap().entries.map((e) {
+        final idx = e.key;
+        final label = e.value;
+        final isActive = idx == selectedIndex;
+        return GestureDetector(
+          onTap: () => onChanged(idx),
+          child: Container(
+            margin: EdgeInsets.only(right: idx < labels.length - 1 ? 4 : 0),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+              color: isActive
+                  ? StsysTheme.secondary.withValues(alpha: 0.2)
+                  : Colors.transparent,
+              borderRadius: BorderRadius.circular(4),
+              border: Border.all(
+                color: isActive
+                    ? StsysTheme.secondary.withValues(alpha: 0.3)
+                    : Colors.transparent,
+              ),
+            ),
+            child: Text(
+              label,
+              style: TextStyle(
+                fontFamily: 'Manrope',
+                fontSize: 10,
+                fontWeight: FontWeight.w800,
+                color: isActive
+                    ? StsysTheme.secondary
+                    : StsysTheme.onSurfaceVariant.withValues(alpha: 0.5),
+              ),
+            ),
+          ),
+        );
+      }).toList(),
+    );
+  }
+}
+
+class _GraphDurationSlider extends StatelessWidget {
+  final SettingsProvider settings;
+  const _GraphDurationSlider({required this.settings});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: StsysTheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text(
+                'TRACE WINDOW',
                 style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.grey,
-                  letterSpacing: 1.2,
+                  fontFamily: 'Inter',
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 1.5,
+                  color: StsysTheme.onSurfaceVariant,
                 ),
               ),
-              const SizedBox(height: 8),
-
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _scoreRow('Elite', '95-100', Colors.amber),
-                      _scoreRow('Expert', '85-94', Colors.green),
-                      _scoreRow('Advanced', '70-84', Colors.blue),
-                      _scoreRow('Intermediate', '50-69', Colors.orange),
-                      _scoreRow('Beginner', '0-49', Colors.red),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Difficulty: ${settings.firearmType.displayName} (${_getDifficultyLabel(settings.firearmType)}) • '
-                        '${settings.trainingMode.displayName}',
-                        style: TextStyle(fontSize: 12, color: Colors.grey[500]),
-                      ),
-                    ],
+              const Spacer(),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 4,
+                ),
+                decoration: BoxDecoration(
+                  color: StsysTheme.primary.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  '${settings.maxSamples}s',
+                  style: const TextStyle(
+                    fontFamily: 'Manrope',
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                    color: StsysTheme.primary,
                   ),
                 ),
               ),
             ],
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _scoreRow(String label, String range, Color color) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
-      child: Row(
-        children: [
-          Container(
-            width: 12,
-            height: 12,
-            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
           ),
-          const SizedBox(width: 8),
-          Text(label, style: const TextStyle(fontWeight: FontWeight.w500)),
-          const Spacer(),
-          Text(range, style: const TextStyle(color: Colors.grey)),
+          SliderTheme(
+            data: SliderThemeData(
+              trackHeight: 4,
+              thumbColor: StsysTheme.primary,
+              activeTrackColor: StsysTheme.primary,
+              inactiveTrackColor: StsysTheme.surfaceContainerHighest,
+              overlayColor: StsysTheme.primary.withValues(alpha: 0.2),
+            ),
+            child: Slider(
+              value: settings.maxSamples.toDouble(),
+              min: 3,
+              max: 15,
+              divisions: 4,
+              onChanged: (v) => settings.updateMaxSamples(v.toInt()),
+            ),
+          ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                '3s',
+                style: TextStyle(
+                  fontFamily: 'Inter',
+                  fontSize: 10,
+                  color: StsysTheme.onSurfaceVariant.withValues(alpha: 0.4),
+                ),
+              ),
+              Text(
+                '15s',
+                style: TextStyle(
+                  fontFamily: 'Inter',
+                  fontSize: 10,
+                  color: StsysTheme.onSurfaceVariant.withValues(alpha: 0.4),
+                ),
+              ),
+            ],
+          ),
         ],
       ),
     );
   }
+}
 
-  String _getDifficultyLabel(FirearmType type) {
-    switch (type) {
-      case FirearmType.pistol:
-        return 'Baseline';
-      case FirearmType.rifle:
-        return 'More stable';
-      case FirearmType.archery:
-        return 'Most strict';
-      case FirearmType.shotgun:
-        return 'Follow-through focus';
-    }
+class _ScoringGuide extends StatelessWidget {
+  final SettingsProvider settings;
+  const _ScoringGuide({required this.settings});
+
+  @override
+  Widget build(BuildContext context) {
+    final entries = [
+      ('ELITE', 95.0, const Color(0xFFFFD700)),
+      ('EXPERT', 85.0, const Color(0xFF4CAF50)),
+      ('ADVANCED', 70.0, const Color(0xFF2196F3)),
+      ('INTERMEDIATE', 50.0, const Color(0xFFFF9800)),
+      ('BEGINNER', 0.0, const Color(0xFFF44336)),
+    ];
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: StsysTheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        children: [
+          ...entries.map((e) => Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 8,
+                      height: 8,
+                      decoration: BoxDecoration(
+                        color: e.$3,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        e.$1,
+                        style: TextStyle(
+                          fontFamily: 'Manrope',
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 1,
+                          color: StsysTheme.onSurface,
+                        ),
+                      ),
+                    ),
+                    Text(
+                      '>${e.$2.toInt()}',
+                      style: TextStyle(
+                        fontFamily: 'Manrope',
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: StsysTheme.onSurfaceVariant.withValues(alpha: 0.4),
+                      ),
+                    ),
+                  ],
+                ),
+              )),
+          const SizedBox(height: 8),
+          Divider(color: StsysTheme.outlineVariant.withValues(alpha: 0.3), thickness: 1),
+          const SizedBox(height: 8),
+          Text(
+            'Difficulty: ${settings.firearmType.displayName} • ${settings.trainingMode.displayName}',
+            style: TextStyle(
+              fontFamily: 'Inter',
+              fontSize: 10,
+              letterSpacing: 1,
+              color: StsysTheme.onSurfaceVariant.withValues(alpha: 0.5),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }

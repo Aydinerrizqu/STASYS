@@ -16,21 +16,15 @@ class GyroRealtimeChart extends StatelessWidget {
     return Consumer<SensorDataProvider>(
       builder: (context, provider, child) {
         
-        // /// --- PERBAIKAN 1: BUAT SALINAN DATA (SNAPSHOT) ---
-        // Kita copy list-nya agar saat Provider mengupdate data di background,
-        // Chart tidak error karena index berubah tiba-tiba.
-        final List<DataPoint> xData ;
-        final List<DataPoint> yData ;
-        final List<DataPoint> zData ;
-
-        // Mengambil data dalam satu blok untuk memastikan konsistensi
-        final p = provider;
-        xData = List.from(p.gyroXData);
-        yData = List.from(p.gyroYData);
-        zData = List.from(p.gyroZData);
+        // Mengambil data langsung dari provider — stable references.
+        // _handleDiffUpdate now uses immutable assignment, so lists are already
+        // stable. No extra List.from() copy needed (Syncfusion creates its own internal copy).
+        final xData = provider.gyroXData;
+        final yData = provider.gyroYData;
+        final zData = provider.gyroZData;
 
         // Debug print (gunakan list hasil copy)
-        // debugPrint("Chart Points: ${xData.length}"); 
+        // debugPrint("Chart Points: ${xData.length}");
         
         return Card(
           color: Colors.white,

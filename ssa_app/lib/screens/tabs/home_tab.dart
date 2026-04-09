@@ -2,243 +2,438 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/session_provider.dart';
 import '../../providers/session_logger.dart';
+import '../../theme/app_theme.dart';
 import '../session_detail_screen.dart';
+import 'package:intl/intl.dart';
 
 class HomeTab extends StatelessWidget {
   const HomeTab({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.grey[50],
-      appBar: AppBar(
-        title: const Text('Training Sessions'),
-        backgroundColor: Colors.blue,
-        foregroundColor: Colors.white,
-        elevation: 2,
-        actions: [
-          IconButton(
-            onPressed: () => _showAboutDialog(context),
-            icon: const Icon(Icons.info_outline),
-          ),
-        ],
-      ),
-      body: Column(
-        children: [
-          // Stats Overview Card
-          _buildStatsOverview(),
-          
-          // Sessions List
-          Expanded(
-            child: _buildSessionsList(),
-          ),
-        ],
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _refreshSessions(context),
-        icon: const Icon(Icons.refresh),
-        label: const Text('Refresh'),
-        backgroundColor: Colors.blue,
-        foregroundColor: Colors.white,
-      ),
-    );
-  }
-
-  Widget _buildStatsOverview() {
     return Consumer<SessionProvider>(
       builder: (context, sessionProvider, child) {
         final sessions = sessionProvider.sessions;
-        
-        if (sessions.isEmpty) {
-          return const SizedBox.shrink();
-        }
 
-        // Calculate stats
-        int totalSessions = sessions.length;
-        double totalDuration = sessions.fold(0.0, (sum, session) => sum + session.duration);
-        double avgDuration = totalDuration / totalSessions;
-        
-        // Find latest session
-        //SessionLog latestSession = sessions.first;
-        
-        return Card(
-          margin: const EdgeInsets.all(16),
-          elevation: 4,
-          child: Padding(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Icon(Icons.analytics, color: Colors.blue, size: 28),
-                    const SizedBox(width: 12),
-                    Text(
-                      'Training Overview',
-                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.bold,
-                        color: Colors.blue,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                
-                // Stats Grid
-                Row(
-                  children: [
-                    Expanded(
-                      child: _buildStatItem(
-                        'Total Sessions',
-                        totalSessions.toString(),
-                        Icons.fitness_center,
-                        Colors.green,
-                      ),
-                    ),
-                    Expanded(
-                      child: _buildStatItem(
-                        'Total Duration',
-                        '${(totalDuration / 60).toStringAsFixed(1)} min',
-                        Icons.timer,
-                        Colors.orange,
-                      ),
-                    ),
-                    Expanded(
-                      child: _buildStatItem(
-                        'Avg Duration',
-                        '${avgDuration.toStringAsFixed(1)}s',
-                        Icons.speed,
-                        Colors.purple,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
+        return CustomScrollView(
+          slivers: [
+            // Stats Header
+            SliverToBoxAdapter(
+              child: _buildStatsHeader(sessions),
             ),
-          ),
-        );
-      },
-    );
-  }
 
-  Widget _buildStatItem(String title, String value, IconData icon, Color color) {
-    return Column(
-      children: [
-        Icon(icon, color: color, size: 24),
-        const SizedBox(height: 8),
-        Text(
-          title,
-          style: TextStyle(
-            fontSize: 12,
-            color: Colors.grey[600],
-          ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          value,
-          style: TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.bold,
-            color: color,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildSessionsList() {
-    return Consumer<SessionProvider>(
-      builder: (context, sessionProvider, child) {
-        // Sort sessions by date (newest first)
-        final sortedSessions = sessionProvider.sessions
-            .toList()
-            ..sort((a, b) => b.date.compareTo(a.date));
-
-        if (sortedSessions.isEmpty) {
-          return Center(
-            child: Text(
-              'No sessions recorded yet',
-              style: TextStyle(color: Colors.grey),
-            ),
-          );
-        }
-
-        return ListView.builder(
-          itemCount: sortedSessions.length,
-          itemBuilder: (context, index) {
-            final session = sortedSessions[index];
-            final sessionNumber = sortedSessions.length - index;
-            final formattedTime = '${session.date.hour}:${session.date.minute.toString().padLeft(2, '0')}';
-            final formattedDate = '${session.date.day}/${session.date.month}/${session.date.year}';
-            
-            return GestureDetector(
-              onLongPress: () => _showDeleteDialog(context, sessionProvider, session),
-              child: ListTile(
-                leading: Icon(Icons.analytics, color: Colors.blue),
-                title: Text('Session $sessionNumber - $formattedTime'),
-                subtitle: Text(formattedDate),
-                trailing: Icon(Icons.chevron_right, color: Colors.grey),
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => SessionDetailScreen(session: session),
+            // Session List
+            if (sessions.isEmpty)
+              SliverFillRemaining(
+                hasScrollBody: false,
+                child: _buildEmptyState(),
+              )
+            else
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 100),
+                sliver: SliverList(
+                  delegate: SliverChildBuilderDelegate(
+                    (context, index) {
+                      // sessions is already sorted newest-first in SessionProvider.loadSessions()
+                      final session = sessions[index];
+                      return _SessionCard(
+                        session: session,
+                        sessionNumber: sessions.length - index,
+                        onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) =>
+                                SessionDetailScreen(session: session),
+                          ),
+                        ),
+                        onDelete: () => _showDeleteDialog(
+                            context, sessionProvider, session),
+                      );
+                    },
+                    childCount: sessions.length,
                   ),
                 ),
               ),
-            );
-          },
+          ],
         );
       },
     );
   }
 
-  void _showDeleteDialog(BuildContext context, SessionProvider sessionProvider, SessionLog session) {
+  Widget _buildStatsHeader(List<SessionLog> sessions) {
+    if (sessions.isEmpty) return const SizedBox.shrink();
+
+    final totalSessions = sessions.length;
+    final totalDuration = sessions.fold<double>(
+        0.0, (sum, s) => sum + s.duration);
+    final avgScore = sessions.isEmpty
+        ? 0.0
+        : sessions.map((s) => s.averageScore).reduce((a, b) => a + b) /
+            sessions.length;
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: StsysTheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        children: [
+          _StatBox(
+            label: 'SESSIONS',
+            value: '$totalSessions',
+            color: StsysTheme.primary,
+          ),
+          Container(
+            width: 1,
+            height: 40,
+            color: StsysTheme.outlineVariant.withValues(alpha: 0.3),
+            margin: const EdgeInsets.symmetric(horizontal: 12),
+          ),
+          _StatBox(
+            label: 'AVG SCORE',
+            value: avgScore.toStringAsFixed(1),
+            color: StsysTheme.secondary,
+          ),
+          Container(
+            width: 1,
+            height: 40,
+            color: StsysTheme.outlineVariant.withValues(alpha: 0.3),
+            margin: const EdgeInsets.symmetric(horizontal: 12),
+          ),
+          _StatBox(
+            label: 'TOTAL MIN',
+            value: '${(totalDuration / 60).toStringAsFixed(0)}',
+            color: StsysTheme.tertiary,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEmptyState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.ads_click_outlined,
+            size: 64,
+            color: StsysTheme.onSurface.withValues(alpha: 0.15),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'NO SESSIONS YET',
+            style: TextStyle(
+              fontFamily: 'Manrope',
+              fontWeight: FontWeight.w800,
+              fontSize: 16,
+              letterSpacing: 2,
+              color: StsysTheme.onSurface.withValues(alpha: 0.3),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Connect your device and start training',
+            style: TextStyle(
+              fontFamily: 'Inter',
+              fontSize: 12,
+              color: StsysTheme.onSurfaceVariant.withValues(alpha: 0.5),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showDeleteDialog(
+      BuildContext ctx, SessionProvider provider, SessionLog session) {
     showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Delete Session?'),
-        content: Text('Are you sure you want to delete this session?'),
+      context: ctx,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: StsysTheme.surfaceContainerHigh,
+        title: Text(
+          'DELETE SESSION?',
+          style: StsysText.labelBold.copyWith(color: StsysTheme.error),
+        ),
+        content: Text(
+          'This action cannot be undone.',
+          style: StsysText.body,
+        ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text('Cancel'),
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(
+              'CANCEL',
+              style: TextStyle(
+                fontFamily: 'Manrope',
+                fontWeight: FontWeight.w700,
+                color: StsysTheme.onSurfaceVariant,
+                letterSpacing: 1,
+              ),
+            ),
           ),
           TextButton(
             onPressed: () {
-              sessionProvider.deleteSession(session);
-              Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('Session deleted')),
-              );
+              provider.deleteSession(session);
+              Navigator.pop(ctx);
             },
-            child: Text('Delete', style: TextStyle(color: Colors.red)),
+            child: Text(
+              'DELETE',
+              style: TextStyle(
+                fontFamily: 'Manrope',
+                fontWeight: FontWeight.w800,
+                color: StsysTheme.error,
+                letterSpacing: 1,
+              ),
+            ),
           ),
         ],
       ),
     );
   }
+}
 
-  void _showAboutDialog(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text('About STASYS'),
-        content: Text('Sports Training Analysis System v1.0'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text('OK'),
+// ============================================
+// Stat Box
+// ============================================
+class _StatBox extends StatelessWidget {
+  final String label;
+  final String value;
+  final Color color;
+
+  const _StatBox({
+    required this.label,
+    required this.value,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Text(
+            label,
+            style: TextStyle(
+              fontFamily: 'Inter',
+              fontSize: 9,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 1.5,
+              color: StsysTheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            value,
+            style: TextStyle(
+              fontFamily: 'Manrope',
+              fontSize: 20,
+              fontWeight: FontWeight.w900,
+              color: color,
+            ),
           ),
         ],
       ),
     );
   }
+}
 
-  void _refreshSessions(BuildContext context) {
-    final sessionProvider = Provider.of<SessionProvider>(context, listen: false);
-    sessionProvider.loadSessions();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Sessions refreshed')),
+// ============================================
+// Session Card
+// ============================================
+class _SessionCard extends StatefulWidget {
+  final SessionLog session;
+  final int sessionNumber;
+  final VoidCallback onTap;
+  final VoidCallback onDelete;
+
+  const _SessionCard({
+    required this.session,
+    required this.sessionNumber,
+    required this.onTap,
+    required this.onDelete,
+  });
+
+  @override
+  State<_SessionCard> createState() => _SessionCardState();
+}
+
+class _SessionCardState extends State<_SessionCard> {
+  double _hoverProgress = 0;
+
+  @override
+  Widget build(BuildContext context) {
+    final date = widget.session.date;
+    final avgScore = widget.session.averageScore;
+    final scoreColor = StsysTheme.getScoreColor(avgScore);
+
+    final dateStr = DateFormat('EEEE, dd MMMM yyyy').format(date).toUpperCase();
+    final timeStr = DateFormat('HH:mm').format(date);
+    final firearmType = widget.session.firearmType.displayName;
+
+    return GestureDetector(
+      onTapDown: (_) => setState(() => _hoverProgress = 1),
+      onTapUp: (_) {
+        setState(() => _hoverProgress = 0);
+        widget.onTap();
+      },
+      onTapCancel: () => setState(() => _hoverProgress = 0),
+      onLongPress: widget.onDelete,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOut,
+        margin: const EdgeInsets.only(bottom: 12),
+        child: Column(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: StsysTheme.surfaceContainerLow,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                children: [
+                  // Date + time
+                  Expanded(
+                    flex: 4,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          dateStr,
+                          style: TextStyle(
+                            fontFamily: 'Manrope',
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 1,
+                            color: StsysTheme.primary,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          '$timeStr',
+                          style: TextStyle(
+                            fontFamily: 'Manrope',
+                            fontSize: 20,
+                            fontWeight: FontWeight.w700,
+                            color: StsysTheme.onSurface,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: StsysTheme.surfaceContainerHighest,
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(
+                              color: StsysTheme.outlineVariant.withValues(alpha: 0.2),
+                            ),
+                          ),
+                          child: Text(
+                            firearmType.toUpperCase(),
+                            style: TextStyle(
+                              fontFamily: 'Inter',
+                              fontSize: 10,
+                              fontWeight: FontWeight.w600,
+                              letterSpacing: 1,
+                              color: StsysTheme.onSurface.withValues(alpha: 0.7),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  // Shots badge
+                  Expanded(
+                    flex: 2,
+                    child: Column(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 8,
+                          ),
+                          decoration: BoxDecoration(
+                            color: StsysTheme.surfaceContainerHighest,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.ads_click,
+                                size: 14,
+                                color: StsysTheme.primary,
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                '${widget.session.shots.length}',
+                                style: TextStyle(
+                                  fontFamily: 'Manrope',
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w800,
+                                  color: StsysTheme.onSurface,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  // Avg Score
+                  Expanded(
+                    flex: 2,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Text(
+                          avgScore.toStringAsFixed(2),
+                          style: TextStyle(
+                            fontFamily: 'Manrope',
+                            fontSize: 28,
+                            fontWeight: FontWeight.w900,
+                            color: scoreColor,
+                            letterSpacing: -1,
+                          ),
+                        ),
+                        Text(
+                          'AVG',
+                          style: TextStyle(
+                            fontFamily: 'Inter',
+                            fontSize: 9,
+                            fontWeight: FontWeight.w500,
+                            letterSpacing: 1.5,
+                            color: StsysTheme.onSurfaceVariant.withValues(alpha: 0.5),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            // Hover gradient line
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 500),
+              height: 2,
+              decoration: BoxDecoration(
+                gradient: StsysTheme.tacticalGradient,
+                borderRadius: const BorderRadius.vertical(bottom: Radius.circular(12)),
+              ),
+              width: _hoverProgress > 0 ? double.infinity : 0,
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

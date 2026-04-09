@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/session_provider.dart';
+import '../../providers/sensor_data_provider.dart';
 import '../../providers/session_logger.dart';
 import '../../theme/app_theme.dart';
 import '../session_detail_screen.dart';
@@ -19,7 +20,11 @@ class HomeTab extends StatelessWidget {
           slivers: [
             // Stats Header
             SliverToBoxAdapter(
-              child: _buildStatsHeader(sessions),
+              child: Consumer<SensorDataProvider>(
+                builder: (context, sensor, _) {
+                  return _buildStatsHeader(sessions, sensor.batteryLevel);
+                },
+              ),
             ),
 
             // Session List
@@ -60,7 +65,7 @@ class HomeTab extends StatelessWidget {
     );
   }
 
-  Widget _buildStatsHeader(List<SessionLog> sessions) {
+  Widget _buildStatsHeader(List<SessionLog> sessions, int batteryLevel) {
     if (sessions.isEmpty) return const SizedBox.shrink();
 
     final totalSessions = sessions.length;
@@ -107,6 +112,9 @@ class HomeTab extends StatelessWidget {
             value: '${(totalDuration / 60).toStringAsFixed(0)}',
             color: StsysTheme.tertiary,
           ),
+          const Spacer(),
+          // Battery indicator
+          _BatteryIndicator(level: batteryLevel),
         ],
       ),
     );
@@ -434,6 +442,49 @@ class _SessionCardState extends State<_SessionCard> {
           ],
         ),
       ),
+    );
+  }
+}
+
+// ============================================
+// Battery Indicator
+// ============================================
+class _BatteryIndicator extends StatelessWidget {
+  final int level;
+
+  const _BatteryIndicator({required this.level});
+
+  IconData get _icon {
+    if (level >= 80) return Icons.battery_full;
+    if (level >= 60) return Icons.battery_5_bar;
+    if (level >= 40) return Icons.battery_4_bar;
+    if (level >= 20) return Icons.battery_2_bar;
+    return Icons.battery_alert;
+  }
+
+  Color get _color {
+    if (level >= 60) return const Color(0xFF4CAF50);
+    if (level >= 20) return const Color(0xFFFF9800);
+    return const Color(0xFFF44336);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(_icon, color: _color, size: 20),
+        const SizedBox(width: 4),
+        Text(
+          '$level%',
+          style: TextStyle(
+            fontFamily: 'Manrope',
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+            color: _color,
+          ),
+        ),
+      ],
     );
   }
 }

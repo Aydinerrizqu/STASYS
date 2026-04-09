@@ -290,6 +290,7 @@ class _PostShotTabState extends State<_PostShotTab> {
   ShotResult? _selectedShot;
   int? _selectedShotIndex;
   bool _needsShotUpdate = false;
+  bool _hasUserSelected = false;
 
   @override
   void didChangeDependencies() {
@@ -312,6 +313,9 @@ class _PostShotTabState extends State<_PostShotTab> {
     final shots = sensor.sessionShots;
 
     widget.onShotCountChanged(shots.length);
+
+    // Only auto-select latest if user hasn't manually selected a shot
+    if (_hasUserSelected) return;
 
     if (shots.isNotEmpty && shots.length > widget.lastShotCount) {
       _updateSelection(shots.last);
@@ -346,6 +350,23 @@ class _PostShotTabState extends State<_PostShotTab> {
         _selectedShotIndex = null;
       });
     }
+  }
+
+  void _onUserTapShot(ShotResult shot) {
+    setState(() {
+      _hasUserSelected = true;
+    });
+    _updateSelection(shot);
+  }
+
+  void _resetToLive() {
+    final sensor = context.read<SensorDataProvider>();
+    final shots = sensor.sessionShots;
+    setState(() {
+      _hasUserSelected = false;
+      _selectedShot = shots.isNotEmpty ? shots.last : null;
+      _selectedShotIndex = shots.isNotEmpty ? shots.length - 1 : null;
+    });
   }
 
   @override
@@ -402,13 +423,61 @@ class _PostShotTabState extends State<_PostShotTab> {
               child: Container(
                 color: StsysTheme.surfaceContainerLowest,
                 padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: ShotHistoryList(
-                  shots: shots,
-                  selectedShot: _selectedShot,
-                  onShotSelected: (shot) => _updateSelection(shot),
-                  getScoreColor: widget.getScoreColor,
-                  formatTime: widget.formatTime,
-                  formatScore: (s) => s.toInt().toString(),
+                child: Column(
+                  children: [
+                    // Back to Live button
+                    if (_hasUserSelected)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: GestureDetector(
+                          onTap: _resetToLive,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 6,
+                            ),
+                            decoration: BoxDecoration(
+                              color: StsysTheme.primary.withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(
+                                color: StsysTheme.primary.withValues(alpha: 0.3),
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.live_tv,
+                                  size: 12,
+                                  color: StsysTheme.primary,
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  'BACK TO LIVE',
+                                  style: TextStyle(
+                                    fontFamily: 'Manrope',
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w800,
+                                    letterSpacing: 1,
+                                    color: StsysTheme.primary,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    Expanded(
+                      child: ShotHistoryList(
+                        shots: shots,
+                        selectedShot: _selectedShot,
+                        onShotSelected: _onUserTapShot,
+                        getScoreColor: widget.getScoreColor,
+                        formatTime: widget.formatTime,
+                        formatScore: (s) => s.toInt().toString(),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),

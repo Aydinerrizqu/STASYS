@@ -1,8 +1,8 @@
 # STASYS - Shooter Stability Analysis System
 
 > **Note**: For Flutter app development, see `ssa_app/CLAUDE.md`.
-> For firmware development, see `Firmware_STSYS32/README.md`.
-> That file covers PlatformIO build, module architecture, and hardware pinout.
+> For firmware development, see `Firmware_STSYS32/CLAUDE.md`.
+> That file covers PlatformIO build, module architecture, remote sync workflow, and hardware pinout.
 
 ## Project Overview
 
@@ -318,6 +318,87 @@ Preferences (built-in)
 - UI throttle: 50ms → 33ms (~30Hz)
 - Smart `shouldRepaint` + `RepaintBoundary` on all CustomPainters
 - Recording timer: global `notifyListeners()` → `ValueNotifier<Duration>`
+
+---
+
+## UI/UX Design Mockups (NOT YET IMPLEMENTED)
+
+HTML mockups exist for visual reference. Both designs are **not yet implemented** in Flutter code.
+
+```
+d:\Aydiner\Projek Flutter SSA\
+└── UI UX Design\
+    ├── Currently_used\                  # Exact replica of current Flutter UI
+    │   ├── index.html
+    │   ├── splash-screen.html
+    │   ├── connection-screen.html
+    │   ├── tracking-mode-selection.html
+    │   ├── tracking-live.html
+    │   ├── history-screen.html
+    │   ├── settings-screen.html
+    │   └── session-detail.html
+    └── DESIGN\
+        ├── DESIGN 1 (Redesign Tampilan - 2026-04-10)\
+        │   ├── index.html
+        │   ├── splash-screen.html
+        │   ├── connection-screen.html
+        │   ├── tracking-mode-selection.html
+        │   ├── tracking-live.html
+        │   ├── history-screen.html
+        │   ├── settings-screen.html
+        │   └── session-detail.html
+        └── DESIGN 2 (Night Ops HUD - 2026-04-10)\
+            ├── index.html
+            ├── splash-screen.html
+            ├── connection-screen.html
+            ├── tracking-mode-selection.html
+            ├── tracking-live.html
+            ├── history-screen.html
+            ├── settings-screen.html
+            └── session-detail.html
+```
+
+**Preview**: Open any `.html` file in Chrome/Edge/Firefox. Uses Google Fonts + Phosphor Icons CDN — no build needed.
+
+---
+
+### DESIGN 1 — Evolutionary Redesign
+
+**Approach**: Polish and refine from existing Tactical Precision design system.
+
+| Element | Change from current |
+|---------|-------------------|
+| Base bg | `#0D0D0D` (deeper dark) |
+| Primary accent | `#FFB693` (warm orange) |
+| Typography | Manrope + Inter, larger display, tighter body |
+| Cards | Glassmorphism with backdrop blur, rounded corners (12-16px) |
+| Animations | Pulse dots, fade transitions, gradient shimmer on buttons |
+| Score display | Ring/badge with tier colors (Elite/Expert/Advanced/etc.) |
+| Empty states | Illustrated with clear CTAs |
+
+**Preview**: `UI UX Design/DESIGN/DESIGN 1 (Redesign Tampilan - 2026-04-10)/index.html`
+
+---
+
+### DESIGN 2 — Night Ops HUD (2026-04-10)
+
+**Approach**: Military/tactical HUD aesthetic with advanced data visualization.
+
+| Element | Change |
+|---------|--------|
+| Base bg | `#080C10` (near-black blue) |
+| Surface | `#0D1520` (dark navy) |
+| Primary accent | `#FF6B3D` (tactical orange-red) |
+| Secondary | `#00D4FF` (cyan HUD) |
+| Typography | **Orbitron** (HUD/tech display) + Inter (body) |
+| Icons | Phosphor Icons (duotone) |
+| Cards | Frosted glass with corner bracket decorations + cyan glow |
+| Score display | HUD ring with animated fill + glow pulse |
+| Charts | Animated SVG scan line sweeping, glow layers |
+| Animations | Radar sweep, scan effects, staggered reveals |
+| Status indicators | Animated radar pulse, signal bars |
+
+**Preview**: `UI UX Design/DESIGN/DESIGN 2 (Night Ops HUD - 2026-04-10)/index.html`
 
 ---
 

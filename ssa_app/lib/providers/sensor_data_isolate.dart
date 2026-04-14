@@ -24,7 +24,7 @@ class SensorIsolateConfig {
   SensorIsolateConfig({
     required this.mainSendPort,
     this.displayWindowSeconds = 5,
-    this.uiUpdateIntervalMs = 50,
+    this.uiUpdateIntervalMs = 16, // 60 Hz for smooth 60fps UI updates
   });
 }
 

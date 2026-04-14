@@ -1,9 +1,8 @@
 // ============================================
-// File: providers/session_logger.dart (Baru)
+// File: providers/session_logger.dart
 // ============================================
-import 'package:shared_preferences/shared_preferences.dart';
-import 'dart:convert';
 import '../models/data_models.dart';
+import '../services/database_service.dart';
 
 // Model untuk satu sesi latihan yang disimpan
 class SessionLog {
@@ -106,41 +105,21 @@ class SessionLog {
   }
 }
 
-// Kelas yang bertanggung jawab untuk menyimpan & memuat dari SharedPreferences
+// Kelas yang bertanggung jawab untuk menyimpan & memuat dari SQLite
 class SessionLogger {
-  static const _key = 'session_logs';
+  final DatabaseService _db;
+
+  SessionLogger({DatabaseService? db}) : _db = db ?? DatabaseService();
 
   Future<void> saveSession(SessionLog log) async {
-    final prefs = await SharedPreferences.getInstance();
-    final List<SessionLog> allLogs = await loadAllSessions();
-    allLogs.add(log);
-
-    // Ubah list of logs menjadi list of strings (JSON)
-    List<String> stringList = allLogs.map((log) => json.encode(log.toMap())).toList();
-    await prefs.setStringList(_key, stringList);
+    await _db.saveSession(log);
   }
 
   Future<List<SessionLog>> loadAllSessions() async {
-    final prefs = await SharedPreferences.getInstance();
-    final List<String>? stringList = prefs.getStringList(_key);
-
-    if (stringList == null) {
-      return [];
-    }
-
-    // Ubah list of strings kembali menjadi list of logs
-    return stringList.map((s) => SessionLog.fromMap(json.decode(s))).toList();
+    return await _db.loadAllSessions();
   }
-  
+
   Future<void> deleteSession(String sessionId) async {
-  final prefs = await SharedPreferences.getInstance();
-  final List<SessionLog> allLogs = await loadAllSessions();
-  
-  // Remove the session with matching ID
-  allLogs.removeWhere((log) => log.id == sessionId);
-  
-  // Save updated list
-  List<String> stringList = allLogs.map((log) => json.encode(log.toMap())).toList();
-  await prefs.setStringList(_key, stringList);
+    await _db.deleteSession(sessionId);
   }
 }

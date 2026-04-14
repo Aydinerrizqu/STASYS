@@ -18,22 +18,25 @@ ssa_app/
 │   ├── main.dart                    # App entry, MultiProvider + GoRouter
 │   ├── router/app_router.dart       # GoRouter configuration (ShellRoute)
 │   ├── theme/app_theme.dart         # Dark STSYS theme (#FFB693 primary, #131313 bg, Manrope/Inter fonts)
+│   ├── services/
+│   │   ├── database_helper.dart     # SQLite singleton, schema creation, migrations
+│   │   ├── database_service.dart    # CRUD operations, binary BLOB encoding
+│   │   └── export_service.dart      # CSV export via Share Sheet
 │   ├── providers/
-│   │   ├── bluetooth_provider.dart   # 8-state packet parser, CRC16-CCITT, HMAC-SHA256 auth
-│   │   │                              # + getConfig(), setDataMode(), CMD_SET_CONFIG, EVT_SENSOR_HEALTH (0x13)
+│   │   ├── bluetooth_provider.dart  # 8-state packet parser, CRC16-CCITT, HMAC-SHA256 auth
 │   │   │                              # + connectedDeviceName getter
 │   │   ├── sensor_data_provider.dart  # UI state, isolate communication, demo mode
 │   │   ├── sensor_data_isolate.dart  # Shot detection + 3-phase analysis (hold/press/recoil)
 │   │   ├── settings_provider.dart     # Firearm type, training mode, demo mode, preferences
 │   │   ├── session_provider.dart     # Session list management
-│   │   └── session_logger.dart       # Save/load sessions to SharedPreferences
+│   │   └── session_logger.dart       # Delegates to DatabaseService (SQLite)
 │   ├── screens/
 │   │   ├── splash_screen.dart        # STSYS branding, 2s auto-navigate
 │   │   ├── connection_screen.dart     # BT scan/connect + Explore App demo mode
 │   │   ├── main_shell.dart           # Bottom 3-tab navigation shell
 │   │   ├── tracking_screen.dart      # Mode selection (4 firearm cards)
 │   │   ├── tracking_mode_view.dart   # Live graph with mode change dialog
-│   │   ├── history_screen.dart       # Session list + clear all + refresh
+│   │   ├── history_screen.dart       # Session list + export CSV + clear all + refresh
 │   │   ├── settings_screen.dart      # BT scan overlay + settings
 │   │   └── session_detail_screen.dart # POST SHOT + shot chips
 │   ├── screens/tabs/
@@ -162,8 +165,8 @@ Located in `providers/sensor_data_isolate.dart` → `_startCalibration()`.
 
 ## Session & Shot Data
 
-### SessionLog (session_logger.dart)
-Stores per-session data: gyro/accel time series, firearm type, training mode, list of shots.
+### SessionLog (session_logger.dart → DatabaseService/SQLite)
+Per-session data stored in SQLite with binary BLOB encoding.
 `session_provider.dart` manages session list with `loadSessions()`, `deleteSession()`.
 
 ### ShotResult (data_models.dart)
@@ -183,9 +186,26 @@ Per-shot scoring:
 
 ## Settings Persistence
 
-- **SharedPreferences** for app settings
-- **SessionLogger** stores `SessionLog` objects as JSON in SharedPreferences
+- **SharedPreferences** for app settings only
+- **SQLite** for session/shots persistence (stsys_sessions.db)
 - **Key strings**: `firearmType`, `trainingMode`, `maxSamples`
+
+---
+
+## Export Service
+
+`services/export_service.dart` exports all sessions to CSV via Share Sheet.
+
+**CSV Format**:
+```csv
+# SESSIONS
+session_date,firearm_type,training_mode,duration_sec,avg_score,best_score,worst_score,shot_count
+
+# SHOTS
+session_date,firearm_type,training_mode,shot_timestamp,total_score,hold_score,press_score,recoil_score,elevation_score,windage_score,travel_distance,peak_jerk
+```
+
+Export button in HistoryScreen header (visible when sessions exist).
 
 ---
 
@@ -196,7 +216,10 @@ flutter_bluetooth_serial: ^0.4.0      # Bluetooth Classic
 syncfusion_flutter_charts: ^30.2.7   # Charts
 fl_chart: ^1.0.0                      # Alternative charts
 provider: ^6.1.2                      # State management
-shared_preferences: ^2.2.2            # Local storage
+shared_preferences: ^2.2.2            # App settings only
+sqflite: ^2.3.2                       # Session/shots persistence (SQLite)
+path: ^1.9.0                          # Path utilities for DB
+share_plus: ^10.0.0                  # CSV export via Share Sheet
 permission_handler: ^12.0.1           # Android permissions
 path_provider: ^2.1.1                  # File paths
 crypto: ^3.0.3                        # SHA256 auth
@@ -210,7 +233,7 @@ go_router: ^15.1.0                    # Navigation routing
 
 | Branch | Status | Description |
 |--------|---------|-------------|
-| `develop-migrasi-firmware-v3` | **Active** | Current working branch — App shell redesign with GoRouter, 3-tab nav (Tracking/History/Settings), demo mode, session detail redesign |
+| `develop-migrasi-firmware-v3` | **Active** | Current working branch — App shell redesign with GoRouter, 3-tab nav (Tracking/History/Settings), demo mode, SQLite persistence, CSV export |
 | `backup-dark-theme-redesign` | Backup | Full backup of all uncommitted changes pushed to remote |
 | `develop` | Staged | Dark theme elements pending merge |
 | `main` | Base | Initial commit only |
@@ -221,7 +244,6 @@ go_router: ^15.1.0                    # Navigation routing
 
 ### Pending
 - [ ] **Trace window sync with Python** — Flutter 2s window vs Python 0.5s cursor-normalized.
-- [ ] **Export service** — `export_service.dart` not yet implemented.
 - [ ] **MantisX feature parity** — drill modes, trend analysis, split time, session notes, etc.
 - [ ] **Frame freeze / gralloc4 GPU failure** — GPU/driver incompatibility with Impeller rendering engine. **Not app code issue**. Test on different device.
 

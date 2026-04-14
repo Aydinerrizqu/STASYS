@@ -2,9 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import '../providers/session_provider.dart';
-import '../providers/bluetooth_provider.dart';
 import '../providers/settings_provider.dart';
-import '../providers/sensor_data_provider.dart';
+import '../services/export_service.dart';
 import '../theme/app_theme.dart';
 import 'session_detail_screen.dart';
 
@@ -86,6 +85,37 @@ class _HistoryScreenState extends State<HistoryScreen>
     final sessions = List.from(provider.sessions);
     for (final session in sessions) {
       await provider.deleteSession(session);
+    }
+  }
+
+  void _exportSessions(BuildContext ctx) async {
+    final provider = ctx.read<SessionProvider>();
+    final sessions = provider.sessions;
+
+    if (sessions.isEmpty) {
+      ScaffoldMessenger.of(ctx).showSnackBar(
+        SnackBar(
+          content: const Text('No sessions to export'),
+          backgroundColor: StsysTheme.error,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
+    try {
+      final exportService = ExportService();
+      await exportService.shareSessionsCSV(sessions);
+    } catch (e) {
+      if (ctx.mounted) {
+        ScaffoldMessenger.of(ctx).showSnackBar(
+          SnackBar(
+            content: Text('Export failed: $e'),
+            backgroundColor: StsysTheme.error,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
     }
   }
 
@@ -391,18 +421,26 @@ class _HistoryScreenState extends State<HistoryScreen>
             },
           ),
           const Spacer(),
-          Consumer<BluetoothProvider>(
-            builder: (context, bt, _) {
-              return StatusBadge(
-                isConnected: bt.isConnected,
-                deviceName: bt.isConnected ? bt.connectedDeviceName : null,
+          Consumer<SessionProvider>(
+            builder: (context, sessionProvider, _) {
+              if (sessionProvider.sessions.isEmpty) {
+                return const SizedBox.shrink();
+              }
+              return GestureDetector(
+                onTap: () => _exportSessions(context),
+                child: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: StsysTheme.surfaceContainerHigh,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(
+                    Icons.share,
+                    size: 20,
+                    color: StsysTheme.primary,
+                  ),
+                ),
               );
-            },
-          ),
-          const SizedBox(width: 8),
-          Consumer<SensorDataProvider>(
-            builder: (context, sensor, _) {
-              return _BatteryIndicator(level: sensor.batteryLevel);
             },
           ),
           const SizedBox(width: 8),
@@ -465,48 +503,6 @@ class _HistoryScreenState extends State<HistoryScreen>
           ),
         ],
       ),
-    );
-  }
-}
-
-// ============================================
-// Battery Indicator
-// ============================================
-class _BatteryIndicator extends StatelessWidget {
-  final int level;
-  const _BatteryIndicator({required this.level});
-
-  IconData get _icon {
-    if (level >= 80) return Icons.battery_full;
-    if (level >= 60) return Icons.battery_5_bar;
-    if (level >= 40) return Icons.battery_4_bar;
-    if (level >= 20) return Icons.battery_2_bar;
-    return Icons.battery_alert;
-  }
-
-  Color get _color {
-    if (level >= 60) return const Color(0xFF4CAF50);
-    if (level >= 20) return const Color(0xFFFF9800);
-    return const Color(0xFFF44336);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(_icon, color: _color, size: 18),
-        const SizedBox(width: 2),
-        Text(
-          '$level%',
-          style: TextStyle(
-            fontFamily: 'Manrope',
-            fontSize: 11,
-            fontWeight: FontWeight.w700,
-            color: _color,
-          ),
-        ),
-      ],
     );
   }
 }

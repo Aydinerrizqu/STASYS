@@ -139,7 +139,7 @@ class SensorDataProvider extends ChangeNotifier {
     final config = SensorIsolateConfig(
       mainSendPort: _mainReceivePort!.sendPort,
       displayWindowSeconds: 5, // 5 detik window
-      uiUpdateIntervalMs: 50, // Update setiap 50ms = 20 FPS
+      uiUpdateIntervalMs: 16, // Update setiap 16ms = 60 FPS
     );
 
     _dataIsolate = await Isolate.spawn(
@@ -238,7 +238,7 @@ class SensorDataProvider extends ChangeNotifier {
 
     _gyroXData.addAll(List<DataPoint>.from(data['gyroX']));
     _gyroXData.removeWhere((p) => p.timestamp < cutoffTimestamp);
-    
+
     _gyroYData.addAll(List<DataPoint>.from(data['gyroY']));
     _gyroYData.removeWhere((p) => p.timestamp < cutoffTimestamp);
 

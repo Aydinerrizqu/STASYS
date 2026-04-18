@@ -321,9 +321,16 @@ lib_deps:
 
 ## Known Issues / TODOs
 
+### Firmware (Firmware_STSYS32_XIAO/)
+- [ ] **LED tidak menyala setelah upload** (2026-04-18) — Firmware DFU upload berhasil, tapi LED RGB mati setelah restart. Kemungkinan LED pin conflict atau IMU init failure. Lihat `Firmware_STSYS32_XIAO/CLAUDE.md` untuk detail debugging.
+
 ### Pending
 - [ ] **Frame freeze / gralloc4 GPU buffer failure** — GPU/driver incompatibility with Impeller rendering engine. **Not app code issue**. Test on different device.
 - [ ] **Trace window sync with Python** — Flutter 2s window vs Python 0.5s cursor-normalized.
+
+### Done (2026-04-18)
+- [x] **Flutter BleTraceSample parsing fix** — 14-byte struct mismatch (firmware) vs 20-byte (Flutter). Fixed data.length check, accel range (16g), gyro range (200 dps).
+- [x] **BLE connection data streaming** — Data successfully received from STASYS-1 device.
 
 ---
 

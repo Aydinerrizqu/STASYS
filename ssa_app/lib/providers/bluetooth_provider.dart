@@ -472,7 +472,7 @@ class BluetoothProvider extends ChangeNotifier {
   // BLE DATA HANDLERS
   void _onTraceData(Uint8List data) {
     _totalNotificationsReceived++;
-    if (data.length < 20) {
+    if (data.length < 14) {
       _invalidNotificationsCount++;
       debugPrint('[BLE-TRACE] Too short: ${data.length} bytes');
       return;
@@ -482,13 +482,13 @@ class BluetoothProvider extends ChangeNotifier {
       final sample = BleTraceSample.fromBytes(data);
       debugPrint('[BLE-TRACE] ax=${sample.ax.toStringAsFixed(2)} ay=${sample.ay.toStringAsFixed(2)} az=${sample.az.toStringAsFixed(2)} gx=${sample.gx.toStringAsFixed(2)} gy=${sample.gy.toStringAsFixed(2)} gz=${sample.gz.toStringAsFixed(2)}');
 
-      // Validate ranges
-      if (sample.ax.abs() > 250.0 || sample.ay.abs() > 250.0 || sample.az.abs() > 250.0) {
+      // Validate ranges (LSM6DS3: ±16g accel, ±2000 dps gyro ÷ 10 = ±200)
+      if (sample.ax.abs() > 16.0 || sample.ay.abs() > 16.0 || sample.az.abs() > 16.0) {
         _invalidNotificationsCount++;
         debugPrint('[BLE-TRACE] Accel out of range');
         return;
       }
-      if (sample.gx.abs() > 100.0 || sample.gy.abs() > 100.0 || sample.gz.abs() > 100.0) {
+      if (sample.gx.abs() > 200.0 || sample.gy.abs() > 200.0 || sample.gz.abs() > 200.0) {
         _invalidNotificationsCount++;
         debugPrint('[BLE-TRACE] Gyro out of range');
         return;

@@ -242,8 +242,19 @@ go_router: ^15.1.0                    # Navigation routing
 
 ## Known Issues / TODOs
 
+### Flutter App Issues (2026-04-18)
+- [ ] **Graph jitter/patah-patah** — BLE data streaming causes choppy live trace. Data arrives but rendering is not smooth.
+- [ ] **BLE connection unstable** — Device sometimes disconnects after a few seconds of streaming.
+
+### Firmware Issues
+- [ ] **LED tidak menyala setelah upload** — Firmware DFU upload berhasil, tapi LED RGB mati setelah restart. Kemungkinan LED pin conflict atau IMU init failure.
+
 ### Pending
 - [ ] **Trace window sync with Python** — Flutter 2s window vs Python 0.5s cursor-normalized.
+
+### Done (2026-04-18)
+- [x] **BleTraceSample parsing fix** — Fixed 14-byte struct mismatch (firmware) vs 20-byte (Flutter). Changed data.length check from <20 to <14, accel range to ±16g, gyro range to ±200 dps.
+- [x] **BLE data streaming working** — Data successfully received from STASYS-1 device via flutter_blue_plus GATT notifications.
 - [ ] **MantisX feature parity** — drill modes, trend analysis, split time, session notes, etc.
 - [ ] **Frame freeze / gralloc4 GPU failure** — GPU/driver incompatibility with Impeller rendering engine. **Not app code issue**. Test on different device.
 

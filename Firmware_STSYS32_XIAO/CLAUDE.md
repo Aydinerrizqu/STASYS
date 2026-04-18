@@ -2,6 +2,8 @@
 
 Firmware for a MantisX-style shooting stability sensor on the Seeed XIAO nRF52840 Sense.
 
+> **Status (2026-04-18):** Firmware compiles and uploads via DFU, but LED does not light up after upload. Debugging in progress.
+
 ## Hardware
 
 - **Board**: Adafruit Feather nRF52840 Sense (nordicnrf52 platform)
@@ -102,3 +104,44 @@ New tests should be added in `test/test_all.cpp`. The test file has local implem
 - **ML shot detection**: Collect IMU logs from real sessions → train Edge Impulse classifier → replace threshold-based detection (v2)
 - **Session history on-device**: Store shots in flash/NVS between sessions
 - **BLE firmware update**: OTA DFU over BLE
+
+---
+
+## Known Issues
+
+### LED tidak menyala setelah upload (2026-04-18)
+**Symptom:** Firmware berhasil ter-upload via DFU, tapi LED RGB tidak menyala setelah device restart.
+
+**Kemungkinan penyebab:**
+1. LED pin conflict - `LED_RED/BLUE/GREEN` di-redefine di `config.h` padahal sudah ada di variant.h
+2. IMU initialization failure causing hang/crash
+3. Hardware issue
+
+**Steps debugging:**
+1. Double-tap RESET → masuk DFU mode
+2. Upload firmware dengan `pio run -e xiaoblesense -t upload --upload-port COM14`
+3. Double-tap RESET lagi, langsung buka serial monitor:
+   ```bash
+   pio device monitor -p COM14 -b 115200
+   ```
+4. Check output - harusnya ada:
+   - `[STSYS32] Booting v3.0.0...`
+   - `[STSYS32-IMU] Configured: 104Hz...`
+   - `[STSYS32-IMU-RAW] #1 ax=... ay=... az=...` (first 10 samples)
+   - `[STSYS32-BLE] Advertising. GATT service live.`
+5. Jika IMU values ~0.00 → IMU initialization gagal
+6. Jika serial output kosong → firmware crash saat boot
+
+**Fix LED pin conflict (pending):**
+```cpp
+// config.h - hapus duplicate definitions karena sudah ada di variant.h feather_nrf52840_sense
+#ifndef LED_RED
+  #define LED_RED   PIN_LED1  // atau 11
+#endif
+#ifndef LED_GREEN
+  #define LED_GREEN 13
+#endif
+#ifndef LED_BLUE
+  #define LED_BLUE  PIN_LED2  // atau 12
+#endif
+```

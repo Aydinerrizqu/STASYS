@@ -62,6 +62,20 @@ void readImuDirect() {
   s.az = imu.readFloatAccelZ();
   s.timestamp = millis();
 
+  // Debug: print first 10 samples raw values
+  static uint32_t dbgCount = 0;
+  dbgCount++;
+  if (dbgCount <= 10) {
+    Serial.print(F("[STSYS32-IMU-RAW] #")); Serial.print(dbgCount);
+    Serial.print(F(" ax=")); Serial.print(s.ax, 4);
+    Serial.print(F(" ay=")); Serial.print(s.ay, 4);
+    Serial.print(F(" az=")); Serial.print(s.az, 4);
+    Serial.print(F(" gx=")); Serial.print(s.gx, 4);
+    Serial.print(F(" gy=")); Serial.print(s.gy, 4);
+    Serial.print(F(" gz=")); Serial.print(s.gz, 4);
+    Serial.println();
+  }
+
   float mag = sqrtf(s.ax * s.ax + s.ay * s.ay + s.az * s.az);
   if (mag > peakAccelG)       peakAccelG = mag;
   if (mag > 0.05f)            lastMotionMs = millis();

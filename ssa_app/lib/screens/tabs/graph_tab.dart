@@ -199,8 +199,7 @@ class _GraphTabState extends State<GraphTab> with SingleTickerProviderStateMixin
                       color: sensorData.isRecording
                           ? StsysTheme.error
                           : StsysTheme.primary,
-                      enabled: btProvider.isConnected &&
-                          btProvider.isAuthenticated,
+                      enabled: btProvider.isConnected,
                       onTap: () => sensorData.toggleRecording(),
                     ),
                   ),
@@ -211,14 +210,13 @@ class _GraphTabState extends State<GraphTab> with SingleTickerProviderStateMixin
                       label: 'CALIBRATE',
                       color: StsysTheme.secondary,
                       enabled: btProvider.isConnected &&
-                          btProvider.isAuthenticated &&
                           !sensorData.isCalibrating,
                       isLoading: sensorData.isCalibrating,
                       onTap: () {
-                        if (!btProvider.isAuthenticated) {
+                        if (!btProvider.isConnected) {
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(
-                              content: Text('Connect and authenticate first'),
+                              content: Text('Connect to device first'),
                             ),
                           );
                           return;

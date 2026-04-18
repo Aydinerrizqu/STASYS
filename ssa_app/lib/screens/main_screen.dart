@@ -88,7 +88,7 @@ class MainScreenState extends State<MainScreen> {
               padding: const EdgeInsets.only(right: 16),
               child: StatusBadge(
                 isConnected: bt.isConnected,
-                deviceName: bt.selectedDevice?.name,
+                deviceName: bt.connectedDeviceName,
               ),
             );
           },

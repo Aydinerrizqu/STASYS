@@ -207,7 +207,7 @@ class _ShotTimerTabState extends State<ShotTimerTab> {
             ),
             const SizedBox(width: 8),
             Text(
-              bt.isConnected ? 'Connected: ${bt.selectedDevice?.name ?? 'STASYS'}' : 'Not Connected',
+              bt.isConnected ? 'Connected: ${bt.connectedDeviceName}' : 'Not Connected',
               style: TextStyle(
                 color: bt.isConnected ? Colors.green : Colors.red,
                 fontSize: 13,
@@ -218,7 +218,7 @@ class _ShotTimerTabState extends State<ShotTimerTab> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
-                  color: Colors.orange.withOpacity(0.2),
+                  color: Colors.orange.withValues(alpha: 0.2),
                   borderRadius: BorderRadius.circular(4),
                   border: Border.all(color: Colors.orange),
                 ),

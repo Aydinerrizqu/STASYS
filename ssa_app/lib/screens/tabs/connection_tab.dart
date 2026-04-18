@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:provider/provider.dart';
-import 'package:flutter_bluetooth_serial/flutter_bluetooth_serial.dart';
 import '../../providers/bluetooth_provider.dart';
 import '../../theme/app_theme.dart';
 
@@ -19,8 +19,7 @@ class ConnectionTab extends StatelessWidget {
               // Connection Status Card
               _ConnectionStatusCard(
                 isConnected: btProvider.isConnected,
-                deviceName: btProvider.selectedDevice?.name,
-                address: btProvider.selectedDevice?.address,
+                deviceName: btProvider.connectedDeviceName,
                 onDisconnect: btProvider.disconnect,
               ),
 
@@ -44,9 +43,9 @@ class ConnectionTab extends StatelessWidget {
                   Expanded(
                     child: _ActionBtn(
                       icon: Icons.bluetooth_searching,
-                      label: 'PAIRED',
+                      label: 'STOP',
                       color: StsysTheme.secondary,
-                      onTap: btProvider.getBondedDevices,
+                      onTap: btProvider.isScanning ? btProvider.stopScan : null,
                     ),
                   ),
                 ],
@@ -69,15 +68,15 @@ class ConnectionTab extends StatelessWidget {
               const SizedBox(height: 12),
 
               if (btProvider.devicesList.isEmpty)
-                _EmptyDevicesState()
+                const _EmptyDevicesState()
               else
                 ...btProvider.devicesList.map(
-                  (device) => _DeviceCard(
-                    device: device,
+                  (result) => _DeviceCard(
+                    device: result.device,
                     isConnected: btProvider.isConnected &&
-                        btProvider.selectedDevice == device,
+                        btProvider.connectedDevice?.remoteId.str == result.device.remoteId.str,
                     onTap: () async {
-                      bool ok = await btProvider.connectToDevice(device);
+                      bool ok = await btProvider.connectToDevice(result.device);
                       if (!ok && context.mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
@@ -103,13 +102,11 @@ class ConnectionTab extends StatelessWidget {
 class _ConnectionStatusCard extends StatelessWidget {
   final bool isConnected;
   final String? deviceName;
-  final String? address;
   final VoidCallback onDisconnect;
 
   const _ConnectionStatusCard({
     required this.isConnected,
     this.deviceName,
-    this.address,
     required this.onDisconnect,
   });
 
@@ -152,7 +149,7 @@ class _ConnectionStatusCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  isConnected ? deviceName ?? 'CONNECTED' : 'NOT CONNECTED',
+                  isConnected ? (deviceName ?? 'CONNECTED') : 'NOT CONNECTED',
                   style: TextStyle(
                     fontFamily: 'Manrope',
                     fontSize: 16,
@@ -162,18 +159,6 @@ class _ConnectionStatusCard extends StatelessWidget {
                     letterSpacing: 0.5,
                   ),
                 ),
-                if (isConnected && address != null) ...[
-                  const SizedBox(height: 2),
-                  Text(
-                    address!,
-                    style: TextStyle(
-                      fontFamily: 'Inter',
-                      fontSize: 11,
-                      color: StsysTheme.onSurfaceVariant.withValues(alpha: 0.6),
-                      letterSpacing: 1,
-                    ),
-                  ),
-                ],
                 if (!isConnected) ...[
                   const SizedBox(height: 2),
                   Text(
@@ -336,7 +321,9 @@ class _DeviceCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    device.name ?? 'Unknown Device',
+                    device.platformName.isNotEmpty
+                        ? device.platformName
+                        : 'STASYS-1',
                     style: TextStyle(
                       fontFamily: 'Manrope',
                       fontSize: 15,
@@ -347,7 +334,7 @@ class _DeviceCard extends StatelessWidget {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    device.address,
+                    device.remoteId.str,
                     style: TextStyle(
                       fontFamily: 'Inter',
                       fontSize: 10,
@@ -404,6 +391,8 @@ class _DeviceCard extends StatelessWidget {
 }
 
 class _EmptyDevicesState extends StatelessWidget {
+  const _EmptyDevicesState();
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -428,7 +417,7 @@ class _EmptyDevicesState extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           Text(
-            'Make sure your STASYS device is powered on',
+            'Make sure your STASYS-1 device is powered on',
             style: TextStyle(
               fontFamily: 'Inter',
               fontSize: 11,

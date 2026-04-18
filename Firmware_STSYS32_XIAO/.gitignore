@@ -1,0 +1,8 @@
+.pio/
+.vscode/
+.pioenvs/
+.piolibdeps/
+build/
+dist/
+*.pyc
+__pycache__/

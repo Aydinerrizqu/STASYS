@@ -1,6 +1,5 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:flutter_bluetooth_serial/flutter_bluetooth_serial.dart';
+import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../providers/bluetooth_provider.dart';
@@ -18,64 +17,28 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   bool _showDeviceList = false;
-  bool _isScanning = false;
-  List<BluetoothDevice> _devices = [];
-  StreamSubscription<BluetoothDiscoveryResult>? _discoverySubscription;
-
-  @override
-  void dispose() {
-    _discoverySubscription?.cancel();
-    super.dispose();
-  }
 
   void _startScan() async {
-    if (_isScanning) return;
-
-    setState(() {
-      _isScanning = true;
-      _devices = [];
-    });
-
-    final bt = FlutterBluetoothSerial.instance;
-
-    try {
-      final bondedDevices = await bt.getBondedDevices();
-      if (mounted) {
-        setState(() => _devices.addAll(bondedDevices));
-      }
-    } catch (_) {}
-
-    _discoverySubscription = bt.startDiscovery().listen(
-      (result) {
-        if (mounted) {
-          setState(() {
-            if (_devices.indexWhere((d) => d.address == result.device.address) < 0) {
-              _devices.add(result.device);
-            }
-          });
-        }
-      },
-      onDone: () {
-        if (mounted) setState(() => _isScanning = false);
-      },
-      onError: (_) {
-        if (mounted) setState(() => _isScanning = false);
-      },
-    );
-
-    Future.delayed(const Duration(seconds: 12), () {
-      _discoverySubscription?.cancel();
-      if (mounted) setState(() => _isScanning = false);
-    });
+    if (_showDeviceList) return;
+    setState(() => _showDeviceList = true);
+    final btProvider = context.read<BluetoothProvider>();
+    await btProvider.startScan();
   }
 
   void _stopScan() {
-    _discoverySubscription?.cancel();
-    setState(() => _isScanning = false);
+    context.read<BluetoothProvider>().stopScan();
+    setState(() => _showDeviceList = false);
   }
 
   void _connectDevice(BluetoothDevice device) async {
     final btProvider = context.read<BluetoothProvider>();
+    final settings = context.read<SettingsProvider>();
+    final sensor = context.read<SensorDataProvider>();
+
+    // Disable demo mode when connecting
+    settings.setDemoMode(false);
+    sensor.setDemoMode(false);
+
     await btProvider.connectToDevice(device);
     if (mounted) setState(() => _showDeviceList = false);
   }
@@ -171,16 +134,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     color: const Color(0xFFFF9800).withValues(alpha: 0.3),
                   ),
                 ),
-                child: Row(
+                child: const Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(Icons.science_outlined, size: 12, color: Color(0xFFFF9800)),
-                    const SizedBox(width: 4),
+                    Icon(Icons.science_outlined, size: 12, color: Color(0xFFFF9800)),
+                    SizedBox(width: 4),
                     Text(
                       'DEMO',
                       style: TextStyle(
                         fontFamily: 'Inter', fontSize: 9, fontWeight: FontWeight.w700,
-                        letterSpacing: 1, color: const Color(0xFFFF9800),
+                        letterSpacing: 1, color: Color(0xFFFF9800),
                       ),
                     ),
                   ],
@@ -228,7 +191,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return Consumer<BluetoothProvider>(
       builder: (context, btProvider, _) {
         final isConnected = btProvider.isConnected;
-        final isAuth = btProvider.isAuthenticated;
 
         return Container(
           padding: const EdgeInsets.all(16),
@@ -245,11 +207,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     width: 10,
                     height: 10,
                     decoration: BoxDecoration(
-                      color: isAuth
+                      color: isConnected
                           ? const Color(0xFF4CAF50)
-                          : isConnected
-                              ? const Color(0xFFFF9800)
-                              : StsysTheme.error,
+                          : StsysTheme.error,
                       shape: BoxShape.circle,
                     ),
                   ),
@@ -259,20 +219,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          isAuth
-                              ? 'CONNECTED'
-                              : isConnected
-                                  ? 'CONNECTING...'
-                                  : 'NOT CONNECTED',
+                          isConnected ? 'CONNECTED' : 'NOT CONNECTED',
                           style: TextStyle(
                             fontFamily: 'Manrope',
                             fontSize: 13,
                             fontWeight: FontWeight.w800,
-                            color: isAuth
+                            color: isConnected
                                 ? const Color(0xFF4CAF50)
-                                : isConnected
-                                    ? const Color(0xFFFF9800)
-                                    : StsysTheme.error,
+                                : StsysTheme.error,
                           ),
                         ),
                         if (isConnected)
@@ -304,10 +258,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           return;
                         }
                         if (_showDeviceList) {
-                          setState(() => _showDeviceList = false);
                           _stopScan();
                         } else {
-                          setState(() => _showDeviceList = true);
                           _startScan();
                         }
                       },
@@ -327,7 +279,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             ),
                             const SizedBox(width: 8),
                             Text(
-                              _isScanning
+                              btProvider.isScanning
                                   ? 'SCANNING...'
                                   : _showDeviceList
                                       ? 'CLOSE'
@@ -433,7 +385,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
           children: FirearmType.values.map((type) {
             final isSelected = settings.firearmType == type;
             return GestureDetector(
-              onTap: () => settings.updateFirearmType(type),
+              onTap: () {
+                settings.updateFirearmType(type);
+                // Send mode to BLE device
+                final btProvider = context.read<BluetoothProvider>();
+                if (btProvider.isConnected) {
+                  if (type == FirearmType.rifle) {
+                    btProvider.setModeRifle();
+                  } else {
+                    btProvider.setModePistol();
+                  }
+                }
+              },
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                 decoration: BoxDecoration(
@@ -519,133 +482,142 @@ class _SettingsScreenState extends State<SettingsScreen> {
             color: StsysTheme.surfaceContainerHigh,
             borderRadius: BorderRadius.circular(16),
           ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
+          child: Consumer<BluetoothProvider>(
+            builder: (context, btProvider, _) {
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    'AVAILABLE DEVICES',
-                    style: TextStyle(
-                      fontFamily: 'Inter',
-                      fontSize: 10,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 2,
-                      color: StsysTheme.primary,
-                    ),
-                  ),
-                  const Spacer(),
-                  GestureDetector(
-                    onTap: () {
-                      _stopScan();
-                      setState(() => _showDeviceList = false);
-                    },
-                    child: Icon(
-                      Icons.close,
-                      color: StsysTheme.onSurface.withValues(alpha: 0.5),
-                      size: 20,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              if (_devices.isEmpty)
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 32),
-                  child: Center(
-                    child: _isScanning
-                        ? Column(
-                            children: [
-                              const CircularProgressIndicator(
-                                color: StsysTheme.primary,
-                                strokeWidth: 2,
-                              ),
-                              const SizedBox(height: 16),
-                              Text(
-                                'SEARCHING...',
-                                style: TextStyle(
-                                  fontFamily: 'Inter',
-                                  fontSize: 11,
-                                  letterSpacing: 2,
-                                  color: StsysTheme.onSurface.withValues(alpha: 0.4),
-                                ),
-                              ),
-                            ],
-                          )
-                        : Text(
-                            'No devices found',
-                            style: TextStyle(
-                              fontFamily: 'Inter',
-                              color: StsysTheme.onSurface.withValues(alpha: 0.4),
-                            ),
-                          ),
-                  ),
-                )
-              else
-                ConstrainedBox(
-                  constraints: const BoxConstraints(maxHeight: 300),
-                  child: ListView.builder(
-                    shrinkWrap: true,
-                    itemCount: _devices.length,
-                    itemBuilder: (context, index) {
-                      final device = _devices[index];
-                      return GestureDetector(
-                        onTap: () => _connectDevice(device),
-                        child: Container(
-                          padding: const EdgeInsets.all(12),
-                          margin: const EdgeInsets.only(bottom: 8),
-                          decoration: BoxDecoration(
-                            color: StsysTheme.surfaceContainerLow,
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Row(
-                            children: [
-                              Icon(
-                                device.isBonded ? Icons.watch : Icons.bluetooth,
-                                color: StsysTheme.primary,
-                                size: 18,
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      device.name ?? 'Unknown',
-                                      style: const TextStyle(
-                                        fontFamily: 'Manrope',
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.w700,
-                                        color: StsysTheme.onSurface,
-                                      ),
-                                    ),
-                                    Text(
-                                      device.isBonded ? 'PAIRED' : 'AVAILABLE',
-                                      style: TextStyle(
-                                        fontFamily: 'Inter',
-                                        fontSize: 9,
-                                        letterSpacing: 1.5,
-                                        color: device.isBonded
-                                            ? StsysTheme.primary.withValues(alpha: 0.6)
-                                            : StsysTheme.onSurface.withValues(alpha: 0.3),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              Icon(
-                                Icons.chevron_right,
-                                color: StsysTheme.onSurface.withValues(alpha: 0.3),
-                              ),
-                            ],
-                          ),
+                  Row(
+                    children: [
+                      Text(
+                        'AVAILABLE DEVICES',
+                        style: TextStyle(
+                          fontFamily: 'Inter',
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 2,
+                          color: StsysTheme.primary,
                         ),
-                      );
-                    },
+                      ),
+                      const Spacer(),
+                      GestureDetector(
+                        onTap: _stopScan,
+                        child: Icon(
+                          Icons.close,
+                          color: StsysTheme.onSurface.withValues(alpha: 0.5),
+                          size: 20,
+                        ),
+                      ),
+                    ],
                   ),
-                ),
-            ],
+                  const SizedBox(height: 16),
+                  if (btProvider.isScanning && btProvider.devicesList.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 32),
+                      child: Center(
+                        child: Column(
+                          children: [
+                            CircularProgressIndicator(
+                              color: StsysTheme.primary,
+                              strokeWidth: 2,
+                            ),
+                            SizedBox(height: 16),
+                            Text(
+                              'SEARCHING...',
+                              style: TextStyle(
+                                fontFamily: 'Inter',
+                                fontSize: 11,
+                                letterSpacing: 2,
+                                color: StsysTheme.onSurface,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    )
+                  else if (btProvider.devicesList.isEmpty)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 32),
+                      child: Center(
+                        child: Text(
+                          'No devices found.\nMake sure STASYS-1 is advertising.',
+                          style: TextStyle(
+                            fontFamily: 'Inter',
+                            fontSize: 12,
+                            color: StsysTheme.onSurface.withValues(alpha: 0.5),
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    )
+                  else
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxHeight: 300),
+                      child: ListView.builder(
+                        shrinkWrap: true,
+                        itemCount: btProvider.devicesList.length,
+                        itemBuilder: (context, index) {
+                          final result = btProvider.devicesList[index];
+                          final device = result.device;
+                          return GestureDetector(
+                            onTap: () => _connectDevice(device),
+                            child: Container(
+                              padding: const EdgeInsets.all(12),
+                              margin: const EdgeInsets.only(bottom: 8),
+                              decoration: BoxDecoration(
+                                color: StsysTheme.surfaceContainerLow,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    Icons.bluetooth,
+                                    color: StsysTheme.primary,
+                                    size: 18,
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          device.platformName.isNotEmpty
+                                              ? device.platformName
+                                              : 'STASYS-1',
+                                          style: const TextStyle(
+                                            fontFamily: 'Manrope',
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.w700,
+                                            color: StsysTheme.onSurface,
+                                          ),
+                                        ),
+                                        Text(
+                                          'AVAILABLE',
+                                          style: TextStyle(
+                                            fontFamily: 'Inter',
+                                            fontSize: 9,
+                                            letterSpacing: 1.5,
+                                            color: StsysTheme.primary.withValues(alpha: 0.6),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  Icon(
+                                    Icons.chevron_right,
+                                    color: StsysTheme.onSurface.withValues(alpha: 0.3),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                ],
+              );
+            },
           ),
         ),
       ),

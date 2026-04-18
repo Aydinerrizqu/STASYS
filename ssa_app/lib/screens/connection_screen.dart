@@ -1,6 +1,5 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:flutter_bluetooth_serial/flutter_bluetooth_serial.dart';
+import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../providers/bluetooth_provider.dart';
@@ -16,84 +15,36 @@ class ConnectionScreen extends StatefulWidget {
 }
 
 class _ConnectionScreenState extends State<ConnectionScreen> {
-  bool _isScanning = false;
-  List<BluetoothDevice> _devices = [];
-  StreamSubscription<BluetoothDiscoveryResult>? _discoverySubscription;
-
   @override
-  void dispose() {
-    _discoverySubscription?.cancel();
-    super.dispose();
+  void initState() {
+    super.initState();
+    // Initialize BLE and start scan on screen load
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _startScan();
+    });
   }
 
   void _startScan() async {
-    if (_isScanning) return;
-
-    setState(() {
-      _isScanning = true;
-      _devices = [];
-    });
-
-    final bt = FlutterBluetoothSerial.instance;
-
-    // Get already paired devices
-    try {
-      final bondedDevices = await bt.getBondedDevices();
-      if (mounted) {
-        setState(() {
-          _devices.addAll(bondedDevices);
-        });
-      }
-    } catch (_) {}
-
-    // Start discovery
-    _discoverySubscription = bt.startDiscovery().listen(
-      (result) {
-        if (mounted) {
-          setState(() {
-            final existingIndex = _devices.indexWhere(
-              (d) => d.address == result.device.address,
-            );
-            if (existingIndex < 0) {
-              _devices.add(result.device);
-            }
-          });
-        }
-      },
-      onDone: () {
-        if (mounted) setState(() => _isScanning = false);
-      },
-      onError: (_) {
-        if (mounted) setState(() => _isScanning = false);
-      },
-    );
-
-    // Auto-stop after 12 seconds
-    Future.delayed(const Duration(seconds: 12), () {
-      _discoverySubscription?.cancel();
-      if (mounted) setState(() => _isScanning = false);
-    });
-  }
-
-  void _stopScan() {
-    _discoverySubscription?.cancel();
-    setState(() => _isScanning = false);
+    final btProvider = context.read<BluetoothProvider>();
+    await btProvider.startScan();
   }
 
   void _connectDevice(BluetoothDevice device) async {
     final btProvider = context.read<BluetoothProvider>();
     final settings = context.read<SettingsProvider>();
     final sensor = context.read<SensorDataProvider>();
-    _showConnectingDialog(device.name ?? 'Device');
+    _showConnectingDialog(device.platformName.isNotEmpty
+        ? device.platformName
+        : 'STASYS-1');
 
     // Disable demo mode when connecting to real device
     settings.setDemoMode(false);
     sensor.setDemoMode(false);
 
-    await btProvider.connectToDevice(device);
+    bool success = await btProvider.connectToDevice(device);
     if (mounted) {
       Navigator.of(context).pop();
-      if (btProvider.isConnected && btProvider.isAuthenticated) {
+      if (success) {
         context.go('/tracking');
       }
     }
@@ -179,9 +130,9 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
                       children: [
                         _buildStatusCard(btProvider),
                         const SizedBox(height: 16),
-                        _buildScanButton(),
+                        _buildScanButton(btProvider),
                         const SizedBox(height: 16),
-                        Expanded(child: _buildDeviceList()),
+                        Expanded(child: _buildDeviceList(btProvider)),
                       ],
                     ),
                   ),
@@ -245,11 +196,11 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
     String statusText;
     Color statusColor;
 
-    if (btProvider.isAuthenticated) {
-      statusText = 'CONNECTED & AUTHENTICATED';
+    if (btProvider.isConnected) {
+      statusText = 'CONNECTED';
       statusColor = const Color(0xFF4CAF50);
-    } else if (btProvider.isConnected) {
-      statusText = 'CONNECTED — AUTHENTICATING...';
+    } else if (btProvider.isScanning) {
+      statusText = 'SCANNING FOR STASYS-1...';
       statusColor = const Color(0xFFFF9800);
     } else {
       statusText = 'NOT CONNECTED';
@@ -306,9 +257,9 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
     );
   }
 
-  Widget _buildScanButton() {
+  Widget _buildScanButton(BluetoothProvider btProvider) {
     return GestureDetector(
-      onTap: _isScanning ? _stopScan : _startScan,
+      onTap: btProvider.isScanning ? () => btProvider.stopScan() : _startScan,
       child: Container(
         width: double.infinity,
         padding: const EdgeInsets.symmetric(vertical: 16),
@@ -319,7 +270,7 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            if (_isScanning)
+            if (btProvider.isScanning)
               const SizedBox(
                 width: 18,
                 height: 18,
@@ -332,7 +283,7 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
               const Icon(Icons.bluetooth_searching, color: StsysTheme.onPrimary, size: 20),
             const SizedBox(width: 8),
             Text(
-              _isScanning ? 'SCANNING...' : 'SCAN BLUETOOTH',
+              btProvider.isScanning ? 'SCANNING...' : 'SCAN BLE DEVICES',
               style: const TextStyle(
                 fontFamily: 'Manrope',
                 fontSize: 14,
@@ -347,8 +298,8 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
     );
   }
 
-  Widget _buildDeviceList() {
-    if (_isScanning && _devices.isEmpty) {
+  Widget _buildDeviceList(BluetoothProvider btProvider) {
+    if (btProvider.isScanning && btProvider.devicesList.isEmpty) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -356,7 +307,7 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
             const CircularProgressIndicator(color: StsysTheme.primary, strokeWidth: 2),
             const SizedBox(height: 16),
             Text(
-              'SEARCHING FOR DEVICES...',
+              'SEARCHING FOR STASYS-1...',
               style: TextStyle(
                 fontFamily: 'Inter',
                 fontSize: 11,
@@ -369,7 +320,7 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
       );
     }
 
-    if (_devices.isEmpty) {
+    if (btProvider.devicesList.isEmpty) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -377,7 +328,7 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
             Icon(Icons.bluetooth_disabled, size: 48, color: StsysTheme.onSurface.withValues(alpha: 0.1)),
             const SizedBox(height: 16),
             Text(
-              'NO DEVICES FOUND',
+              'NO STASYS-1 FOUND',
               style: TextStyle(
                 fontFamily: 'Manrope',
                 fontSize: 14,
@@ -388,7 +339,7 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
             ),
             const SizedBox(height: 8),
             Text(
-              'Make sure your device is powered on\nand in pairing mode',
+              'Make sure your XIAO nRF52840 Sense\nis powered on and advertising',
               style: TextStyle(
                 fontFamily: 'Inter',
                 fontSize: 11,
@@ -402,9 +353,10 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
     }
 
     return ListView.builder(
-      itemCount: _devices.length,
+      itemCount: btProvider.devicesList.length,
       itemBuilder: (context, index) {
-        final device = _devices[index];
+        final result = btProvider.devicesList[index];
+        final device = result.device;
         return _DeviceCard(
           device: device,
           onTap: () => _connectDevice(device),
@@ -443,8 +395,8 @@ class _DeviceCard extends StatelessWidget {
                 color: StsysTheme.primary.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: Icon(
-                device.isBonded ? Icons.watch : Icons.bluetooth,
+              child: const Icon(
+                Icons.bluetooth,
                 color: StsysTheme.primary,
                 size: 20,
               ),
@@ -455,7 +407,7 @@ class _DeviceCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    device.name ?? 'Unknown Device',
+                    device.platformName.isNotEmpty ? device.platformName : 'STASYS-1',
                     style: const TextStyle(
                       fontFamily: 'Manrope',
                       fontSize: 13,
@@ -465,15 +417,13 @@ class _DeviceCard extends StatelessWidget {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    device.isBonded ? 'PAIRED' : 'AVAILABLE',
+                    device.remoteId.str,
                     style: TextStyle(
                       fontFamily: 'Inter',
                       fontSize: 9,
                       fontWeight: FontWeight.w600,
                       letterSpacing: 1.5,
-                      color: device.isBonded
-                          ? StsysTheme.primary.withValues(alpha: 0.6)
-                          : StsysTheme.onSurface.withValues(alpha: 0.3),
+                      color: StsysTheme.primary.withValues(alpha: 0.6),
                     ),
                   ),
                 ],

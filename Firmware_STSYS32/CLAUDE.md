@@ -12,8 +12,10 @@ ESP32 firmware for the STASYS shooter stability analyzer.
 | MCU | ESP32 DEVKIT V1 |
 | IMU | MPU6050 (6-axis accel+gyro, I2C 0x68) |
 | Comm | Bluetooth Classic SPP |
-| Device Name | `"STASYS"` |
-| Version | v3.1.0 (`BUILD_VERSION_MAJOR=3`) |
+| Device Name | `"STASYS-XXXX"` (chip MAC-based) |
+| Version | Upstream original (`dylemmas/STASYSESP32`) |
+
+> **Migration (2026-04-22)**: Firmware di-reset ke versi awal/original dari upstream `dylemmas/STASYSESP32`. Branch: `migrasi_firmware_awal`.
 
 ---
 
@@ -26,7 +28,8 @@ This firmware directory is synchronized with the upstream repo:
 | Role | Repo | URL |
 |------|------|-----|
 | **Local** (this project) | Aydinerrizqu/STASYS | https://github.com/Aydinerrizqu/STASYS |
-| **Upstream** (partner: dylemmas) | dylemmas/STSYS32 | https://github.com/dylemmas/STSYS32 |
+| **Upstream (original)** | dylemmas/STASYSESP32 | https://github.com/dylemmas/STASYSESP32 |
+| **Upstream (modular)** | dylemmas/STSYS32 | https://github.com/dylemmas/STSYS32 |
 
 Remote `firmware` sudah di-configure saat setup. Cek dengan:
 
@@ -99,49 +102,18 @@ pio device monitor        # Serial monitor (115200 baud)
 
 ## Architecture
 
-### FreeRTOS Tasks
+> **2026-04-22**: Simplified to single-file upstream original. No longer uses modular architecture.
 
-| Task | Core | Priority | Stack | Description |
-|------|------|----------|-------|-------------|
-| `SensorTask` | 1 | 3 | 4096 | MPU6050 ISR-driven reads → `sampleQueue` |
-| `ShotDetector` | 1 | 2 | 4096 | Consumes `sampleQueue` → shot events |
-| `RecoveryTask` | 1 | 2 | 2048 | Async I2C bus recovery |
-| `StreamTask` | 0 | 1 | 2048 | `DATA_RAW_SAMPLE` packets @ streaming rate |
-| `BatteryMonitor` | 0 | 1 | 1024 | Battery monitoring @ 30s intervals |
-| `BluetoothTask` | 0 | 2 | 4096 | SPP RFCOMM read/write + command dispatch |
-| `LEDTask` | 0 | 1 | 2048 | LED/LEDC PWM patterns + haptic feedback |
-
-### Data Flow
-
-```
-MPU6050 ISR (Core 1)
-    → sampleQueue (64 samples)
-        → ShotDetector → shot events → txQueue → BluetoothTask → SPP
-        → StreamTask → raw samples → txQueue → BluetoothTask → SPP
-
-Commands: BluetoothTask RX → dispatchCommand → session/sensor/config handlers
-I2C Error → recoveryQueue → RecoveryTask → recoverI2CBus() → reinit MPU6050
-```
-
-### Module Structure
+### Single-File Structure (from upstream)
 
 ```
 src/
-├── main.cpp          # FreeRTOS tasks + command dispatch + setup()
-├── protocol.cpp/h    # CRC16-CCITT, packet encoder/decoder
-├── bluetooth.cpp/h   # SPP BT, TX queue, sendPacket functions
-├── sensor.cpp/h      # MPU6050 ISR-driven reading
-├── shot_detector.cpp/h  # Adaptive threshold shot detection
-├── session.cpp/h     # Session state machine: IDLE→STREAMING
-├── config.cpp/h      # NVS persistent config
-├── battery.cpp/h    # Battery monitoring
-├── led.cpp/h        # LED PWM + haptic feedback patterns
-├── storage.cpp/h    # Flash session storage
-├── ota.cpp/h        # OTA firmware update
-├── security.cpp/h   # HMAC-SHA256 auth stub
-├── coredump.cpp/h   # Exception coredump storage
-└── (sensor.h)      # SensorSample struct, calibration functions
+└── main.cpp   (~810 lines) — Everything in one file: sensor reading, Bluetooth,
+                          authentication, data transmission
 ```
+
+No separate modules for protocol, sensor, bluetooth, shot_detector, session, config,
+battery, led, storage, ota, security, coredump. All inline in main.cpp.
 
 ---
 
@@ -149,114 +121,85 @@ src/
 
 > **Full details**: See root `CLAUDE.md` → **Communication Protocol**
 
-### Binary Packet Format
+> **⚠️ PROTOCOL BREAKING CHANGE**: Upstream original menggunakan protokol yang SANGAT BERBEDA dari modular firmware. Flutter app saat ini hanya compatible dengan modular firmware (CRC16-CCITT, binary packets). Perlu adapter/middleware atau update Flutter app untuk menerima data dari upstream.
+
+### Binary Packet Format (upstream original)
 
 ```
-[0xAA] [0x55] [TYPE] [LEN_LO] [LEN_HI] [PAYLOAD...] [CRC_LO] [CRC_HI]
+[0xAA] [0xBB] [ax(float4)] [ay(float4)] [az(float4)] [gx(float4)] [gy(float4)] [gz(float4)] [piezo(uint16)] [battery(uint8)] [xor_checksum(uint8)]
+Total: 34 bytes
 ```
 
-**CRC16-CCITT**: poly=0x1021, init=0xFFFF, xor_out=0x0000.
-Verified: `"123456789"` → `0x29B1`.
+| Offset | Size | Field | Notes |
+|--------|------|-------|-------|
+| 0 | 1 | Sync0 | `0xAA` |
+| 1 | 1 | Sync1 | `0xBB` |
+| 2 | 4 | ax | float (m/s²) |
+| 6 | 4 | ay | float (m/s²) |
+| 10 | 4 | az | float (m/s²) |
+| 14 | 4 | gx | float (rad/s) |
+| 18 | 4 | gy | float (rad/s) |
+| 22 | 4 | gz | float (rad/s) |
+| 26 | 2 | piezo | uint16 ADC raw |
+| 28 | 1 | battery | uint8 percentage |
+| 29 | 1 | checksum | XOR of bytes 2..28 |
 
-### Key Packet Types
-
-| Type | Name | Direction | Notes |
-|------|------|-----------|-------|
-| 0x01 | `CMD_START_SESSION` | App→FW | Start streaming + auth challenge |
-| 0x06 | `CMD_AUTH` | App→FW | HMAC-SHA256 auth response |
-| 0x10 | `EVT_SESSION_STARTED` | FW→App | Session started |
-| 0x12 | `EVT_SHOT_DETECTED` | FW→App | Shot event with peaks |
-| 0x13 | `EVT_SENSOR_HEALTH` | FW→App | Heartbeat @ ~10Hz |
-| 0x14 | `EVT_AUTH_CHALLENGE` | FW→App | 16-byte challenge |
-| 0x15 | `EVT_AUTH_SUCCESS` | FW→App | Auth confirmed |
-| 0x20 | `DATA_RAW_SAMPLE` | FW→App | Sensor data @ streaming_rate_hz |
-
-### Auth Flow (3-way handshake)
+### Authentication (upstream original — TEXT-BASED, BREAKING CHANGE)
 
 ```
-Flutter → ESP32: CMD_START_SESSION (0x01)
-ESP32 → Flutter: EVT_AUTH_CHALLENGE (0x14) [session_id(4) + challenge(16)]
-Flutter → ESP32: CMD_AUTH (0x06) [session_id(4) + HMAC-SHA256(32)]
-ESP32 → Flutter: EVT_AUTH_SUCCESS (0x15) [session_id(4)]
-ESP32 → Flutter: EVT_SESSION_STARTED (0x10)
-ESP32 → Flutter: DATA_RAW_SAMPLE (0x20) @ 50Hz default
+Flutter/PC → ESP32: (connect)
+ESP32 → Flutter/PC: "READY\n"
+Flutter/PC → ESP32: (send text challenge string)
+ESP32 → Flutter/PC: SHA256(challenge + SECRET_KEY) as hex string\n
+ESP32 → Flutter/PC: (starts streaming if valid)
 ```
 
+**Auth is text-based via println/readStringUntil**, bukan binary HMAC-SHA256.
 **Secret Key**: `12ebaf10h12fa9123z21sti`
-**HMAC Input**: challenge(16 bytes) + session_id(4 bytes LE)
-**HMAC Output**: 32-byte digest, sent as-is
 
----
+### Oversampling
 
-## Shot Detection State Machine
-
-`IDLE → ARMING → ARMED → POST_GATHER → COOLDOWN`
-
-| State | Condition |
-|-------|-----------|
-| IDLE | Waiting for stability (gyro < 4.0 rad/s) |
-| ARMING | Gyro stable for 200ms |
-| ARMED | Ready to detect shot trigger |
-| POST_GATHER | Collecting recoil data (10 samples @ 100Hz) |
-| COOLDOWN | 500ms before next shot |
-
-**Dry Fire**: Piezo ADC > threshold while gyro stable
-**Live Fire**: Accelerometer jerk > threshold
-
----
-
-## OTA Firmware Update
-
-Firmware mendukung update via Bluetooth:
-
-| Command | Type | Description |
-|---------|------|-------------|
-| `CMD_OTA_START` | 0x0C | Begin OTA update |
-| `CMD_OTA_DATA` | 0x0D | Firmware chunk |
-| `CMD_OTA_END` | 0x0E | Finalize OTA |
-| `CMD_OTA_ABORT` | 0x0F | Abort OTA |
-| `CMD_OTA_STATUS` | 0x11 | Get progress |
-
-OTA partition table: `partitions_ota.csv`
+- Sensor read: 1000Hz (1kHz) internal
+- Data send: 100Hz (10ms interval)
+- 10 samples per packet window — peak accel, average gyro, peak piezo
 
 ---
 
 ## Known Issues / TODOs
 
 ### Pending
-- [ ] **OTA app integration** — Flutter app belum implementasi OTA command flow
-- [ ] **Encrypted packets** — `PKT_TYPE_ENCRYPTED (0xF0)` support belum dipakai
-- [ ] **Calibration command** — `CMD_CALIBRATE_START` stub ada tapi belum test full flow
-- [ ] **Storage session mgmt** — `CMD_GET_SESSIONS / GET_SESSION_DATA / DELETE_SESSION` belum dipakai Flutter
+- [ ] **Flutter app incompatible** — upstream original uses text-based auth + float packets (34 bytes, 0xAA/0xBB header, XOR checksum). Flutter app only supports modular firmware protocol. Need middleware/adapter or Flutter update.
+- [ ] No modular features (OTA, storage, LED, session mgmt) — stripped to single-file original
 
-### Fixed
+### Fixed (modular firmware era)
 - [x] CRC scope mismatch — `encodePacket()` fixed to `3+len`
 - [x] MPU6050 not responding → degraded mode fallback
 - [x] RecoveryTask watchdog timeout — `esp_task_wdt_reset()` in loop
-- [x] CMD_START_SESSION auth guard blocking Flutter — removed `_isAuthenticated` check
+- [x] CMD_START_SESSION auth guard blocking Flutter — removed `__isAuthenticated` check
 - [x] PktRawSample sizeof mismatch — confirmed 24 bytes
 
 ---
 
 ## Flutter App Compatibility
 
-Flutter app (`ssa_app/`) **terbukti compatible** dengan firmware upstream tanpa perubahan:
+> **BREAKING CHANGE**: Flutter app (`ssa_app/`) only compatible with modular firmware (`dylemmas/STSYS32`). **Not compatible** with upstream original (`dylemmas/STASYSESP32`) due to protocol differences.
 
-- CRC16-CCITT ✅ (identical)
-- Packet types 0x01-0x85 ✅ (identical)
-- Auth flow (challenge→auth→success) ✅ (identical)
-- DATA_RAW_SAMPLE sizeof ✅ (24 bytes)
-- EVT_SHOT_DETECTED sizeof ✅ (30 bytes)
-- PKT_TYPE_ENCRYPTED ✅ (Flutter ignore unused packets)
+### Protocol Comparison
 
-**Jangan ubah packet format core** tanpa konfirmasi ke partner & update Flutter app juga.
+| Aspek | Modular (STSYS32) | Upstream Original (STASYSESP32) |
+|-------|------------------|----------------------------------|
+| Header | `0xAA 0x55` | `0xAA 0xBB` |
+| Checksum | CRC16-CCITT | XOR |
+| Auth | Binary HMAC-SHA256 (binary challenge-response) | Text SHA256 via println |
+| Data packet | 24 bytes (int16 scaled) | ~34 bytes (float direct) |
+| Architecture | FreeRTOS 8 tasks | Single polling loop |
 
 ---
 
 ## Development Notes
 
-- Firmware versioning: **v3.1.0** (local scheme, berbeda dari upstream yang v1.0.1)
+- Firmware: upstream original single-file (`dylemmas/STASYSESP32`)
 - Build output: `.pio/build/esp32dev/firmware.bin`
-- Default streaming rate: **50Hz** (dari upstream, was 100Hz)
-- Data modes: 0=both, 1=raw-only, 2=events-only
-- Priority TX queue: control packets bypass sample stream (upstream feature)
+- CPU: 240MHz
+- Partition: `min_spiffs.csv`
+- Sensor: 4G accel / 500dps gyro / 260Hz DLPF / 1kHz polling

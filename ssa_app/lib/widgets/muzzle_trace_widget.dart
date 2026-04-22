@@ -41,7 +41,10 @@ class _MuzzleTraceWidgetState extends State<MuzzleTraceWidget>
   // --- 60fps lerp: dot animates toward target ---
   double _dotX = 0.0, _dotY = 0.0;    // current rendered position
   double _targetX = 0.0, _targetY = 0.0; // EMA-smoothed target
-  static const double _emaAlpha = 0.25;   // EMA smoothing factor
+
+  // --- Camera-follow: center lerps toward dot ---
+  double _cameraX = 0.0, _cameraY = 0.0; // current camera center (world offset)
+  static const double _cameraLerp = 0.3;  // camera follow speed (0-1, higher=faster)
 
   // --- Speed tracking for dot sizing ---
   double _liveSpeed = 0.0;
@@ -94,11 +97,15 @@ class _MuzzleTraceWidgetState extends State<MuzzleTraceWidget>
     final deltaMs = (now - _lastTickTime.toInt()).toDouble();
     _lastTickTime = now.toDouble();
 
-    // Lerp dot position toward target over one frame
+    // Lerp dot position toward target
     if (deltaMs > 0) {
       final t = (deltaMs / 16.0).clamp(0.0, 1.0);
       _dotX = _dotX + (_targetX - _dotX) * t;
       _dotY = _dotY + (_targetY - _dotY) * t;
+
+      // Camera-follow: center lerps toward dot position
+      _cameraX = _cameraX + (_dotX - _cameraX) * _cameraLerp;
+      _cameraY = _cameraY + (_dotY - _cameraY) * _cameraLerp;
     }
 
     if (mounted) setState(() {});
@@ -112,9 +119,10 @@ class _MuzzleTraceWidgetState extends State<MuzzleTraceWidget>
     final rawX = provider.liveTraceX;
     final rawY = provider.liveTraceY;
 
-    // EMA smoothing on dot position
-    _targetX = _targetX * _emaAlpha + rawX * (1.0 - _emaAlpha);
-    _targetY = _targetY * _emaAlpha + rawY * (1.0 - _emaAlpha);
+    // Target follows raw position directly
+    // Camera and dot lerp handle the smoothing
+    _targetX = rawX;
+    _targetY = rawY;
 
     // Speed for dynamic dot sizing (from trace delta)
     final dx = rawX - _prevLiveX;
@@ -184,6 +192,8 @@ class _MuzzleTraceWidgetState extends State<MuzzleTraceWidget>
             _dotY = 0.0;
             _targetX = 0.0;
             _targetY = 0.0;
+            _cameraX = 0.0;
+            _cameraY = 0.0;
           });
         }
       });
@@ -253,6 +263,8 @@ class _MuzzleTraceWidgetState extends State<MuzzleTraceWidget>
                           trace: _recentTrace,
                           dotX: _dotX,
                           dotY: _dotY,
+                          cameraX: _cameraX,
+                          cameraY: _cameraY,
                           zoom: widget.zoom,
                           showGrid: widget.showGrid,
                           phaseColor: _currentPhaseColor,
@@ -385,6 +397,8 @@ class _MuzzleTracePainter extends CustomPainter {
   final List<_TracePoint> trace;
   final double dotX;
   final double dotY;
+  final double cameraX; // camera center offset (world space)
+  final double cameraY;
   final double zoom;
   final bool showGrid;
   final Color phaseColor;
@@ -394,6 +408,8 @@ class _MuzzleTracePainter extends CustomPainter {
     required this.trace,
     required this.dotX,
     required this.dotY,
+    required this.cameraX,
+    required this.cameraY,
     required this.zoom,
     required this.showGrid,
     required this.phaseColor,
@@ -476,13 +492,19 @@ class _MuzzleTracePainter extends CustomPainter {
     final cy = size.height / 2;
     final scale = size.width / 2 / zoom;
 
+    // Camera offset: camera position in world space
+    // Visual center = cx - cameraX * scale, cy - cameraY * scale
+    // This makes the dot stay centered as it moves
+    final offsetX = cx - cameraX * scale;
+    final offsetY = cy - cameraY * scale;
+
     if (showGrid) {
-      _drawScoringRings(canvas, cx, cy, scale, size);
-      canvas.drawLine(Offset(cx, 0), Offset(cx, size.height), _crossHairPaint);
-      canvas.drawLine(Offset(0, cy), Offset(size.width, cy), _crossHairPaint);
+      _drawScoringRings(canvas, offsetX, offsetY, scale, size);
+      canvas.drawLine(Offset(offsetX, 0), Offset(offsetX, size.height), _crossHairPaint);
+      canvas.drawLine(Offset(0, offsetY), Offset(size.width, offsetY), _crossHairPaint);
     }
 
-    // --- TRACE PATH ---
+    // --- TRACE PATH (relative to camera) ---
     if (trace.length >= 2) {
       const fadeMin = 0.3;
       final traceLen = trace.length;
@@ -493,22 +515,22 @@ class _MuzzleTracePainter extends CustomPainter {
         final opacity = fadeMin + (1.0 - fadeMin) * ageFraction;
         _tracePaint.color = _getPhaseColor(curr.phase).withValues(alpha: opacity);
         canvas.drawLine(
-          Offset(cx + prev.x * scale, cy + prev.y * scale),
-          Offset(cx + curr.x * scale, cy + curr.y * scale),
+          Offset(offsetX + prev.x * scale, offsetY + prev.y * scale),
+          Offset(offsetX + curr.x * scale, offsetY + curr.y * scale),
           _tracePaint,
         );
       }
     }
 
-    // --- CENTER ORIGIN CROSSHAIR ---
-    canvas.drawLine(Offset(cx - 12, cy), Offset(cx + 12, cy), _crosshairPaint2);
-    canvas.drawLine(Offset(cx, cy - 12), Offset(cx, cy + 12), _crosshairPaint2);
-    canvas.drawCircle(Offset(cx, cy), 2, _centerDotBgPaint);
-    canvas.drawCircle(Offset(cx, cy), 2, _centerDotPaint);
+    // --- CENTER ORIGIN CROSSHAIR (at camera center) ---
+    canvas.drawLine(Offset(offsetX - 12, offsetY), Offset(offsetX + 12, offsetY), _crosshairPaint2);
+    canvas.drawLine(Offset(offsetX, offsetY - 12), Offset(offsetX, offsetY + 12), _crosshairPaint2);
+    canvas.drawCircle(Offset(offsetX, offsetY), 2, _centerDotBgPaint);
+    canvas.drawCircle(Offset(offsetX, offsetY), 2, _centerDotPaint);
 
-    // --- LIVE DOT (lerped position, EMA smoothed) ---
-    final dotPx = cx + dotX * scale;
-    final dotPy = cy + dotY * scale;
+    // --- LIVE DOT (relative to camera — stays centered) ---
+    final dotPx = offsetX + dotX * scale;
+    final dotPy = offsetY + dotY * scale;
 
     final speedNorm = _clamp(liveSpeed * 4.0, 0.0, 1.0);
     final dotRadius = 5.0 + speedNorm * 3.0;
@@ -565,6 +587,8 @@ class _MuzzleTracePainter extends CustomPainter {
   bool shouldRepaint(covariant _MuzzleTracePainter oldDelegate) {
     if (oldDelegate.dotX != dotX) return true;
     if (oldDelegate.dotY != dotY) return true;
+    if (oldDelegate.cameraX != cameraX) return true;
+    if (oldDelegate.cameraY != cameraY) return true;
     if (oldDelegate.trace.length != trace.length) return true;
     if (trace.isNotEmpty && oldDelegate.trace.isNotEmpty) {
       final oldLast = oldDelegate.trace.last;

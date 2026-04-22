@@ -10,7 +10,7 @@ STASYS is a DIY shooter training device inspired by MantisX ($99-$249). It consi
 - **Hardware**: ESP32 + MPU6050 + Piezo sensor, Bluetooth Classic
 - **Python App**: `Python Code (SSA)/STASYS.py` - Desktop analysis tool (PyQt5)
 - **Flutter App**: `ssa_app/` - Mobile companion (Android/iOS)
-- **Firmware**: `Firmware_STSYS32/` - Modular PlatformIO ESP32 firmware
+- **Firmware**: `Firmware_STSYS32/` - Single-file PlatformIO ESP32 firmware (upstream original)
 
 **Goal**: Open-source alternative to MantisX for dry/live fire training with shot scoring, muzzle trace visualization, and session analysis.
 
@@ -57,20 +57,9 @@ d:\Aydiner\Projek Flutter SSA\
 │           ├── shot_history_list.dart    # Session shot list
 │           └── gyro_realtime_chart.dart  # Real-time gyro chart
 │
-├── Firmware_STSYS32/                 # Modular PlatformIO ESP32 firmware
+├── Firmware_STSYS32/                 # Single-file PlatformIO ESP32 firmware (upstream original)
 │   └── src/
-│       ├── main.cpp           # FreeRTOS tasks
-│       ├── protocol.h/cpp     # Packet framing, CRC16-CCITT
-│       ├── sensor.h/cpp       # MPU6050 ISR-driven reading
-│       ├── bluetooth.h/cpp     # SPP BT, command dispatch
-│       ├── shot_detector.h/cpp # Adaptive threshold shot detection
-│       ├── security.h/cpp      # Auth stub
-│       ├── session.h/cpp       # Session state: IDLE→STREAMING
-│       ├── config.h/cpp        # NVS persistent config
-│       ├── battery.h/cpp       # Battery monitoring
-│       ├── led.h/cpp           # LED feedback
-│       ├── storage.h/cpp       # Flash session storage
-│       └── ota.h/cpp           # OTA firmware update
+│       └── main.cpp           # ~297 lines, polling loop, text-based auth, XOR checksum
 │
 └── Python Code (SSA)/
     └── STASYS.py               # Desktop app with ProtocolDecoder class
@@ -307,16 +296,18 @@ Preferences (built-in)
 
 ### Pending
 - [ ] **Frame freeze / gralloc4 GPU buffer failure** — GPU/driver incompatibility with Impeller rendering engine. **Not app code issue**. Test on different device.
-- [ ] **Android BT fragmentation** — DATA_RAW_SAMPLE CRC errors ~0.01% (1 in ~9400 packets). Non-critical — sensor data still flows at 99.99% integrity.
 - [ ] **Trace window sync with Python** — Flutter 2s window vs Python 0.5s cursor-normalized.
+- [ ] **Flutter ↔ Firmware protocol bridge** — upstream firmware uses text auth + XOR + float packets; Flutter app only supports modular firmware binary protocol. Demo mode works, BT hardware connection needs adapter.
 
 ### Migration Status
 
 | Component | Protocol | Status |
 |-----------|---------|--------|
-| `Firmware_STSYS32/` | New (CRC16-CCITT) | Complete, uploaded to ESP32 |
+| `Firmware_STSYS32/` | Upstream original (text auth, XOR, float packets) | ✅ Complete — reset to `dylemmas/STASYSESP32` single-file |
 | `Python Code (SSA)/STASYS.py` | New | ProtocolDecoder class added |
-| `ssa_app/` Flutter | New | App shell redesign + GoRouter + demo mode |
+| `ssa_app/` Flutter | New (CRC16-CCITT, binary) | ⚠️ **Incompatible** with upstream firmware — use demo mode |
+
+> ⚠️ **Flutter app NOT compatible with upstream firmware** — different protocol. Demo mode is primary way to use the app without ESP32 hardware.
 
 ### App Shell Redesign (2026-04-09) + SQLite Migration (2026-04-14)
 - [x] GoRouter with ShellRoute (3-tab bottom nav: Tracking/History/Settings)

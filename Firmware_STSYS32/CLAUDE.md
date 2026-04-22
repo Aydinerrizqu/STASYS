@@ -13,115 +13,36 @@ ESP32 firmware for the STASYS shooter stability analyzer.
 | IMU | MPU6050 (6-axis accel+gyro, I2C 0x68) |
 | Comm | Bluetooth Classic SPP |
 | Device Name | `"STASYS-XXXX"` (chip MAC-based) |
-| Version | Upstream original (`dylemmas/STASYSESP32`) |
+| Version | Upstream original (`dylemmas/STASYSESP32`) — **single-file, polling-based** |
 
-> **Migration (2026-04-22)**: Firmware di-reset ke versi awal/original dari upstream `dylemmas/STASYSESP32`. Branch: `migrasi_firmware_awal`.
-
----
-
-## Remote Firmware Sync
-
-### Repository Setup
-
-This firmware directory is synchronized with the upstream repo:
-
-| Role | Repo | URL |
-|------|------|-----|
-| **Local** (this project) | Aydinerrizqu/STASYS | https://github.com/Aydinerrizqu/STASYS |
-| **Upstream (original)** | dylemmas/STASYSESP32 | https://github.com/dylemmas/STASYSESP32 |
-| **Upstream (modular)** | dylemmas/STSYS32 | https://github.com/dylemmas/STSYS32 |
-
-Remote `firmware` sudah di-configure saat setup. Cek dengan:
-
-```bash
-git remote -v
-```
-
-Jika belum ada, tambah dengan:
-
-```bash
-git remote add firmware https://github.com/dylemmas/STSYS32.git
-git fetch firmware
-```
-
-### Sync Workflow (Cara Update Firmware)
-
-Setiap kali partner push update ke `dylemmas/STSYS32`:
-
-```bash
-# 1. Fetch commits terbaru dari upstream
-git fetch firmware
-
-# 2. Lihat commits yang mau diambil
-git log --oneline firmware/main -10
-
-# 3. Pull firmware files dari upstream (overwrite file lokal)
-git checkout firmware/main -- src/ platformio.ini partitions_ota.csv
-
-# 4. Verify build
-pio run
-
-# 5. Commit hasil merge
-git add Firmware_STSYS32/
-git commit -m "chore: sync firmware from dylemmas/STSYS32"
-git push origin develop-migrasi-firmware-v3
-
-# 6. Upload ke ESP32
-pio run --target upload --upload-port COM8
-pio device monitor --port COM8 --baud 115200
-```
-
-Untuk lihat port COM:
-```bash
-python -c "import serial.tools.list_ports; [print(p.device) for p in serial.tools.list_ports.comports()]"
-```
-
----
-
-## Build & Flash
-
-```bash
-pio run                    # Build firmware
-pio run --target upload   # Upload via USB
-pio run --target upload --upload-port COM8  # Upload ke port spesifik
-pio device monitor        # Serial monitor (115200 baud)
-```
-
-### Build Flags
-
-| Flag | Value | Description |
-|------|-------|-------------|
-| `BUILD_VERSION_MAJOR` | 3 | Local versioning scheme |
-| `BUILD_VERSION_MINOR` | 1 | |
-| `BUILD_VERSION_PATCH` | 0 | |
-| `CONFIG_FREERTOS_HZ` | 1000 | FreeRTOS tick rate |
-| `configCHECK_FOR_STACK_OVERFLOW` | 2 | Stack overflow detection |
-| `configUSE_STACK_CHECKING` | 1 | Stack usage monitoring |
+> **Migration (2026-04-22)**: Firmware di-reset ke versi awal/original dari upstream `dylemmas/STASYSESP32`.
+> Branch: `migrasi_firmware_awal` (single-file `src/main.cpp`, ~297 lines).
+> ⚠️ **BREAKING CHANGE**: Protokol berbeda dari Flutter app — lihat section "Flutter App Compatibility".
 
 ---
 
 ## Architecture
 
-> **2026-04-22**: Simplified to single-file upstream original. No longer uses modular architecture.
+> **2026-04-22**: Simplified to single-file upstream original. No modular architecture.
 
-### Single-File Structure (from upstream)
+### Single-File Structure (upstream original)
 
 ```
-src/
-└── main.cpp   (~810 lines) — Everything in one file: sensor reading, Bluetooth,
-                          authentication, data transmission
+Firmware_STSYS32/
+├── src/
+│   └── main.cpp   (~297 lines) — sensor reading, Bluetooth, authentication, data transmission
+└── platformio.ini
 ```
 
-No separate modules for protocol, sensor, bluetooth, shot_detector, session, config,
-battery, led, storage, ota, security, coredump. All inline in main.cpp.
+No separate modules — all inline in main.cpp. Uses simple polling loop (not FreeRTOS tasks).
 
 ---
 
 ## Communication Protocol
 
-> **Full details**: See root `CLAUDE.md` → **Communication Protocol**
-
-> **⚠️ PROTOCOL BREAKING CHANGE**: Upstream original menggunakan protokol yang SANGAT BERBEDA dari modular firmware. Flutter app saat ini hanya compatible dengan modular firmware (CRC16-CCITT, binary packets). Perlu adapter/middleware atau update Flutter app untuk menerima data dari upstream.
+> ⚠️ **BREAKING CHANGE**: Upstream original menggunakan protokol yang berbeda dari modular firmware.
+> Flutter app saat ini HANYA compatible dengan modular firmware.
+> Demo mode adalah cara utama menggunakan Flutter app tanpa hardware.
 
 ### Binary Packet Format (upstream original)
 

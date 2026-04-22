@@ -34,6 +34,12 @@ class SensorDataProvider extends ChangeNotifier {
   List<DataPoint> _accelYData = [];
   List<DataPoint> _accelZData = [];
 
+  // Trace coordinates (pre-computed atan2 projection from isolate)
+  List<double> _traceXData = [];
+  List<double> _traceYData = [];
+  double _liveTraceX = 0;
+  double _liveTraceY = 0;
+
   // Session data (akan diambil dari isolate saat save)
   List<DataPoint>? _sessionGyroX;
   List<DataPoint>? _sessionGyroY;
@@ -87,7 +93,13 @@ class SensorDataProvider extends ChangeNotifier {
   List<DataPoint> get accelXData => _accelXData;
   List<DataPoint> get accelYData => _accelYData;
   List<DataPoint> get accelZData => _accelZData;
-  
+
+  // Trace coordinate getters (pre-computed from isolate)
+  List<double> get traceXData => _traceXData;
+  List<double> get traceYData => _traceYData;
+  double get liveTraceX => _liveTraceX;
+  double get liveTraceY => _liveTraceY;
+
   bool get isRecording => _isRecording;
   bool get isCalibrated => _isCalibrated;
   bool get isCalibrating => _isCalibrating;
@@ -227,7 +239,13 @@ class SensorDataProvider extends ChangeNotifier {
     _accelXData = List<DataPoint>.from(data['accelX']);
     _accelYData = List<DataPoint>.from(data['accelY']);
     _accelZData = List<DataPoint>.from(data['accelZ']);
-    
+
+    // Extract trace coordinates from isolate
+    _traceXData = List<double>.from(data['traceX'] ?? []);
+    _traceYData = List<double>.from(data['traceY'] ?? []);
+    _liveTraceX = (data['liveX'] as num?)?.toDouble() ?? 0.0;
+    _liveTraceY = (data['liveY'] as num?)?.toDouble() ?? 0.0;
+
     _updateCommonMetrics(data);
     notifyListeners();
   }
@@ -253,6 +271,14 @@ class SensorDataProvider extends ChangeNotifier {
 
     _accelZData.addAll(List<DataPoint>.from(data['accelZ']));
     _accelZData.removeWhere((p) => p.timestamp < cutoffTimestamp);
+
+    // Update trace coordinates from isolate
+    if (data.containsKey('traceX') && data['traceX'] != null) {
+      _traceXData = List<double>.from(data['traceX']);
+      _traceYData = List<double>.from(data['traceY']);
+      _liveTraceX = (data['liveX'] as num?)?.toDouble() ?? _liveTraceX;
+      _liveTraceY = (data['liveY'] as num?)?.toDouble() ?? _liveTraceY;
+    }
 
     _updateCommonMetrics(data);
     notifyListeners();

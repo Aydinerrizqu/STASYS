@@ -43,10 +43,9 @@ class _MuzzleTraceWidgetState extends State<MuzzleTraceWidget>
   double _targetX = 0.0, _targetY = 0.0; // EMA-smoothed target
   static const double _emaAlpha = 0.25;   // EMA smoothing factor
 
-  // --- Velocity tracking ---
-  static const double _liveDotSensitivity = 0.08;
-  double _prevAccelX = 0.0, _prevAccelY = 0.0;
+  // --- Speed tracking for dot sizing ---
   double _liveSpeed = 0.0;
+  double _prevLiveX = 0.0, _prevLiveY = 0.0;
 
   // --- Trace path ---
   final List<_TracePoint> _recentTrace = [];
@@ -106,54 +105,45 @@ class _MuzzleTraceWidgetState extends State<MuzzleTraceWidget>
   }
 
   void _processLatestData(SensorDataProvider provider) {
-    if (provider.accelXData.isEmpty) return;
+    // Use pre-computed trace coordinates from isolate
+    // No atan2 calculation needed on UI thread
 
-    final nowMs = DateTime.now().millisecondsSinceEpoch;
-
-    // --- LIVE DOT: ACCELEROMETER with EMA smoothing ---
-    final ax = provider.accelXData.last.value;
-    final ay = provider.accelYData.last.value;
-    final rawX = ax * _liveDotSensitivity;
-    final rawY = ay * _liveDotSensitivity;
+    // --- LIVE DOT: Use pre-computed coordinates from isolate ---
+    final rawX = provider.liveTraceX;
+    final rawY = provider.liveTraceY;
 
     // EMA smoothing on dot position
     _targetX = _targetX * _emaAlpha + rawX * (1.0 - _emaAlpha);
     _targetY = _targetY * _emaAlpha + rawY * (1.0 - _emaAlpha);
 
-    // Speed for dynamic dot sizing
-    final dax = ax - _prevAccelX;
-    final day = ay - _prevAccelY;
-    _liveSpeed = _sqrt(dax * dax + day * day);
-    _prevAccelX = ax;
-    _prevAccelY = ay;
+    // Speed for dynamic dot sizing (from trace delta)
+    final dx = rawX - _prevLiveX;
+    final dy = rawY - _prevLiveY;
+    _liveSpeed = _sqrt(dx * dx + dy * dy) * 100; // Scale for visual
+    _prevLiveX = rawX;
+    _prevLiveY = rawY;
 
-    // --- TRACE PATH: 2s gyro integration with opacity fade ---
-    final windowStart = nowMs - _traceWindowMs;
-    final data = provider.gyroXData;
-    int startIdx = 0;
-    for (int i = data.length - 1; i >= 0; i--) {
-      if (data[i].timestamp >= windowStart) {
-        startIdx = i;
-      } else {
-        break;
-      }
-    }
+    // --- TRACE PATH: Use pre-computed trace from isolate ---
+    final traceX = provider.traceXData;
+    final traceY = provider.traceYData;
 
     _recentTrace.clear();
-    double traceX = 0.0, traceY = 0.0;
-    for (int i = startIdx; i < data.length; i++) {
-      final gx = data[i].value;
-      final gz = provider.gyroZData[i].value;
-      final ts = data[i].timestamp;
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    final windowStart = nowMs - _traceWindowMs;
 
-      const dt = 0.01;
-      traceX += (-gz) * dt;
-      traceY += (-gx) * dt;
+    // Build trace points from pre-computed coordinates
+    // We use timestamp from accel data as proxy
+    for (int i = 0; i < traceX.length && i < traceY.length; i++) {
+      final ts = provider.accelXData.length > i
+          ? provider.accelXData[i].timestamp
+          : (nowMs - (traceX.length - i) * 10).toDouble();
 
-      final phase = _isRecoil
-          ? TracePhase.recoil
-          : (_isPress ? TracePhase.press : TracePhase.hold);
-      _recentTrace.add(_TracePoint(traceX, traceY, ts, phase));
+      if (ts >= windowStart) {
+        final phase = _isRecoil
+            ? TracePhase.recoil
+            : (_isPress ? TracePhase.press : TracePhase.hold);
+        _recentTrace.add(_TracePoint(traceX[i], traceY[i], ts, phase));
+      }
     }
 
     if (_recentTrace.length > _maxTracePoints) {

@@ -1,11 +1,146 @@
 // ============================================
 // File: providers/sensor_data_isolate.dart
 // MantisX-Style Shot Detection & Scoring
+// Aligned with Python stasysz.py live tracking logic
 // ============================================
 import 'dart:isolate';
 import 'package:ssa_app/Utils/ring_buffer.dart';
 import '../models/data_models.dart';
 import 'dart:math' as math;
+
+// ============================================
+// MPU6050 AXIS CONFIGURATION (from stasysz.py)
+// ============================================
+// Gyro axis remapping for MPU6050 orientation
+const int kGyroAxisX = 2;   // gz in raw data
+const int kGyroAxisY = 1;   // gy in raw data
+const int kGyroAxisZ = 0;   // gx in raw data
+
+// Gyro sign correction
+const double kGyroSignX = -1.0;
+const double kGyroSignY = 1.0;
+const double kGyroSignZ = 1.0;
+
+// Barrel direction vector (pointing forward, +Z)
+const _kBarrelVector = [0.0, 0.0, 1.0];
+
+// Screen coordinate signs (from stasysz.py)
+const double kScreenXSign = 1.0;
+const double kScreenYSign = 1.0;
+
+// ============================================
+// QUATERNION MATH (from stasysz.py)
+// ============================================
+
+class _Quaternion {
+  double w, x, y, z;
+  _Quaternion(this.w, this.x, this.y, this.z);
+
+  static _Quaternion identity() => _Quaternion(1.0, 0.0, 0.0, 0.0);
+
+  _Quaternion copy() => _Quaternion(w, x, y, z);
+}
+
+_Quaternion _quatMultiply(_Quaternion a, _Quaternion b) {
+  return _Quaternion(
+    a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z,
+    a.w * b.x + a.x * b.w + a.y * b.z - a.z * b.y,
+    a.w * b.y - a.x * b.z + a.y * b.w + a.z * b.x,
+    a.w * b.z + a.x * b.y - a.y * b.x + a.z * b.w,
+  );
+}
+
+_Quaternion _quatNormalize(_Quaternion q) {
+  final norm = math.sqrt(q.w * q.w + q.x * q.x + q.y * q.y + q.z * q.z);
+  if (norm < 1e-10) return _Quaternion.identity();
+  return _Quaternion(q.w / norm, q.x / norm, q.y / norm, q.z / norm);
+}
+
+_Quaternion _quatConjugate(_Quaternion q) {
+  return _Quaternion(q.w, -q.x, -q.y, -q.z);
+}
+
+List<double> _quatRotateVector(_Quaternion q, List<double> v) {
+  // Pure quaternion from vector
+  final pure = _Quaternion(0.0, v[0], v[1], v[2]);
+  // q * pure * q_conjugate, then take vector part
+  final rotated = _quatMultiply(_quatMultiply(q, pure), _quatConjugate(q));
+  return [rotated.x, rotated.y, rotated.z];
+}
+
+_Quaternion _quatIntegrate(_Quaternion q, double wx, double wy, double wz, double dt) {
+  // omega_pure = [0, wx, wy, wz]
+  final qDot = _Quaternion(
+    -0.5 * (q.x * wx + q.y * wy + q.z * wz),
+    0.5 * (q.w * wx + q.y * wz - q.z * wy),
+    0.5 * (q.w * wy - q.x * wz + q.z * wx),
+    0.5 * (q.w * wz + q.x * wy - q.y * wx),
+  );
+  return _quatNormalize(_Quaternion(
+    q.w + qDot.w * dt,
+    q.x + qDot.x * dt,
+    q.y + qDot.y * dt,
+    q.z + qDot.z * dt,
+  ));
+}
+
+_Quaternion _quatFromAccel(double ax, double ay, double az) {
+  // g = [ax, ay, az]
+  var norm = math.sqrt(ax * ax + ay * ay + az * az);
+  if (norm < 1e-6) return _Quaternion.identity();
+  ax /= norm;
+  ay /= norm;
+  az /= norm;
+
+  // World up = [0, 0, 1]
+  final dot = az; // [ax, ay, az] · [0, 0, 1]
+
+  if (dot >= 0.9999) return _Quaternion.identity();
+
+  if (dot <= -0.9999) {
+    // Pointing straight down - use any perpendicular axis
+    var axis = [1.0, 0.0, 0.0];
+    var cross = ax * axis[2] - az * axis[0];
+    if (cross.abs() < 1e-6) {
+      axis = [0.0, 1.0, 0.0];
+      cross = ax * axis[2] - az * axis[0];
+    }
+    final len = cross.abs();
+    if (len > 1e-6) {
+      axis = [axis[1] * az - axis[2] * ay, axis[2] * ax - axis[0] * az, axis[0] * ay - axis[1] * ax];
+      norm = math.sqrt(axis[0] * axis[0] + axis[1] * axis[1] + axis[2] * axis[2]);
+      if (norm > 1e-6) {
+        axis = [axis[0] / norm, axis[1] / norm, axis[2] / norm];
+      }
+    }
+    return _Quaternion(0.0, axis[0], axis[1], axis[2]);
+  }
+
+  // Cross product for rotation axis
+  var axisX = 0.0 - ay * 1.0 - az * 0.0; // cross([ax,ay,az], [0,0,1])[0]
+  var axisY = ax * 1.0 - 0.0 - az * 0.0;  // cross([ax,ay,az], [0,0,1])[1]
+  var axisZ = ax * 0.0 - ay * 0.0 - 0.0;  // cross([ax,ay,az], [0,0,1])[2]
+
+  norm = math.sqrt(axisX * axisX + axisY * axisY + axisZ * axisZ);
+  if (norm > 1e-6) {
+    axisX /= norm;
+    axisY /= norm;
+    axisZ /= norm;
+  } else {
+    axisX = 1.0;
+    axisY = 0.0;
+    axisZ = 0.0;
+  }
+
+  final angle = math.acos(dot.clamp(-1.0, 1.0));
+  final s = math.sin(angle / 2.0);
+  return _Quaternion(
+    math.cos(angle / 2.0),
+    axisX * s,
+    axisY * s,
+    axisZ * s,
+  );
+}
 
 /// Message untuk komunikasi dengan isolate
 class SensorDataMessage {
@@ -155,7 +290,7 @@ class ScoringConfig {
 }
 
 // ============================================
-// SHOT DETECTOR STATE MACHINE
+// SHOT DETECTOR STATE MACHINE (aligned with stasysz.py)
 // ============================================
 
 enum ShotState { idle, arming, armed, postGather, cooldown }
@@ -173,17 +308,25 @@ class ShotDetector {
   int gatherCounter = 0;
   int lastTriggerPiezo = 0;
 
-  // History buffers for trace analysis
-  final List<double> _traceX = []; // Integrated gyro X (windage)
-  final List<double> _traceY = []; // Integrated gyro Y (elevation)
-  final List<double> _rawGx = [];
-  final List<double> _rawGy = [];
-  final List<double> _rawGz = [];
+  // History buffers for trace analysis (quaternion-based projection)
+  final List<double> _traceX = []; // Screen X from atan2 projection
+  final List<double> _traceY = []; // Screen Y from atan2 projection
+
+  // Quaternion state for orientation tracking
+  _Quaternion _q = _Quaternion.identity();
+  _Quaternion _qTare = _Quaternion.identity(); // Tare reference
 
   // Calibration
   double offsetGx = 0;
   double offsetGy = 0;
   double offsetGz = 0;
+
+  // Previous accelerometer for jerk calculation
+  double _prevAx = 0, _prevAy = 0, _prevAz = 0;
+
+  // Buffer size for trace history
+  int get _bufferSize => (ScoringConfig.holdDurationIdx +
+                         ScoringConfig.recoilDurationIdx + 10) * 2;
 
   static const double dt = 0.01; // 100Hz = 10ms
 
@@ -192,6 +335,21 @@ class ShotDetector {
     offsetGx = gx.reduce((a, b) => a + b) / gx.length;
     offsetGy = gy.reduce((a, b) => a + b) / gy.length;
     offsetGz = gz.reduce((a, b) => a + b) / gz.length;
+  }
+
+  void tare() {
+    // Initialize tare quaternion from current orientation
+    _qTare = _q.copy();
+  }
+
+  void reset() {
+    _traceX.clear();
+    _traceY.clear();
+    _q = _Quaternion.identity();
+    _qTare = _Quaternion.identity();
+    state = ShotState.idle;
+    stateTimer = 0;
+    gatherCounter = 0;
   }
 
   ShotResult? process({
@@ -203,37 +361,44 @@ class ShotDetector {
     required double gz,
     required int piezo,
   }) {
-    // Apply calibration
-    final fixedGx = gx - offsetGx;
-    final fixedGy = gy - offsetGy;
-    final fixedGz = gz - offsetGz;
+    // 1. Bias-correct raw gyros
+    final gxBc = gx - offsetGx;
+    final gyBc = gy - offsetGy;
+    final gzBc = gz - offsetGz;
 
-    // Integrate for trace (rotation angle in radians)
-    // X = integral(-gz * dt), Y = integral(-gx * dt)
-    final newX = (_traceX.isEmpty ? 0.0 : _traceX.last) + (-fixedGz) * dt;
-    final newY = (_traceY.isEmpty ? 0.0 : _traceY.last) + (-fixedGx) * dt;
+    // 2. Remap gyro axes (MPU6050 orientation)
+    final rawGyros = [gxBc, gyBc, gzBc];
+    final wx = kGyroSignX * rawGyros[kGyroAxisX];
+    final wy = kGyroSignY * rawGyros[kGyroAxisY];
+    final wz = kGyroSignZ * rawGyros[kGyroAxisZ];
 
-    // Keep history
-    _traceX.add(newX);
-    _traceY.add(newY);
-    _rawGx.add(fixedGx);
-    _rawGy.add(fixedGy);
-    _rawGz.add(fixedGz);
+    // 3. Integrate orientation quaternion
+    _q = _quatIntegrate(_q, wx, wy, wz, dt);
+
+    // 4. Relative (tared) quaternion
+    final qRel = _quatNormalize(
+      _quatMultiply(_quatConjugate(_qTare), _q));
+
+    // 5. Project barrel direction to 2D screen coordinates
+    //    Using atan2 projection (from stasysz.py)
+    final v = _quatRotateVector(qRel, _kBarrelVector);
+    final currX = math.atan2(-v[1], v[2]) * kScreenXSign;
+    final currY = math.atan2(v[0], v[2]) * kScreenYSign;
+
+    // 6. Store trace
+    _traceX.add(currX);
+    _traceY.add(currY);
 
     // Trim to needed length
-    final maxLen = ScoringConfig.totalHistoryNeeded * 2;
-    if (_traceX.length > maxLen) {
-      _traceX.removeRange(0, _traceX.length - maxLen);
-      _traceY.removeRange(0, _traceY.length - maxLen);
-      _rawGx.removeRange(0, _rawGx.length - maxLen);
-      _rawGy.removeRange(0, _rawGy.length - maxLen);
-      _rawGz.removeRange(0, _rawGz.length - maxLen);
+    if (_traceX.length > _bufferSize) {
+      _traceX.removeRange(0, _traceX.length - _bufferSize);
+      _traceY.removeRange(0, _traceY.length - _bufferSize);
     }
 
-    // Calculate rotation magnitude
-    final rotMag = math.sqrt(fixedGx * fixedGx + fixedGy * fixedGy + fixedGz * fixedGz);
+    // 7. Calculate rotation magnitude for shot detection
+    final rotMag = math.sqrt(wx * wx + wy * wy + wz * wz);
 
-    // Calculate jerk
+    // 8. Calculate jerk from accelerometer
     final jerk = _calculateJerk(ax, ay, az);
 
     ShotResult? result;
@@ -299,8 +464,6 @@ class ShotDetector {
     return result;
   }
 
-  double _prevAx = 0, _prevAy = 0, _prevAz = 0;
-
   double _calculateJerk(double ax, double ay, double az) {
     final jx = ax - _prevAx;
     final jy = ay - _prevAy;
@@ -310,6 +473,12 @@ class ShotDetector {
     _prevAz = az;
     return math.sqrt(jx * jx + jy * jy + jz * jz) / dt;
   }
+
+  // Public getters for trace coordinates (used by widget)
+  List<double> get traceX => List.unmodifiable(_traceX);
+  List<double> get traceY => List.unmodifiable(_traceY);
+  double get lastTraceX => _traceX.isNotEmpty ? _traceX.last : 0.0;
+  double get lastTraceY => _traceY.isNotEmpty ? _traceY.last : 0.0;
 
   ShotResult? _analyzeShot() {
     if (_traceX.length < ScoringConfig.totalHistoryNeeded) return null;
@@ -716,6 +885,10 @@ class SensorDataIsolate {
       'accelX': List<DataPoint>.from(_newAccelX),
       'accelY': List<DataPoint>.from(_newAccelY),
       'accelZ': List<DataPoint>.from(_newAccelZ),
+      'traceX': _shotDetector.traceX,
+      'traceY': _shotDetector.traceY,
+      'liveX': _shotDetector.lastTraceX,
+      'liveY': _shotDetector.lastTraceY,
     }));
 
     _newGyroX.clear();
@@ -734,6 +907,10 @@ class SensorDataIsolate {
       'accelX': _fullAccelX.toList(),
       'accelY': _fullAccelY.toList(),
       'accelZ': _fullAccelZ.toList(),
+      'traceX': _shotDetector.traceX,
+      'traceY': _shotDetector.traceY,
+      'liveX': _shotDetector.lastTraceX,
+      'liveY': _shotDetector.lastTraceY,
     }));
   }
 

@@ -30,7 +30,7 @@ d:\Aydiner\Projek Flutter SSA\
 │       │   ├── database_service.dart   # CRUD operations, binary BLOB encoding
 │       │   └── export_service.dart     # CSV export via Share Sheet (all sessions)
 │       ├── providers/
-│       │   ├── bluetooth_provider.dart  # 8-state packet parser, CRC16-CCITT, HMAC-SHA256 auth
+│       │   ├── bluetooth_provider.dart  # Text auth (upstream) + dual-mode parser (text auth → binary float 30-byte)
 │       │   ├── sensor_data_provider.dart # UI state, isolate communication, demo mode
 │       │   ├── sensor_data_isolate.dart  # Shot detection + 3-phase analysis
 │       │   ├── settings_provider.dart    # + isDemoMode, setDemoMode()
@@ -69,7 +69,37 @@ d:\Aydiner\Projek Flutter SSA\
 
 ## Communication Protocol
 
-### Binary Packet Format
+> **Dual-protocol support** (2026-04-22): Flutter app now handles upstream firmware (text auth + XOR + 30-byte float packets) in parallel with the modular firmware protocol via dual-mode parser.
+
+### Upstream Original (Firmware_STSYS32 — Active)
+
+**Binary Packet Format** (30 bytes):
+
+| Offset | Size | Field | Notes |
+|--------|------|-------|-------|
+| 0 | 1 | Sync0 | `0xAA` |
+| 1 | 1 | Sync1 | `0xBB` |
+| 2 | 4 | ax | float m/s² |
+| 6 | 4 | ay | float m/s² |
+| 10 | 4 | az | float m/s² |
+| 14 | 4 | gx | float rad/s |
+| 18 | 4 | gy | float rad/s |
+| 22 | 4 | gz | float rad/s |
+| 26 | 2 | piezo | uint16 ADC peak |
+| 28 | 1 | battery | uint8 % |
+| 29 | 1 | checksum | XOR of bytes 2..28 |
+
+**Authentication** (text-based):
+```
+ESP32 → App: "READY\n"
+App → ESP32: "AUTH_CHALLENGE\n"
+ESP32 → App: SHA256(challenge + SECRET_KEY) hex\n
+ESP32 → App: streams 30-byte binary packets @ 100Hz
+```
+**Secret Key**: `12ebaf10h12fa9123z21sti`
+**Parser**: `_ConnectionPhase` state machine (waitingForReady → waitingForHash → streaming)
+
+### Modular Firmware (Legacy — documented below)
 
 | Offset | Size | Field | Notes |
 |--------|------|-------|-------|
@@ -297,15 +327,16 @@ Preferences (built-in)
 ### Pending
 - [ ] **Frame freeze / gralloc4 GPU buffer failure** — GPU/driver incompatibility with Impeller rendering engine. **Not app code issue**. Test on different device.
 - [ ] **Trace window sync with Python** — Flutter 2s window vs Python 0.5s cursor-normalized.
-- [ ] **Flutter ↔ Firmware protocol bridge** — upstream firmware uses text auth + XOR + float packets; Flutter app only supports modular firmware binary protocol. Demo mode works, BT hardware connection needs adapter.
+- [ ] **Trace camera-follow** (2026-04-22) — muzzle trace center stays fixed; user wants center to follow dot (camera movement). Fix: track running center offset, offset all drawing by that amount.
+- [ ] **MantisX feature parity** — drill modes, trend analysis, split time, session notes, etc.
 
 ### Migration Status
 
 | Component | Protocol | Status |
 |-----------|---------|--------|
-| `Firmware_STSYS32/` | Upstream original (text auth, XOR, float packets) | ✅ Complete — reset to `dylemmas/STASYSESP32` single-file |
-| `Python Code (SSA)/STASYS.py` | New | ProtocolDecoder class added |
-| `ssa_app/` Flutter | New (CRC16-CCITT, binary) | ⚠️ **Incompatible** with upstream firmware — use demo mode |
+| `Firmware_STSYS32/` | Upstream original (text auth, XOR, float 30-byte) | ✅ Complete — reset to `dylemmas/STASYSESP32` single-file |
+| `Python Code (SSA)/STASYS.py` | Upstream original | ✅ Compatible via ProtocolDecoder class |
+| `ssa_app/` Flutter | Upstream original protocol | ✅ **Synced** — dual-mode parser handles text auth → binary streaming |
 
 > ⚠️ **Flutter app NOT compatible with upstream firmware** — different protocol. Demo mode is primary way to use the app without ESP32 hardware.
 

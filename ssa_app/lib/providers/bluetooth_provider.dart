@@ -7,66 +7,17 @@ import 'package:crypto/crypto.dart';
 import 'dart:convert';
 import 'dart:async';
 
-// ================= AUTH STATE (UPDATED) =================
-enum AuthState {
-  idle,              // Not in auth mode
-  waitingForChallenge, // Waiting for EVT_AUTH_CHALLENGE (0x14)
-  authenticated,      // Auth successful
-  failed,             // Auth failed
+// ================= CONNECTION PHASE =================
+// Upstream firmware uses text-based auth, then binary float packets.
+enum _ConnectionPhase {
+  waitingForReady,  // Waiting for "READY\n" from ESP32
+  waitingForHash,   // Sent challenge, waiting for SHA256 hex response
+  streaming,        // Auth succeeded, receiving 0xAA 0xBB binary packets
 }
 
-// ================= PARSER STATE MACHINE =================
-enum _ParserState {
-  waitSync0,
-  waitSync1,
-  readType,
-  readLenLo,
-  readLenHi,
-  readPayload,
-  readCrcLo,
-  readCrcHi,
-}
-
-// ================= PACKET TYPES (NEW PROTOCOL) =================
-const int _PKT_SYNC0 = 0xAA;
-const int _PKT_SYNC1 = 0x55;
-
-const int _PKT_TYPE_CMD_START_SESSION    = 0x01;
-const int _PKT_TYPE_CMD_STOP_SESSION     = 0x02;
-const int _PKT_TYPE_CMD_AUTH             = 0x06;
-const int _PKT_TYPE_CMD_GET_INFO         = 0x03;
-const int _PKT_TYPE_CMD_GET_CONFIG       = 0x04;
-const int _PKT_TYPE_CMD_SET_CONFIG       = 0x05;
-const int _PKT_TYPE_EVT_SESSION_STARTED   = 0x10;
-const int _PKT_TYPE_EVT_SESSION_STOPPED   = 0x11;
-const int _PKT_TYPE_EVT_SHOT_DETECTED    = 0x12;
-const int _PKT_TYPE_EVT_AUTH_CHALLENGE   = 0x14;
-const int _PKT_TYPE_EVT_AUTH_SUCCESS     = 0x15;
-const int _PKT_TYPE_EVT_ERROR            = 0x1F;
-const int _PKT_TYPE_DATA_RAW_SAMPLE      = 0x20;
-const int _PKT_TYPE_RSP_INFO             = 0x81;
-const int _PKT_TYPE_RSP_CONFIG           = 0x82;
-const int _PKT_TYPE_RSP_ACK             = 0x83;
-const int _PKT_TYPE_RSP_SHOT_STATS      = 0x85;
-
-// ================= SECRET KEY =================
 const String _secretKey = "12ebaf10h12fa9123z21sti";
 
 class BluetoothProvider extends ChangeNotifier {
-
-  // ================= AUTH & SESSION STATE =================
-  AuthState _authState = AuthState.idle;
-  bool _sessionActive = false;
-  int _sessionId = 0;
-  int _shotCount = 0;
-
-  // ================= PROTOCOL DECODER STATE =================
-  _ParserState _parserState = _ParserState.waitSync0;
-  final List<int> _recvBuffer = [];
-  int _payloadLen = 0;
-  int _crcComputed = 0xFFFF;
-  int _crcReceived = 0;
-  int _packetType = 0;
 
   SensorDataProvider _sensorDataProvider;
   StreamSubscription<Uint8List>? _dataSubscription;
@@ -85,13 +36,18 @@ class BluetoothProvider extends ChangeNotifier {
   bool _isScanning = false;
   bool _isAuthenticated = false;
   String _deviceName = '';
+  _ConnectionPhase _connectionPhase = _ConnectionPhase.waitingForReady;
+
+  // Binary parser state
+  static const int _SYNC0 = 0xAA;
+  static const int _SYNC1 = 0xBB;
+  // Struct: header(2) + ax/ay/az/gx/gy/gz(4×6=24) + piezo(2) + battery(1) + checksum(1) = 30 bytes
+  static const int _PACKET_SIZE = 30;
+  final List<int> _binaryBuffer = [];
 
   // Statistics
   int _totalPacketsReceived = 0;
-  int _invalidPacketsCount = 0;
   int _checksumErrorsCount = 0;
-  int _consecutiveErrors = 0;
-  static const int MAX_CONSECUTIVE_ERRORS = 10;
 
   // Getters
   BluetoothDevice? get selectedDevice => _selectedDevice;
@@ -102,395 +58,168 @@ class BluetoothProvider extends ChangeNotifier {
   bool get isAuthenticated => _isAuthenticated;
   String get connectedDeviceName => _deviceName.isNotEmpty ? _deviceName : (_selectedDevice?.name ?? 'STASYS');
   int get totalPacketsReceived => _totalPacketsReceived;
-  int get invalidPacketsCount => _invalidPacketsCount;
+  int get invalidPacketsCount => 0;  // Not tracked in upstream protocol
   int get checksumErrorsCount => _checksumErrorsCount;
-  bool get sessionActive => _sessionActive;
-  int get sessionId => _sessionId;
-  int get shotCount => _shotCount;
+  bool get sessionActive => false;  // Upstream firmware has no session concept
+  int get sessionId => 0;
+  int get shotCount => 0;
 
   double get packetLossPercentage {
     if (_totalPacketsReceived == 0) return 0.0;
-    return ((_invalidPacketsCount + _checksumErrorsCount) / _totalPacketsReceived) * 100;
+    return (_checksumErrorsCount / _totalPacketsReceived) * 100;
   }
 
   // ================= DEBUG =================
-  static int _debugCrcPrinted = 0;
   static int _debugRxPrinted = 0;
+  static int _debugBinaryPrinted = 0;
 
-  // ================= CRC16-CCITT =================
-  int _updateCrc(int crc, int byte) {
-    crc ^= byte << 8;
-    for (int i = 0; i < 8; i++) {
-      if ((crc & 0x8000) != 0) {
-        crc = ((crc << 1) ^ 0x1021) & 0xFFFF;
-      } else {
-        crc = (crc << 1) & 0xFFFF;
+  // ================= DUAL-MODE DATA RECEPTION =================
+  void _onDataReceived(Uint8List data) {
+    if (_debugRxPrinted < 3) {
+      debugPrint('[RX] raw len=${data.length}: ${data.map((e) => e.toRadixString(16).padLeft(2, '0')).join(' ')}');
+      _debugRxPrinted++;
+    }
+
+    switch (_connectionPhase) {
+      case _ConnectionPhase.waitingForReady:
+      case _ConnectionPhase.waitingForHash:
+        _handleTextData(data);
+        break;
+      case _ConnectionPhase.streaming:
+        _handleBinaryData(data);
+        break;
+    }
+  }
+
+  // ================= TEXT-BASED AUTH (upstream firmware) =================
+  String _textBuffer = '';
+
+  void _handleTextData(Uint8List data) {
+    _textBuffer += String.fromCharCodes(data);
+
+    while (_textBuffer.contains('\n')) {
+      int nlIndex = _textBuffer.indexOf('\n');
+      String line = _textBuffer.substring(0, nlIndex).trim();
+      _textBuffer = _textBuffer.substring(nlIndex + 1);
+
+      if (line.isEmpty) continue;
+
+      if (_connectionPhase == _ConnectionPhase.waitingForReady) {
+        if (line == 'READY') {
+          debugPrint('[BT] Received READY, sending auth challenge...');
+          _sendText('AUTH_CHALLENGE');
+          _connectionPhase = _ConnectionPhase.waitingForHash;
+        }
+      } else if (_connectionPhase == _ConnectionPhase.waitingForHash) {
+        if (line.length == 64) {
+          debugPrint('[BT] Received hash response (${line.length} chars)');
+          String toHash = 'AUTH_CHALLENGE' + _secretKey;
+          String computedHash = sha256.convert(utf8.encode(toHash)).toString();
+          if (line.toLowerCase() == computedHash.toLowerCase()) {
+            debugPrint('[BT] Auth verified, switching to streaming mode');
+            _isAuthenticated = true;
+            _connectionPhase = _ConnectionPhase.streaming;
+            _textBuffer = '';
+            notifyListeners();
+            _sensorDataProvider.requestFullSync();
+          } else {
+            debugPrint('[BT] Auth FAILED: expected=$computedHash, got=$line');
+          }
+        }
       }
     }
-    return crc;
   }
 
-  int _crc16Ccitt(List<int> data) {
-    int crc = 0xFFFF;
-    for (int byte in data) {
-      crc = _updateCrc(crc, byte);
+  void _sendText(String text) {
+    if (_connection == null || !_isConnected) return;
+    try {
+      _connection!.output.add(Uint8List.fromList('$text\n'.codeUnits));
+      _connection!.output.allSent;
+    } catch (e) {
+      debugPrint('Error sending text: $e');
     }
-    return crc;
   }
 
-  // ================= PROTOCOL DECODER =================
-  void _feedParserByte(int b) {
-    switch (_parserState) {
-      case _ParserState.waitSync0:
-        if (b == _PKT_SYNC0) {
-          _parserState = _ParserState.waitSync1;
+  // ================= BINARY PACKET PARSER (34-byte float packets) =================
+  void _handleBinaryData(Uint8List data) {
+    for (int b in data) {
+      _binaryBuffer.add(b);
+
+      if (_binaryBuffer.length == 1) {
+        if (b != _SYNC0) {
+          _binaryBuffer.clear();
+          _binaryBuffer.add(b);
         }
-        break;
-
-      case _ParserState.waitSync1:
-        if (b == _PKT_SYNC1) {
-          _parserState = _ParserState.readType;
-          _recvBuffer.clear();
-          _crcComputed = 0xFFFF;
-        } else if (b != _PKT_SYNC0) {
-          _parserState = _ParserState.waitSync0;
-        }
-        break;
-
-      case _ParserState.readType:
-        _packetType = b;
-        _crcComputed = _updateCrc(_crcComputed, b);
-        _parserState = _ParserState.readLenLo;
-        break;
-
-      case _ParserState.readLenLo:
-        _payloadLen = b;
-        _crcComputed = _updateCrc(_crcComputed, b);
-        _parserState = _ParserState.readLenHi;
-        break;
-
-      case _ParserState.readLenHi:
-        _payloadLen |= (b << 8);
-        _crcComputed = _updateCrc(_crcComputed, b);
-        if (_payloadLen > 64) {
-          debugPrint('WARNING: payload ${_payloadLen} > 64, truncating');
-          _payloadLen = 64;
-        }
-        _recvBuffer.clear();
-        if (_payloadLen == 0) {
-          _parserState = _ParserState.readCrcLo;
-        } else {
-          _parserState = _ParserState.readPayload;
-        }
-        break;
-
-      case _ParserState.readPayload:
-        _recvBuffer.add(b);
-        _crcComputed = _updateCrc(_crcComputed, b);
-        if (_recvBuffer.length >= _payloadLen) {
-          _parserState = _ParserState.readCrcLo;
-        }
-        break;
-
-      case _ParserState.readCrcLo:
-        _crcReceived = b;
-        _parserState = _ParserState.readCrcHi;
-        break;
-
-      case _ParserState.readCrcHi:
-        _crcReceived |= (b << 8);
-        if (_crcComputed == _crcReceived) {
-          _handlePacket(_packetType, List<int>.from(_recvBuffer));
-        } else {
-          if (_debugCrcPrinted < 1) {
-            List<int> allBytes = [_packetType, _payloadLen & 0xFF, (_payloadLen >> 8) & 0xFF, ..._recvBuffer, _crcReceived & 0xFF, (_crcReceived >> 8) & 0xFF];
-            debugPrint('[BT] CRC FAIL: type=0x${_packetType.toRadixString(16)}, len=$_payloadLen, bytes=${allBytes.map((e)=>e.toRadixString(16).padLeft(2,"0")).join(" ")}');
-            debugPrint('[BT] CRC: expected=${_crcComputed.toRadixString(16)}, got=${_crcReceived.toRadixString(16)}');
-            _debugCrcPrinted++;
+      } else if (_binaryBuffer.length == 2) {
+        if (b != _SYNC1) {
+          _binaryBuffer.clear();
+          if (b == _SYNC0) {
+            _binaryBuffer.add(b);
           }
-          _checksumErrorsCount++;
         }
-        _parserState = _ParserState.waitSync0;
-        break;
-    }
-  }
-
-  // ================= PACKET HANDLER =================
-  void _handlePacket(int type, List<int> payload) {
-    switch (type) {
-      case _PKT_TYPE_EVT_SESSION_STARTED:
-        if (payload.length >= 4) {
-          ByteData bd = ByteData.sublistView(Uint8List.fromList(payload));
-          _sessionId = bd.getUint32(0, Endian.little);
-          _sessionActive = true;
-          _shotCount = 0;
-          debugPrint('[BT] Session started: $_sessionId');
-          notifyListeners();
+      }
+      if (_binaryBuffer.length == _PACKET_SIZE) {
+        if (_binaryBuffer[0] == _SYNC0 && _binaryBuffer[1] == _SYNC1) {
+          if (_verifyXorChecksum(_binaryBuffer)) {
+            _parseBinaryPacket(_binaryBuffer);
+            _totalPacketsReceived++;
+          } else {
+            _checksumErrorsCount++;
+            if (_debugBinaryPrinted < 3) {
+              // Compute XOR for debugging
+              int computedXor = 0;
+              for (int i = 2; i < _PACKET_SIZE - 1; i++) {
+                computedXor ^= _binaryBuffer[i];
+              }
+              debugPrint('[BT] XOR fail: got=$_binaryBuffer.last.toRadixString(16), expected=$computedXor.toRadixString(16), bytes=${_binaryBuffer.sublist(2).map((e) => e.toRadixString(16).padLeft(2, '0')).join(' ')}');
+              _debugBinaryPrinted++;
+            }
+          }
         }
-        break;
-
-      case _PKT_TYPE_EVT_SESSION_STOPPED:
-        _sessionActive = false;
-        debugPrint('[BT] Session stopped');
-        notifyListeners();
-        break;
-
-      case _PKT_TYPE_EVT_SHOT_DETECTED:
-        _handleShotFromFirmware(payload);
-        break;
-
-      case _PKT_TYPE_DATA_RAW_SAMPLE:
-        _handleRawSample(payload);
-        break;
-
-      case _PKT_TYPE_EVT_AUTH_CHALLENGE:
-        _handleAuthChallenge(payload);
-        break;
-
-      case _PKT_TYPE_EVT_AUTH_SUCCESS:
-        _authState = AuthState.authenticated;
-        _isAuthenticated = true;
-        notifyListeners();
-        debugPrint('[BT] Auth successful');
-        break;
-
-      case _PKT_TYPE_EVT_ERROR:
-        debugPrint('[BT] Firmware error: ${String.fromCharCodes(payload)}');
-        break;
-
-      case _PKT_TYPE_RSP_INFO:
-        debugPrint('[BT] Got RSP_INFO packet');
-        break;
-
-      case _PKT_TYPE_RSP_ACK:
-        debugPrint('[BT] Got RSP_ACK');
-        break;
-
-      case _PKT_TYPE_RSP_CONFIG:
-        _handleRspConfig(payload);
-        break;
-
-      case 0x13:  // EVT_SENSOR_HEALTH — not used in UI yet
-        break;
-
-      default:
-        debugPrint('[BT] Unknown packet type: 0x${type.toRadixString(16)}');
-        break;
+        _binaryBuffer.clear();
+      }
     }
   }
 
-  // ================= AUTH CHALLENGE HANDLER =================
-  void _handleAuthChallenge(List<int> payload) {
-    if (payload.length < 20) return;
-
-    // Extract session_id (4 bytes LE) + challenge (16 bytes)
-    ByteData bd = ByteData.sublistView(Uint8List.fromList(payload));
-    int sessionId = bd.getUint32(0, Endian.little);
-    List<int> challenge = payload.sublist(4, 20);
-
-    debugPrint('[BT] Auth challenge: session=$sessionId, challenge=${challenge.length} bytes');
-
-    // Compute HMAC-SHA256(key, challenge + session_id_bytes)
-    List<int> sessionBytes = [
-      sessionId & 0xFF,
-      (sessionId >> 8) & 0xFF,
-      (sessionId >> 16) & 0xFF,
-      (sessionId >> 24) & 0xFF,
-    ];
-    List<int> authInput = [...challenge, ...sessionBytes];
-
-    var hmac = Hmac(sha256, utf8.encode(_secretKey));
-    List<int> token = hmac.convert(authInput).bytes;
-
-    // Build CMD_AUTH packet
-    List<int> authPayload = [...sessionBytes, ...token];
-    _sendPacket(_PKT_TYPE_CMD_AUTH, authPayload);
-
-    _authState = AuthState.waitingForChallenge;
-    debugPrint('[BT] Sent CMD_AUTH with HMAC-SHA256');
+  bool _verifyXorChecksum(List<int> buf) {
+    // XOR bytes 2..28 (27 bytes, i.e. everything after sync until checksum byte)
+    int xor = 0;
+    for (int i = 2; i < _PACKET_SIZE - 1; i++) {
+      xor ^= buf[i];
+    }
+    return xor == buf[_PACKET_SIZE - 1]; // byte 29 is the checksum
   }
 
-  // ================= RAW SAMPLE HANDLER =================
-  void _handleRawSample(List<int> payload) {
-    if (payload.length < 24) {
-      _invalidPacketsCount++;
-      return;
-    }
+  void _parseBinaryPacket(List<int> buf) {
+    ByteData bd = ByteData.sublistView(Uint8List.fromList(buf));
 
-    ByteData bd = ByteData.sublistView(Uint8List.fromList(payload));
-
-    // Convert raw int16 (from MPU6050) to float
-    // ESP32 PktRawSample is 24 bytes (compiler-aligned):
-    //   counter(4) + timestamp(4) + accel(6) + gyro(6) + piezo(2) + reserved(2)
-    // Offsets in payload:
-    //   0-3:   counter (uint32 LE)
-    //   4-7:   timestamp_us (uint32 LE)
-    //   8-9:   accel_x (int16 LE) → m/s²
-    //   10-11: accel_y (int16 LE)
-    //   12-13: accel_z (int16 LE)
-    //   14-15: gyro_x (int16 LE) → rad/s
-    //   16-17: gyro_y (int16 LE)
-    //   18-19: gyro_z (int16 LE)
-    //   20-21: piezo (uint16 LE)
-    //   22-23: reserved
-    double ax = bd.getInt16(8, Endian.little) / 8192.0 * 9.81;
-    double ay = bd.getInt16(10, Endian.little) / 8192.0 * 9.81;
-    double az = bd.getInt16(12, Endian.little) / 8192.0 * 9.81;
-    double gx = bd.getInt16(14, Endian.little) / 65.5 * 0.0174533;
-    double gy = bd.getInt16(16, Endian.little) / 65.5 * 0.0174533;
-    double gz = bd.getInt16(18, Endian.little) / 65.5 * 0.0174533;
-    int piezo = bd.getUint16(20, Endian.little);
+    // [0-1] sync, [2-5] ax, [6-9] ay, [10-13] az, [14-17] gx, [18-21] gy, [22-25] gz, [26-27] piezo, [28] battery, [29] checksum
+    double ax = bd.getFloat32(2, Endian.little);
+    double ay = bd.getFloat32(6, Endian.little);
+    double az = bd.getFloat32(10, Endian.little);
+    double gx = bd.getFloat32(14, Endian.little);
+    double gy = bd.getFloat32(18, Endian.little);
+    double gz = bd.getFloat32(22, Endian.little);
+    int piezo = bd.getUint16(26, Endian.little);
+    int battery = buf[28];
 
     if (_isValidSensorData(ax, ay, az, gx, gy, gz)) {
       _sensorDataProvider.updateAllData(
         ax: ax, ay: ay, az: az,
         gx: gx, gy: gy, gz: gz,
-        battery: _sensorDataProvider.batteryLevel,
+        battery: battery,
         piezo: piezo,
       );
-      _totalPacketsReceived++;
-    } else {
-      _invalidPacketsCount++;
-    }
-  }
-
-  // ================= SHOT FROM FIRMWARE HANDLER =================
-  void _handleShotFromFirmware(List<int> payload) {
-    if (payload.length < 30) return;
-
-    ByteData bd = ByteData.sublistView(Uint8List.fromList(payload));
-
-    // session_id and timestamp_us available if needed for debugging
-    // int sessionId = bd.getUint32(0, Endian.little);
-    // int timestampUs = bd.getUint32(4, Endian.little);
-    int shotNumber = bd.getUint16(8, Endian.little);
-    int piezoPeak = bd.getUint16(10, Endian.little);
-    int recoilAxis = bd.getInt8(24);
-    int recoilSign = bd.getInt8(25);
-
-    _shotCount++;
-    debugPrint('[BT] Shot from firmware: #${shotNumber}, piezo=${piezoPeak}, axis=$recoilAxis, sign=$recoilSign');
-    notifyListeners();
-  }
-
-  // ================= SEND PACKET =================
-  void _sendPacket(int type, List<int> payload) {
-    if (_connection == null || !_isConnected) return;
-
-    List<int> frame = [
-      _PKT_SYNC0,
-      _PKT_SYNC1,
-      type,
-      payload.length & 0xFF,
-      (payload.length >> 8) & 0xFF,
-      ...payload,
-    ];
-
-    int crc = _crc16Ccitt(frame.sublist(2)); // CRC over type+len+payload
-    frame.add(crc & 0xFF);
-    frame.add((crc >> 8) & 0xFF);
-
-    try {
-      _connection!.output.add(Uint8List.fromList(frame));
-      _connection!.output.allSent;
-    } catch (e) {
-      debugPrint('Error sending packet: $e');
-    }
-  }
-
-  // ================= SESSION CONTROL =================
-  void startSession() {
-    // Allow CMD_START_SESSION to be sent even before authenticated (initial auth flow)
-    // Subsequent calls during an active session can use the auth guard
-    _sendPacket(_PKT_TYPE_CMD_START_SESSION, []);
-    debugPrint('[BT] Sent CMD_START_SESSION');
-  }
-
-  void stopSession() {
-    if (!_isAuthenticated) return;
-    _sendPacket(_PKT_TYPE_CMD_STOP_SESSION, []);
-    debugPrint('[BT] Sent CMD_STOP_SESSION');
-  }
-
-  // ================= CONFIG =================
-  void getConfig() {
-    _sendPacket(_PKT_TYPE_CMD_GET_CONFIG, []);
-    debugPrint('[BT] Sent CMD_GET_CONFIG');
-  }
-
-  void _handleRspConfig(List<int> payload) {
-    if (payload.length < 11) {
-      debugPrint('[CFG] Response too short: ${payload.length} bytes');
-      return;
-    }
-    int sampleRate = payload[0];
-    int piezoThresh = payload[1] | (payload[2] << 8);
-    int accelThresh = payload[3] | (payload[4] << 8);
-    int debounceMs = payload[5] | (payload[6] << 8);
-    bool ledEnabled = payload[7] != 0;
-    int dataMode = payload[8];
-    int streamRate = payload[9] | (payload[10] << 8);
-    String deviceName = String.fromCharCodes(payload.sublist(11, 31)).replaceAll('\x00', '').trim();
-    _deviceName = deviceName;
-
-    debugPrint('[CFG] === FIRMWARE CONFIG ===');
-    debugPrint('[CFG] sample_rate=$sampleRate Hz');
-    debugPrint('[CFG] piezo_thresh=$piezoThresh, accel_thresh=$accelThresh');
-    debugPrint('[CFG] debounce_ms=$debounceMs, led=$ledEnabled');
-    debugPrint('[CFG] *** data_mode=$dataMode ***');
-    debugPrint('[CFG] streaming_rate=$streamRate Hz');
-    debugPrint('[CFG] device_name=$deviceName');
-    debugPrint('[CFG] ========================');
-
-    if (dataMode == 2) {
-      debugPrint('[CFG] WARNING: data_mode=2 (events-only) — DATA_RAW packets will NOT be sent!');
-      debugPrint('[CFG] ACTION: Call setDataMode(0) to enable raw data streaming');
-    }
-  }
-
-  void setDataMode(int mode) {
-    // Build CMD_SET_CONFIG payload (11+ bytes)
-    List<int> cfgPayload = [
-      100,        // sample_rate_hz (keep current)
-      0, 0,       // piezo_threshold placeholder
-      0, 0,       // accel_threshold placeholder
-      0, 0,       // debounce_ms placeholder
-      1,          // led_enabled
-      mode,       // data_mode — THE KEY
-      0, 0,       // streaming_rate placeholder
-      ...utf8.encode('STASYS'),
-      ...List.filled(20 - 'STASYS'.length, 0),
-    ];
-    _sendPacket(_PKT_TYPE_CMD_SET_CONFIG, cfgPayload);
-    debugPrint('[BT] Sent CMD_SET_CONFIG with data_mode=$mode');
-  }
-
-  // ================= DATA RECEPTION =================
-  void _onDataReceived(Uint8List data) {
-    _consecutiveErrors = 0;
-
-    // Debug: print raw received bytes (first 3 chunks only)
-    if (_debugRxPrinted < 3) {
-      debugPrint('[RX] raw len=${data.length}: ${data.map((e)=>e.toRadixString(16).padLeft(2,"0")).join(" ")}');
-      _debugRxPrinted++;
-    }
-
-    // Feed all bytes to protocol decoder
-    for (int b in data) {
-      _feedParserByte(b);
     }
   }
 
   bool _isValidSensorData(double ax, double ay, double az, double gx, double gy, double gz) {
     const double maxAccel = 25.0;
     if (ax.abs() > maxAccel || ay.abs() > maxAccel || az.abs() > maxAccel) return false;
-
     const double maxGyro = 10.0;
     if (gx.abs() > maxGyro || gy.abs() > maxGyro || gz.abs() > maxGyro) return false;
-
     if (ax.isNaN || ay.isNaN || az.isNaN || gx.isNaN || gy.isNaN || gz.isNaN) return false;
     if (ax.isInfinite || ay.isInfinite || az.isInfinite || gx.isInfinite || gy.isInfinite || gz.isInfinite) return false;
-
     return true;
   }
 
@@ -557,15 +286,13 @@ class BluetoothProvider extends ChangeNotifier {
 
     try {
       _selectedDevice = device;
-      _authState = AuthState.idle;
-      _sessionActive = false;
-      _parserState = _ParserState.waitSync0;
-      _recvBuffer.clear();
+      _connectionPhase = _ConnectionPhase.waitingForReady;
+      _binaryBuffer.clear();
+      _textBuffer = '';
       _isAuthenticated = false;
       _totalPacketsReceived = 0;
-      _invalidPacketsCount = 0;
       _checksumErrorsCount = 0;
-      _consecutiveErrors = 0;
+      _deviceName = device.name ?? 'STASYS';
       notifyListeners();
 
       BluetoothConnection conn = await BluetoothConnection.toAddress(device.address);
@@ -577,7 +304,7 @@ class BluetoothProvider extends ChangeNotifier {
         _onDataReceived,
         onError: (error) {
           debugPrint('Stream error: $error');
-          _handleConnectionError();
+          disconnect();
         },
         onDone: () {
           debugPrint('Connection closed by remote device');
@@ -586,18 +313,18 @@ class BluetoothProvider extends ChangeNotifier {
         cancelOnError: false,
       );
 
-      // Wait for auth challenge from firmware
-      debugPrint('[BT] Waiting for auth challenge from ESP32...');
-      bool authSuccess = await _waitForAuth();
+      // Wait up to 10s for auth to complete
+      int waited = 0;
+      while (!_isAuthenticated && waited < 10000) {
+        await Future.delayed(const Duration(milliseconds: 200));
+        waited += 200;
+      }
 
-      if (authSuccess) {
-        _isAuthenticated = true;
-        notifyListeners();
-        debugPrint('Authentication successful');
-        _sensorDataProvider.requestFullSync();
+      if (_isAuthenticated) {
+        debugPrint('[BT] Connection and auth successful');
         return true;
       } else {
-        debugPrint('Authentication failed');
+        debugPrint('[BT] Auth timeout');
         await disconnect();
         return false;
       }
@@ -610,37 +337,14 @@ class BluetoothProvider extends ChangeNotifier {
     }
   }
 
-  Future<bool> _waitForAuth() async {
-    // New protocol: send CMD_START_SESSION to trigger firmware AUTH_CHALLENGE flow
-    // Firmware sends PKT_TYPE_EVT_AUTH_CHALLENGE (0x14) after START_SESSION received
-    await Future.delayed(const Duration(milliseconds: 500));
-    // App sends CMD_START_SESSION to trigger firmware auth challenge
-    startSession();  // This sends PKT_TYPE_CMD_START_SESSION → firmware sends AUTH_CHALLENGE → app computes HMAC → sends AUTH → firmware sends AUTH_SUCCESS
-    // But _waitForAuth just waits for authenticated state — the actual challenge/response happens in _handlePacket callback
-    await Future.delayed(const Duration(milliseconds: 300));
-    // Fetch config after session start to check data_mode
-    getConfig();
-    await Future.delayed(const Duration(seconds: 4));
-    return _authState == AuthState.authenticated;
-  }
-
-  void _handleConnectionError() {
-    _consecutiveErrors++;
-    if (_consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
-      debugPrint('Too many consecutive errors, disconnecting...');
-      disconnect();
-    }
-  }
-
   void _handleDisconnection() {
     _isConnected = false;
     _isAuthenticated = false;
-    _sessionActive = false;
+    _connectionPhase = _ConnectionPhase.waitingForReady;
     _connection = null;
     _selectedDevice = null;
-    _parserState = _ParserState.waitSync0;
-    _recvBuffer.clear();
-    _authState = AuthState.idle;
+    _binaryBuffer.clear();
+    _textBuffer = '';
     _sensorDataProvider.resetTimeReference();
     notifyListeners();
   }
@@ -666,13 +370,12 @@ class BluetoothProvider extends ChangeNotifier {
       await _connection!.close();
       _isConnected = false;
       _isAuthenticated = false;
-      _sessionActive = false;
+      _connectionPhase = _ConnectionPhase.waitingForReady;
       _connection = null;
       _selectedDevice = null;
 
       debugPrint('=== CONNECTION STATISTICS ===');
       debugPrint('Total packets: $_totalPacketsReceived');
-      debugPrint('Invalid packets: $_invalidPacketsCount');
       debugPrint('Checksum errors: $_checksumErrorsCount');
       debugPrint('Packet loss: ${packetLossPercentage.toStringAsFixed(2)}%');
 

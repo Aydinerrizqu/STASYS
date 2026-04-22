@@ -96,34 +96,26 @@ Implemented in `sensor_data_provider.dart`:
 
 ---
 
-## Communication Protocol (Packet-Based)
+## Communication Protocol (Upstream Original)
 
-> **See parent `CLAUDE.md`: Communication Protocol > Binary Packet Format**
+> **Synced** (2026-04-22): Flutter app now uses upstream original protocol (text auth + 30-byte float binary). See parent `CLAUDE.md` for full protocol details.
 
-### Parser State Machine (8 states)
-`waitSync0 → waitSync1 → readType → readLenLo → readLenHi → readPayload → readCrcLo → readCrcHi`
+### Parser (bluetooth_provider.dart)
 
-Located in `bluetooth_provider.dart`:
-- `_ParserState` enum (8 values)
-- `_recvBuffer` — accumulates bytes
-- `_feedParserByte()` — byte-level state machine
-- `_crc16Ccitt()` / `_updateCrc()` — running CRC computation
-- `_sendPacket()` — builds outgoing frames (CRC over TYPE+LEN+payload)
-- `getConfig()` / `_handleRspConfig()` — fetch firmware config
-- `setDataMode()` — send `CMD_SET_CONFIG` to change data_mode
-- `EVT_SENSOR_HEALTH (0x13)` — handled silently (~10Hz heartbeat)
+**`_ConnectionPhase` enum** (3 states):
+- `waitingForReady` — waiting for "READY\n" from ESP32
+- `waitingForHash` — sent challenge, waiting for SHA256 hex response
+- `streaming` — auth OK, receiving 0xAA 0xBB binary packets
 
-### Auth State Machine (4 states)
-```
-idle → waitingForChallenge → authenticated/failed
-```
+**Binary Packet Parser** (`_handleBinaryData`):
+- 30-byte packets: `0xAA 0xBB` + 6 floats (ax/ay/az/gx/gy/gz) + piezo(uint16) + battery(uint8) + XOR checksum
+- XOR checksum: bytes 2..28 XOR'd → compared to byte 29
+- `_PACKET_SIZE = 30`
+- Resync: if byte 2 != 0xBB, clear buffer and re-sync
 
-Flow:
-1. Flutter connects → ESP32 sends `EVT_AUTH_CHALLENGE (0x14)`
-2. Flutter: HMAC-SHA256(challenge + session_id) → `CMD_AUTH (0x06)`
-3. ESP32: `EVT_AUTH_SUCCESS (0x15)` → Flutter authenticated
-4. Flutter calls `startSession()` → `CMD_START_SESSION` → ESP32 sends `EVT_SESSION_STARTED (0x10)`
-5. ESP32 streams `DATA_RAW_SAMPLE (0x20)` @ 100Hz
+**Text Auth** (`_handleTextData`):
+- Read "READY" → send "AUTH_CHALLENGE" → validate SHA256 hex(16 lower)
+- After auth: `_sensorDataProvider.requestFullSync()`
 
 ---
 

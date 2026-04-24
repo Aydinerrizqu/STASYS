@@ -327,8 +327,20 @@ Preferences (built-in)
 ### Pending
 - [ ] **Frame freeze / gralloc4 GPU buffer failure** — GPU/driver incompatibility with Impeller rendering engine. **Not app code issue**. Test on different device.
 - [ ] **Trace window sync with Python** — Flutter 2s window vs Python 0.5s cursor-normalized.
-- [ ] **Trace camera-follow** (2026-04-22) — muzzle trace center stays fixed; user wants center to follow dot (camera movement). Fix: track running center offset, offset all drawing by that amount.
 - [ ] **MantisX feature parity** — drill modes, trend analysis, split time, session notes, etc.
+
+### Live Tracking Requirements (2026-04-24)
+User requirements for MantisX-style live tracking:
+1. **60fps smooth** — no stutter
+2. **Dot follows hardware 1:1** — up=up, right=right, no inversion
+3. **Camera follows dot** — view/dot stays centered, background moves (camera movement style)
+4. **Calibration = zero drift** — dot stays centered when hardware is still (auto-cal on first 50 samples)
+5. **Trace line visible** — trail shows movement history continuously
+
+**Implementation**:
+- `sensor_data_isolate.dart`: auto-calibrate first 50 samples → compute gyro zero-offset
+- `muzzle_trace_widget.dart`: camera lerp 0.8 (faster follow), smooth shot reset, trace rebuild from isolate snapshot
+- Gyro-only for tracking (integrate → quaternion → atan2 projection). Accel only for init orientation + shot detection.
 
 ### Migration Status
 

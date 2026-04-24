@@ -23,10 +23,12 @@ ssa_app/
 │   │   ├── database_service.dart    # CRUD operations, binary BLOB encoding
 │   │   └── export_service.dart      # CSV export via Share Sheet
 │   ├── providers/
-│   │   ├── bluetooth_provider.dart  # 8-state packet parser, CRC16-CCITT, HMAC-SHA256 auth
-│   │   │                              # + connectedDeviceName getter
+│   │   ├── bluetooth_provider.dart  # Text auth (READY→challenge→SHA256 hex) + dual-mode parser
+│   │   │                              # Binary: 0xAA 0xBB + 6 floats + piezo + battery + XOR checksum
+│   │   │                              # 3-state parser: waitingForReady → waitingForHash → streaming
 │   │   ├── sensor_data_provider.dart  # UI state, isolate communication, demo mode
 │   │   ├── sensor_data_isolate.dart  # Shot detection + 3-phase analysis (hold/press/recoil)
+│   │   │                              # + auto-calibration on first 50 samples (gyro zero-offset)
 │   │   ├── settings_provider.dart     # Firearm type, training mode, demo mode, preferences
 │   │   ├── session_provider.dart     # Session list management
 │   │   └── session_logger.dart       # Delegates to DatabaseService (SQLite)
@@ -100,23 +102,6 @@ Implemented in `sensor_data_provider.dart`:
 
 > **Synced** (2026-04-22): Flutter app now uses upstream original protocol (text auth + 30-byte float binary). See parent `CLAUDE.md` for full protocol details.
 
-### Parser (bluetooth_provider.dart)
-
-**`_ConnectionPhase` enum** (3 states):
-- `waitingForReady` — waiting for "READY\n" from ESP32
-- `waitingForHash` — sent challenge, waiting for SHA256 hex response
-- `streaming` — auth OK, receiving 0xAA 0xBB binary packets
-
-**Binary Packet Parser** (`_handleBinaryData`):
-- 30-byte packets: `0xAA 0xBB` + 6 floats (ax/ay/az/gx/gy/gz) + piezo(uint16) + battery(uint8) + XOR checksum
-- XOR checksum: bytes 2..28 XOR'd → compared to byte 29
-- `_PACKET_SIZE = 30`
-- Resync: if byte 2 != 0xBB, clear buffer and re-sync
-
-**Text Auth** (`_handleTextData`):
-- Read "READY" → send "AUTH_CHALLENGE" → validate SHA256 hex(16 lower)
-- After auth: `_sensorDataProvider.requestFullSync()`
-
 ---
 
 ## Scoring System
@@ -144,14 +129,11 @@ Flutter app uses **MantisX-style soft curve** scoring (sqrt-based penalties).
 
 ## Calibration
 
-Located in `providers/sensor_data_isolate.dart` → `_startCalibration()`.
+Located in `providers/sensor_data_isolate.dart`.
 
-- Collects 50 gyro samples while sensor is stationary
-- Isolate sends `calibration_progress` every 10 samples
-- Isolate sends `calibration_complete` with offsets when done
-- UI shows: `Calibrating... (15/50)` countdown
-- Calibration button requires `btProvider.isAuthenticated == true` before enabling
-- Calibration offsets subtracted from raw gyro data in isolate processing
+**Auto-calibration on startup**: First 50 samples collected while sensor is stationary → compute gyro zero-offset (X/Y/Z). No manual calibration button needed. `_autoCalibrating` flag auto-triggers on first data, sends `calibration_complete` when done.
+
+Legacy manual calibration: `CalibrationManager` class sends `calibration_progress` every 10 samples, `calibration_complete` with offsets when done. Requires `btProvider.isAuthenticated == true` before enabling. Calibration offsets subtracted from raw gyro data in isolate processing.
 
 ---
 
@@ -225,7 +207,7 @@ go_router: ^15.1.0                    # Navigation routing
 
 | Branch | Status | Description |
 |--------|---------|-------------|
-| `develop-migrasi-firmware-v3` | **Active** | Current working branch — App shell redesign with GoRouter, 3-tab nav (Tracking/History/Settings), demo mode, SQLite persistence, CSV export |
+| `migrasi_firmware_awal` | **Active** | Current working branch — Upstream firmware protocol (text auth + XOR + 30-byte float), auto-calibration, camera-follow with lerp 0.8 |
 | `backup-dark-theme-redesign` | Backup | Full backup of all uncommitted changes pushed to remote |
 | `develop` | Staged | Dark theme elements pending merge |
 | `main` | Base | Initial commit only |

@@ -17,7 +17,7 @@ ESP32 firmware for the STASYS shooter stability analyzer.
 
 > **Migration (2026-04-22)**: Firmware di-reset ke versi awal/original dari upstream `dylemmas/STASYSESP32`.
 > Branch: `migrasi_firmware_awal` (single-file `src/main.cpp`, ~297 lines).
-> ⚠️ **BREAKING CHANGE**: Protokol berbeda dari Flutter app — lihat section "Flutter App Compatibility".
+> Flutter app **fully compatible** — text auth + dual-mode parser handles upstream protocol.
 
 ---
 
@@ -40,15 +40,13 @@ No separate modules — all inline in main.cpp. Uses simple polling loop (not Fr
 
 ## Communication Protocol
 
-> ⚠️ **BREAKING CHANGE**: Upstream original menggunakan protokol yang berbeda dari modular firmware.
-> Flutter app saat ini HANYA compatible dengan modular firmware.
-> Demo mode adalah cara utama menggunakan Flutter app tanpa hardware.
+> Flutter app is **fully compatible** with upstream original protocol (text auth + 30-byte float binary with XOR checksum).
 
 ### Binary Packet Format (upstream original)
 
 ```
 [0xAA] [0xBB] [ax(float4)] [ay(float4)] [az(float4)] [gx(float4)] [gy(float4)] [gz(float4)] [piezo(uint16)] [battery(uint8)] [xor_checksum(uint8)]
-Total: 34 bytes
+Total: 30 bytes
 ```
 
 | Offset | Size | Field | Notes |
@@ -89,7 +87,6 @@ ESP32 → Flutter/PC: (starts streaming if valid)
 ## Known Issues / TODOs
 
 ### Pending
-- [ ] **Flutter app incompatible** — upstream original uses text-based auth + float packets (34 bytes, 0xAA/0xBB header, XOR checksum). Flutter app only supports modular firmware protocol. Need middleware/adapter or Flutter update.
 - [ ] No modular features (OTA, storage, LED, session mgmt) — stripped to single-file original
 
 ### Fixed (modular firmware era)
@@ -103,7 +100,7 @@ ESP32 → Flutter/PC: (starts streaming if valid)
 
 ## Flutter App Compatibility
 
-> **BREAKING CHANGE**: Flutter app (`ssa_app/`) only compatible with modular firmware (`dylemmas/STSYS32`). **Not compatible** with upstream original (`dylemmas/STASYSESP32`) due to protocol differences.
+> **Synced** (2026-04-22): Flutter app (`ssa_app/`) now supports upstream original protocol. **Fully compatible** with `dylemmas/STASYSESP32`.
 
 ### Protocol Comparison
 
@@ -112,7 +109,7 @@ ESP32 → Flutter/PC: (starts streaming if valid)
 | Header | `0xAA 0x55` | `0xAA 0xBB` |
 | Checksum | CRC16-CCITT | XOR |
 | Auth | Binary HMAC-SHA256 (binary challenge-response) | Text SHA256 via println |
-| Data packet | 24 bytes (int16 scaled) | ~34 bytes (float direct) |
+| Data packet | 24 bytes (int16 scaled) | 30 bytes (float direct) |
 | Architecture | FreeRTOS 8 tasks | Single polling loop |
 
 ---

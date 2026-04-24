@@ -44,7 +44,7 @@ class _MuzzleTraceWidgetState extends State<MuzzleTraceWidget>
 
   // --- Camera-follow: center lerps toward dot ---
   double _cameraX = 0.0, _cameraY = 0.0; // current camera center (world offset)
-  static const double _cameraLerp = 0.3;  // camera follow speed (0-1, higher=faster)
+  static const double _cameraLerp = 0.8;  // camera follow speed (higher=faster)
 
   // --- Speed tracking for dot sizing ---
   double _liveSpeed = 0.0;
@@ -54,6 +54,7 @@ class _MuzzleTraceWidgetState extends State<MuzzleTraceWidget>
   final List<_TracePoint> _recentTrace = [];
   static const int _maxTracePoints = 400;
   static const int _traceWindowMs = 2000;
+  int _lastTraceIdx = 0; // track how many trace points we've already added
 
   // --- Phase coloring ---
   bool _isHold = true;
@@ -134,17 +135,17 @@ class _MuzzleTraceWidgetState extends State<MuzzleTraceWidget>
     // --- TRACE PATH: Use pre-computed trace from isolate ---
     final traceX = provider.traceXData;
     final traceY = provider.traceYData;
+    final accelLen = provider.accelXData.length;
 
+    // Rebuild trace from isolate data (snapshot of last window)
     _recentTrace.clear();
     final nowMs = DateTime.now().millisecondsSinceEpoch;
     final windowStart = nowMs - _traceWindowMs;
+    final traceLen = traceX.length < traceY.length ? traceX.length : traceY.length;
 
-    // Build trace points from pre-computed coordinates
-    // We use timestamp from accel data as proxy
-    for (int i = 0; i < traceX.length && i < traceY.length; i++) {
-      final ts = provider.accelXData.length > i
-          ? provider.accelXData[i].timestamp
-          : (nowMs - (traceX.length - i) * 10).toDouble();
+    for (int i = 0; i < traceLen; i++) {
+      // Timestamp from accel data at same index (proxy)
+      final ts = accelLen > i ? provider.accelXData[i].timestamp : (nowMs - (traceLen - i) * 10).toDouble();
 
       if (ts >= windowStart) {
         final phase = _isRecoil
@@ -192,9 +193,9 @@ class _MuzzleTraceWidgetState extends State<MuzzleTraceWidget>
             _dotY = 0.0;
             _targetX = 0.0;
             _targetY = 0.0;
-            _cameraX = 0.0;
-            _cameraY = 0.0;
           });
+          // Camera lerps to origin naturally via _onTick (target=0)
+          // No instant camera reset — smooth 500ms return
         }
       });
     }

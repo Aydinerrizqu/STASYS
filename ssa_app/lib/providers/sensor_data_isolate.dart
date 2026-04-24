@@ -640,6 +640,13 @@ class SensorDataIsolate {
   int _calibrationSamplesCount = 0;
   final int _samplesToCollect = 50;
 
+  // Auto-calibration: runs on first 50 samples automatically
+  bool _autoCalibrating = true;
+  double _autoCalAccX = 0.0;
+  double _autoCalAccY = 0.0;
+  double _autoCalAccZ = 0.0;
+  int _autoCalSamples = 0;
+
   double _offsetGyroX = 0.0;
   double _offsetGyroY = 0.0;
   double _offsetGyroZ = 0.0;
@@ -765,7 +772,32 @@ class SensorDataIsolate {
     final gz = (data['gz'] as num).toDouble();
     final piezo = (data['piezo'] as num?)?.toInt() ?? 0;
 
-    // Calibration
+    // Auto-calibration: collect first 50 samples, compute zero-offset
+    if (_autoCalibrating) {
+      _autoCalAccX += gx;
+      _autoCalAccY += gy;
+      _autoCalAccZ += gz;
+      _autoCalSamples++;
+
+      if (_autoCalSamples >= 50) {
+        _offsetGyroX = _autoCalAccX / 50;
+        _offsetGyroY = _autoCalAccY / 50;
+        _offsetGyroZ = _autoCalAccZ / 50;
+        _shotDetector.offsetGx = _offsetGyroX;
+        _shotDetector.offsetGy = _offsetGyroY;
+        _shotDetector.offsetGz = _offsetGyroZ;
+        _autoCalibrating = false;
+        _isCalibrated = true;
+        _mainSendPort.send(SensorDataMessage('calibration_complete', {
+          'offsetGyroX': _offsetGyroX,
+          'offsetGyroY': _offsetGyroY,
+          'offsetGyroZ': _offsetGyroZ,
+        }));
+      }
+      return; // skip data processing during auto-calibration
+    }
+
+    // Manual calibration (user-triggered via button)
     if (_isCalibrating) {
       _offsetGyroX += gx;
       _offsetGyroY += gy;

@@ -321,6 +321,16 @@ class ShotDetector {
   double offsetGy = 0;
   double offsetGz = 0;
 
+  // Auto-tare parameters (same as Python stasysz.py)
+  bool isCalibrated = false;
+  double driftThreshold = 0.02;     // ~1.1° trigger re-tare (was 0.05)
+  double stationaryThreshold = 1.0;  // rad/s MPU6050 noise floor at rest (was 0.3)
+  double autoTareInterval = 3.0;     // seconds between auto-tares (was 5s)
+  double lastAutoTare = 0.0;
+  int stationaryCount = 0;
+  int stationaryNeeded = 50;         // ~0.5s of stillness at 100Hz
+  double gxRaw = 0.0, gyRaw = 0.0, gzRaw = 0.0;  // raw gyro for stationary detection
+
   // Previous accelerometer for jerk calculation
   double _prevAx = 0, _prevAy = 0, _prevAz = 0;
 
@@ -342,6 +352,10 @@ class ShotDetector {
     _qTare = _q.copy();
   }
 
+  void setQuaternion(_Quaternion q) {
+    _q = q;
+  }
+
   void reset() {
     _traceX.clear();
     _traceY.clear();
@@ -361,6 +375,11 @@ class ShotDetector {
     required double gz,
     required int piezo,
   }) {
+    // 0. Store raw gyros for stationary detection
+    gxRaw = gx;
+    gyRaw = gy;
+    gzRaw = gz;
+
     // 1. Bias-correct raw gyros
     final gxBc = gx - offsetGx;
     final gyBc = gy - offsetGy;
@@ -461,7 +480,55 @@ class ShotDetector {
         break;
     }
 
+    // Silent auto-tare if drift accumulated (same as Python stasysz.py)
+    // Auto-tare triggers when: stationary for ~0.5s AND drift > 1.1°
+    autoTare();
+
     return result;
+  }
+
+  bool _isStationary() {
+    final gxBc = gxRaw - offsetGx;
+    final gyBc = gyRaw - offsetGy;
+    final gzBc = gzRaw - offsetGz;
+    final mag = math.sqrt(gxBc * gxBc + gyBc * gyBc + gzBc * gzBc);
+    return mag < stationaryThreshold;
+  }
+
+  void autoTare() {
+    if (!isCalibrated) return;
+
+    final now = DateTime.now().millisecondsSinceEpoch / 1000.0;
+    if (now - lastAutoTare < autoTareInterval) return;
+
+    // Check if stationary using bias-corrected gyro
+    final gxBc = gxRaw - offsetGx;
+    final gyBc = gyRaw - offsetGy;
+    final gzBc = gzRaw - offsetGz;
+    final mag = math.sqrt(gxBc * gxBc + gyBc * gyBc + gzBc * gzBc);
+
+    if (mag < stationaryThreshold) {
+      stationaryCount++;
+    } else {
+      stationaryCount = 0;
+    }
+    if (stationaryCount < stationaryNeeded) return;
+
+    // Check if drift is significant
+    final aimOffset = math.sqrt(lastTraceX * lastTraceX + lastTraceY * lastTraceY);
+    // Debug: log when auto-tare triggers or is blocked
+    if (aimOffset >= driftThreshold) {
+      // CRITICAL: Reset qTare to stop drift accumulation (same as Python _apply_tare)
+      _qTare = _q.copy();
+      _traceX.clear();
+      _traceY.clear();
+      for (int i = 0; i < _bufferSize; i++) {
+        _traceX.add(0.0);
+        _traceY.add(0.0);
+      }
+      lastAutoTare = now;
+      stationaryCount = 0;
+    }
   }
 
   double _calculateJerk(double ax, double ay, double az) {
@@ -642,10 +709,7 @@ class SensorDataIsolate {
 
   // Auto-calibration: runs on first 50 samples automatically
   bool _autoCalibrating = true;
-  double _autoCalAccX = 0.0;
-  double _autoCalAccY = 0.0;
-  double _autoCalAccZ = 0.0;
-  int _autoCalSamples = 0;
+  final List<List<double>> _autoCalSamples = [];  // [ax, ay, az, gx, gy, gz] per sample
 
   double _offsetGyroX = 0.0;
   double _offsetGyroY = 0.0;
@@ -772,29 +836,55 @@ class SensorDataIsolate {
     final gz = (data['gz'] as num).toDouble();
     final piezo = (data['piezo'] as num?)?.toInt() ?? 0;
 
-    // Auto-calibration: collect first 50 samples, compute zero-offset
+    // Auto-calibration: collect samples and process them through detector after
     if (_autoCalibrating) {
-      _autoCalAccX += gx;
-      _autoCalAccY += gy;
-      _autoCalAccZ += gz;
-      _autoCalSamples++;
+      _autoCalSamples.add([ax, ay, az, gx, gy, gz]);
 
-      if (_autoCalSamples >= 50) {
-        _offsetGyroX = _autoCalAccX / 50;
-        _offsetGyroY = _autoCalAccY / 50;
-        _offsetGyroZ = _autoCalAccZ / 50;
+      if (_autoCalSamples.length >= _samplesToCollect) {
+        // Compute gyro zero-offset
+        double sumGx = 0, sumGy = 0, sumGz = 0;
+        double sumAx = 0, sumAy = 0, sumAz = 0;
+        for (final s in _autoCalSamples) {
+          sumAx += s[0]; sumAy += s[1]; sumAz += s[2];
+          sumGx += s[3]; sumGy += s[4]; sumGz += s[5];
+        }
+        final n = _autoCalSamples.length.toDouble();
+        _offsetGyroX = sumGx / n;
+        _offsetGyroY = sumGy / n;
+        _offsetGyroZ = sumGz / n;
         _shotDetector.offsetGx = _offsetGyroX;
         _shotDetector.offsetGy = _offsetGyroY;
         _shotDetector.offsetGz = _offsetGyroZ;
+
+        // Initialize quaternion from accelerometer average (like Python calibrate)
+        final meanAx = sumAx / n;
+        final meanAy = sumAy / n;
+        final meanAz = sumAz / n;
+        _shotDetector.setQuaternion(_quatFromAccel(meanAx, meanAy, meanAz));
+        _shotDetector.tare();
+
+        // Process ALL calibration samples through detector to build initial trace
+        for (final s in _autoCalSamples) {
+          _shotDetector.process(
+            ax: s[0], ay: s[1], az: s[2],
+            gx: s[3] - _offsetGyroX,
+            gy: s[4] - _offsetGyroY,
+            gz: s[5] - _offsetGyroZ,
+            piezo: 0,
+          );
+        }
+
+        _autoCalSamples.clear();
         _autoCalibrating = false;
         _isCalibrated = true;
+        _shotDetector.isCalibrated = true;
         _mainSendPort.send(SensorDataMessage('calibration_complete', {
           'offsetGyroX': _offsetGyroX,
           'offsetGyroY': _offsetGyroY,
           'offsetGyroZ': _offsetGyroZ,
         }));
       }
-      return; // skip data processing during auto-calibration
+      return; // Skip throttled update during calibration accumulation
     }
 
     // Manual calibration (user-triggered via button)
@@ -877,10 +967,10 @@ class SensorDataIsolate {
       _sessionGyroZ.add(dpGz);
     }
 
-    // Shot detection
+    // Shot detection — pass RAW gyro, let process() bias-correct once internally
     final shotResult = _shotDetector.process(
       ax: ax, ay: ay, az: az,
-      gx: fixedGx, gy: fixedGy, gz: fixedGz,
+      gx: gx, gy: gy, gz: gz,  // raw sensor values (NOT fixedGx/fixedGy/fixedGz)
       piezo: piezo,
     );
 

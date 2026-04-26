@@ -75,7 +75,7 @@ class ExportService {
 
     final csv = exportSessionsToCSV(sessions);
     final timestamp = DateFormat('yyyyMMdd_HHmmss').format(DateTime.now());
-    final fileName = 'stsys_export_$timestamp.csv';
+    final fileName = 'STASYS_export_$timestamp.csv';
 
     // Save to temp directory
     final tempDir = await getTemporaryDirectory();

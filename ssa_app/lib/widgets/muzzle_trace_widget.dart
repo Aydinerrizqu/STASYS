@@ -42,19 +42,22 @@ class _MuzzleTraceWidgetState extends State<MuzzleTraceWidget>
   double _dotX = 0.0, _dotY = 0.0;    // current rendered position
   double _targetX = 0.0, _targetY = 0.0; // EMA-smoothed target
 
-  // --- Camera-follow: center lerps toward dot ---
+  // --- Camera-follow: center lerps toward dot with 500ms delay ---
   double _cameraX = 0.0, _cameraY = 0.0; // current camera center (world offset)
-  static const double _cameraLerp = 0.8;  // camera follow speed (higher=faster)
+  static const double _cameraLerp = 0.03;  // ~500ms delay (lower=slower=more delay)
 
   // --- Speed tracking for dot sizing ---
   double _liveSpeed = 0.0;
-  double _prevLiveX = 0.0, _prevLiveY = 0.0;
+  double _prevAccelX = 0.0, _prevAccelY = 0.0;
+  double _prevTraceX = 0.0, _prevTraceY = 0.0;
 
   // --- Trace path ---
   final List<_TracePoint> _recentTrace = [];
   static const int _maxTracePoints = 400;
   static const int _traceWindowMs = 2000;
-  int _lastTraceIdx = 0; // track how many trace points we've already added
+
+  // --- MantisX-style: dot uses direct accel ---
+  static const double _liveDotSensitivity = 0.08;
 
   // --- Phase coloring ---
   bool _isHold = true;
@@ -71,6 +74,12 @@ class _MuzzleTraceWidgetState extends State<MuzzleTraceWidget>
   // --- 60fps ticker for smooth animation ---
   late Ticker _ticker;
   double _lastTickTime = 0;
+
+  // --- Auto-zoom: keep movement visible on canvas ---
+  static const double _minZoom = 0.015;  // max zoom-in (tight)
+  static const double _maxZoom = 0.12;  // max zoom-out (wide view)
+  double _currentZoom = 0.05;
+  double _autoZoomLerp = 0.02;
 
   Color get _currentPhaseColor {
     if (_isRecoil) return _recoilColor;
@@ -109,50 +118,71 @@ class _MuzzleTraceWidgetState extends State<MuzzleTraceWidget>
       _cameraY = _cameraY + (_dotY - _cameraY) * _cameraLerp;
     }
 
+    // Auto-zoom: adjust zoom so dot stays visible (~80% of canvas)
+    if (_recentTrace.isNotEmpty) {
+      double maxExtent = 0.0;
+      for (final pt in _recentTrace) {
+        final ex = (pt.x - _cameraX).abs();
+        final ey = (pt.y - _cameraY).abs();
+        if (ex > maxExtent) maxExtent = ex;
+        if (ey > maxExtent) maxExtent = ey;
+      }
+      // Target: dot at edge of canvas at 80% fill
+      final targetZoom = (maxExtent > 0.01) ? (maxExtent * 1.25) : _currentZoom;
+      _currentZoom = _currentZoom + (targetZoom.clamp(_minZoom, _maxZoom) - _currentZoom) * _autoZoomLerp;
+    }
+
     if (mounted) setState(() {});
   }
 
   void _processLatestData(SensorDataProvider provider) {
-    // Use pre-computed trace coordinates from isolate
-    // No atan2 calculation needed on UI thread
+    // Use quaternion-projected trace data from isolate (same as Python stasysz.py)
+    // Live dot position from isolate's atan2 projection of barrel vector
+    // Trace path from isolate's accumulated trace history
+    if (provider.traceXData.isEmpty && provider.accelXData.isEmpty) return;
 
-    // --- LIVE DOT: Use pre-computed coordinates from isolate ---
-    final rawX = provider.liveTraceX;
-    final rawY = provider.liveTraceY;
-
-    // Target follows raw position directly
-    // Camera and dot lerp handle the smoothing
-    _targetX = rawX;
-    _targetY = rawY;
-
-    // Speed for dynamic dot sizing (from trace delta)
-    final dx = rawX - _prevLiveX;
-    final dy = rawY - _prevLiveY;
-    _liveSpeed = _sqrt(dx * dx + dy * dy) * 100; // Scale for visual
-    _prevLiveX = rawX;
-    _prevLiveY = rawY;
-
-    // --- TRACE PATH: Use pre-computed trace from isolate ---
-    final traceX = provider.traceXData;
-    final traceY = provider.traceYData;
-    final accelLen = provider.accelXData.length;
-
-    // Rebuild trace from isolate data (snapshot of last window)
-    _recentTrace.clear();
     final nowMs = DateTime.now().millisecondsSinceEpoch;
-    final windowStart = nowMs - _traceWindowMs;
-    final traceLen = traceX.length < traceY.length ? traceX.length : traceY.length;
+
+    // --- LIVE DOT: Quaternion projection from isolate (same as Python) ---
+    if (provider.traceXData.isNotEmpty) {
+      // Isolate provides live trace position from quaternion projection
+      _targetX = provider.liveTraceX;
+      _targetY = provider.liveTraceY;
+
+      // Speed from dot position delta
+      final ddx = provider.liveTraceX - _prevTraceX;
+      final ddy = provider.liveTraceY - _prevTraceY;
+      _liveSpeed = _sqrt(ddx * ddx + ddy * ddy);
+      _prevTraceX = provider.liveTraceX;
+      _prevTraceY = provider.liveTraceY;
+    } else {
+      // Fallback: demo mode uses direct accelerometer
+      final ax = provider.accelXData.last.value;
+      final ay = provider.accelYData.last.value;
+      _targetX = ax * _liveDotSensitivity;
+      _targetY = ay * _liveDotSensitivity;
+
+      final dax = ax - _prevAccelX;
+      final day = ay - _prevAccelY;
+      _liveSpeed = _sqrt(dax * dax + day * day);
+      _prevAccelX = ax;
+      _prevAccelY = ay;
+    }
+
+    // --- TRACE PATH: Rebuild from isolate's trace history (same as Python) ---
+    _recentTrace.clear();
+    final traceXs = provider.traceXData;
+    final traceYs = provider.traceYData;
+    final traceLen = traceXs.length < traceYs.length ? traceXs.length : traceYs.length;
 
     for (int i = 0; i < traceLen; i++) {
-      // Timestamp from accel data at same index (proxy)
-      final ts = accelLen > i ? provider.accelXData[i].timestamp : (nowMs - (traceLen - i) * 10).toDouble();
-
-      if (ts >= windowStart) {
-        final phase = _isRecoil
-            ? TracePhase.recoil
-            : (_isPress ? TracePhase.press : TracePhase.hold);
-        _recentTrace.add(_TracePoint(traceX[i], traceY[i], ts, phase));
-      }
+      final phase = _isRecoil
+          ? TracePhase.recoil
+          : (_isPress ? TracePhase.press : TracePhase.hold);
+      // Use relative position from start of window (center = 0)
+      final relX = traceXs[i];
+      final relY = traceYs[i];
+      _recentTrace.add(_TracePoint(relX, relY, nowMs.toDouble(), phase));
     }
 
     if (_recentTrace.length > _maxTracePoints) {
@@ -194,8 +224,6 @@ class _MuzzleTraceWidgetState extends State<MuzzleTraceWidget>
             _targetX = 0.0;
             _targetY = 0.0;
           });
-          // Camera lerps to origin naturally via _onTick (target=0)
-          // No instant camera reset — smooth 500ms return
         }
       });
     }
@@ -266,7 +294,7 @@ class _MuzzleTraceWidgetState extends State<MuzzleTraceWidget>
                           dotY: _dotY,
                           cameraX: _cameraX,
                           cameraY: _cameraY,
-                          zoom: widget.zoom,
+                          zoom: _currentZoom,
                           showGrid: widget.showGrid,
                           phaseColor: _currentPhaseColor,
                           liveSpeed: _liveSpeed,
@@ -418,22 +446,6 @@ class _MuzzleTracePainter extends CustomPainter {
   });
 
   // --- PRE-ALLOCATED STATIC PAINT OBJECTS ---
-  static final Paint _crossHairPaint = Paint()
-    ..color = StsysTheme.outlineVariant.withValues(alpha: 0.15)
-    ..strokeWidth = 0.5;
-
-  static final Paint _crosshairPaint2 = Paint()
-    ..color = StsysTheme.primary.withValues(alpha: 0.4)
-    ..strokeWidth = 1.5;
-
-  static final Paint _centerDotPaint = Paint()
-    ..color = Colors.white
-    ..style = PaintingStyle.fill;
-
-  static final Paint _centerDotBgPaint = Paint()
-    ..color = StsysTheme.primary.withValues(alpha: 0.6)
-    ..style = PaintingStyle.fill;
-
   static final Paint _tracePaint = Paint()
     ..strokeWidth = 2.5
     ..style = PaintingStyle.stroke
@@ -500,9 +512,7 @@ class _MuzzleTracePainter extends CustomPainter {
     final offsetY = cy - cameraY * scale;
 
     if (showGrid) {
-      _drawScoringRings(canvas, offsetX, offsetY, scale, size);
-      canvas.drawLine(Offset(offsetX, 0), Offset(offsetX, size.height), _crossHairPaint);
-      canvas.drawLine(Offset(0, offsetY), Offset(size.width, offsetY), _crossHairPaint);
+      _drawScoringRings(canvas, cx, cy, scale, size);
     }
 
     // --- TRACE PATH (relative to camera) ---
@@ -523,41 +533,29 @@ class _MuzzleTracePainter extends CustomPainter {
       }
     }
 
-    // --- CENTER ORIGIN CROSSHAIR (at camera center) ---
-    canvas.drawLine(Offset(offsetX - 12, offsetY), Offset(offsetX + 12, offsetY), _crosshairPaint2);
-    canvas.drawLine(Offset(offsetX, offsetY - 12), Offset(offsetX, offsetY + 12), _crosshairPaint2);
-    canvas.drawCircle(Offset(offsetX, offsetY), 2, _centerDotBgPaint);
-    canvas.drawCircle(Offset(offsetX, offsetY), 2, _centerDotPaint);
-
-    // --- LIVE DOT (relative to camera — stays centered) ---
+    // --- DOT POSITION (follows trace line) ---
     final dotPx = offsetX + dotX * scale;
     final dotPy = offsetY + dotY * scale;
 
-    final speedNorm = _clamp(liveSpeed * 4.0, 0.0, 1.0);
-    final dotRadius = 5.0 + speedNorm * 3.0;
-    final dotOpacity = 0.6 + speedNorm * 0.4;
-    final glowRadius = 10.0 + speedNorm * 5.0;
-
-    // Motion blur: 3 ghost trail dots
+    // --- TRAIL DOTS (motion blur — minimal visual) ---
     for (int t = 3; t >= 1; t--) {
-      final trailAlpha = (0.3 - t * 0.08) * dotOpacity;
-      final trailRadius = dotRadius * (1.0 - t * 0.2);
-      _trailDotPaint.color = phaseColor.withValues(alpha: trailAlpha.clamp(0.0, 1.0));
+      final trailAlpha = (0.3 - t * 0.08);
+      final trailRadius = 4.0 * (1.0 - t * 0.2);
+      _trailDotPaint.color = Colors.white.withValues(alpha: trailAlpha.clamp(0.0, 1.0));
       canvas.drawCircle(
-        Offset(dotPx - t * 3.0 * speedNorm, dotPy),
+        Offset(dotPx - t * 2.0, dotPy),
         trailRadius,
         _trailDotPaint,
       );
     }
 
-    _glowPaint1.color = phaseColor.withValues(alpha: 0.15 + speedNorm * 0.15);
-    _glowPaint2.color = phaseColor.withValues(alpha: 0.25 + speedNorm * 0.2);
-    _currentDotPaint.color = phaseColor.withValues(alpha: dotOpacity);
-
-    canvas.drawCircle(Offset(dotPx, dotPy), glowRadius, _glowPaint1);
-    canvas.drawCircle(Offset(dotPx, dotPy), dotRadius + 2, _glowPaint2);
-    canvas.drawCircle(Offset(dotPx, dotPy), dotRadius, _currentDotPaint);
-    canvas.drawCircle(Offset(dotPx, dotPy), 2, _centerDotPaint);
+    // --- WHITE CROSSHAIR at screen center (reference marker) ---
+    final crosshairPaint = Paint()
+      ..color = Colors.white.withValues(alpha: 0.6)
+      ..strokeWidth = 1.0
+      ..strokeCap = StrokeCap.round;
+    canvas.drawLine(Offset(cx - 20, cy), Offset(cx + 20, cy), crosshairPaint);
+    canvas.drawLine(Offset(cx, cy - 20), Offset(cx, cy + 20), crosshairPaint);
   }
 
   void _drawScoringRings(Canvas canvas, double cx, double cy, double scale, Size size) {

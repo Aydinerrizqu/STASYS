@@ -94,7 +94,6 @@ class SensorDataProvider extends ChangeNotifier {
   List<DataPoint> get accelYData => _accelYData;
   List<DataPoint> get accelZData => _accelZData;
 
-  // Trace coordinate getters (pre-computed from isolate)
   List<double> get traceXData => _traceXData;
   List<double> get traceYData => _traceYData;
   double get liveTraceX => _liveTraceX;
@@ -535,6 +534,14 @@ class SensorDataProvider extends ChangeNotifier {
 
   bool get isDemoMode => _isDemoMode;
 
+  // Demo trace state (for MantisX-style direct mapping)
+  double _demoTraceXPos = 0.0, _demoTraceYPos = 0.0;  // trace line position (gyro integrated)
+  double _demoLiveX = 0.0, _demoLiveY = 0.0;    // live dot position (accel direct)
+  final List<_DemoTracePoint> _demoTracePoints = [];   // trace line history for widget
+  static const double _demoSensitivity = 0.08;   // accel → screen scale
+  static const int _demoTraceMax = 200;
+  static const double _demoDt = 0.01;           // ~100Hz integration
+
   void _startDemoTimer() {
     _demoTime = 0;
     _demoShotCount = 0;
@@ -562,10 +569,18 @@ class SensorDataProvider extends ChangeNotifier {
     _accelXData = [];
     _accelYData = [];
     _accelZData = [];
+    _traceXData = [];
+    _traceYData = [];
+    _liveTraceX = 0;
+    _liveTraceY = 0;
     _sessionShots = [];
     _latestShot = null;
     notifyListeners();
   }
+
+  // ============================================
+  // Demo tick — MantisX-style: accel for dot, gyro integration for trace
+  // ============================================
 
   void _tickDemo() {
     _demoTime += 0.033;
@@ -575,14 +590,25 @@ class SensorDataProvider extends ChangeNotifier {
     _demoGyroX += (_nextRand() * 0.05 - 0.025);
     _demoGyroY += (_nextRand() * 0.05 - 0.025);
     _demoGyroZ += (_nextRand() * 0.03 - 0.015);
-    // Clamp to realistic range
     _demoGyroX = _demoGyroX.clamp(-2.0, 2.0);
     _demoGyroY = _demoGyroY.clamp(-2.0, 2.0);
     _demoGyroZ = _demoGyroZ.clamp(-1.0, 1.0);
 
-    // Accelerometer: slight tilt + recoil spikes
+    // Integrate gyro → trace path (MantisX style: -gz → X, -gx → Y)
+    _demoTraceXPos += (-_demoGyroZ) * _demoDt;
+    _demoTraceYPos += (-_demoGyroX) * _demoDt;
+
+    // Live dot: direct accelerometer (no integration)
     _demoAccelX = 0.2 + (_nextRand() * 0.1);
     _demoAccelY = 0.1 + (_nextRand() * 0.1);
+    _demoLiveX = _demoAccelX * _demoSensitivity;
+    _demoLiveY = _demoAccelY * _demoSensitivity;
+
+    final ts = now.millisecondsSinceEpoch.toDouble();
+    _demoTracePoints.add(_DemoTracePoint(_demoTraceXPos, _demoTraceYPos, ts));
+    if (_demoTracePoints.length > _demoTraceMax) {
+      _demoTracePoints.removeAt(0);
+    }
 
     // Auto-generate shot every 4-8 seconds
     final timeSinceLastShot = now.difference(_demoLastShotTime ?? now).inMilliseconds;
@@ -598,7 +624,12 @@ class SensorDataProvider extends ChangeNotifier {
     _accelYData = [..._accelYData, DataPoint(_demoTime, _demoAccelY)];
     _accelZData = [..._accelZData, DataPoint(_demoTime, _demoAccelZ)];
 
-    // Keep only last 200 points (~6.6s at 33ms)
+    // Trace data: integrated gyro (MantisX-style)
+    _liveTraceX = _demoTraceXPos;
+    _liveTraceY = _demoTraceYPos;
+    _traceXData = _demoTracePoints.map((p) => p.x).toList();
+    _traceYData = _demoTracePoints.map((p) => p.y).toList();
+
     if (_gyroXData.length > 200) {
       _gyroXData = _gyroXData.sublist(_gyroXData.length - 200);
       _gyroYData = _gyroYData.sublist(_gyroYData.length - 200);
@@ -666,7 +697,14 @@ class SensorDataProvider extends ChangeNotifier {
 class TimeoutException implements Exception {
   final String message;
   TimeoutException(this.message);
-  
+
   @override
   String toString() => message;
+}
+
+class _DemoTracePoint {
+  final double x;
+  final double y;
+  final double timestamp;
+  _DemoTracePoint(this.x, this.y, this.timestamp);
 }

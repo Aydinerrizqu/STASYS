@@ -158,7 +158,7 @@ class _GraphTabState extends State<GraphTab> with SingleTickerProviderStateMixin
                         ),
                         child: ClipRRect(
                           borderRadius: BorderRadius.circular(16),
-                          child: MuzzleTraceWidget(zoom: 0.05),
+                          child: MuzzleTraceWidget(zoom: 0.05, showGrid: false),
                         ),
                       ),
                     ),

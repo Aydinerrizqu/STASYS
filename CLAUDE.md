@@ -336,11 +336,15 @@ User requirements for MantisX-style live tracking:
 3. **Camera follows dot** — view/dot stays centered, background moves (camera movement style)
 4. **Calibration = zero drift** — dot stays centered when hardware is still (auto-cal on first 50 samples)
 5. **Trace line visible** — trail shows movement history continuously
+6. **Auto-tare** — silent re-centering when drift detected while stationary
+7. **Auto-zoom** — zoom adjusts dynamically to keep movement visible on canvas
 
-**Implementation**:
+**Implementation (2026-04-26)**:
 - `sensor_data_isolate.dart`: auto-calibrate first 50 samples → compute gyro zero-offset
-- `muzzle_trace_widget.dart`: camera lerp 0.8 (faster follow), smooth shot reset, trace rebuild from isolate snapshot
+- `sensor_data_isolate.dart` ShotDetector: auto-tare (stationaryThreshold=1.0 rad/s, driftThreshold=0.02 rad, interval=3s) — triggers when hardware is still for ~0.5s AND trace has drifted >1.1°
+- `muzzle_trace_widget.dart`: camera lerp 0.03 (~500ms delay), auto-zoom (minZoom=0.015, maxZoom=0.12), smooth shot reset, trace rebuild from isolate snapshot
 - Gyro-only for tracking (integrate → quaternion → atan2 projection). Accel only for init orientation + shot detection.
+- **Bug fixed (2026-04-26)**: `_shotDetector.process()` was receiving **bias-corrected** gyro from isolate, then bias-correcting AGAIN internally → double subtraction caused accumulated drift. Fixed by passing **raw** gyro to `process()` — bias correction now happens exactly once inside `process()`.
 
 ### Migration Status
 
@@ -367,6 +371,7 @@ User requirements for MantisX-style live tracking:
 - [x] Demo mode: BT scan redirects to connection, connect auto-disables demo
 - [x] **SQLite persistence** (2026-04-14): Migrated from SharedPreferences (JSON) → SQLite with binary BLOB encoding. `services/database_helper.dart` (singleton, schema, indexes) + `services/database_service.dart` (CRUD, encode/decode). `session_logger.dart` delegates to `DatabaseService` — backward compatible API.
 - [x] **Export Service** (2026-04-14): CSV export via Share Sheet. `services/export_service.dart` exports all sessions (session summary + shot details). Button added to HistoryScreen header. Uses `share_plus` package.
+- [x] **Live trace drift fix** (2026-04-26): Double bias correction bug — isolate pre-subtracted gyro offset before passing to `process()`, which then subtracted again internally, causing `gx - 2*offset` integration error → accumulated drift. Fixed by passing raw gyro to `process()`. Auto-tare (stationary + drift threshold), auto-zoom, camera follow all working.
 
 ### Historical / Fixed
 - [x] esp_bt_gap.h not found in PlatformIO — GAP callback removed

@@ -96,6 +96,8 @@ Implemented in `sensor_data_provider.dart`:
 **BT scan in demo mode**: Redirects to `/connection` screen.
 **Connect in demo mode**: Auto-disables demo mode, switches to real sensor data.
 
+**Trace data** (2026-04-26): Demo mode integrates gyro → trace coordinates stored in `_demoTracePoints`. Provider assigns `_traceXData`/`_traceYData`/`_liveTraceX`/`_liveTraceY` from these points every tick so the muzzle trace widget renders correctly. Cleared on demo mode stop.
+
 ---
 
 ## Communication Protocol (Upstream Original)
@@ -134,6 +136,35 @@ Located in `providers/sensor_data_isolate.dart`.
 **Auto-calibration on startup**: First 50 samples collected while sensor is stationary → compute gyro zero-offset (X/Y/Z). No manual calibration button needed. `_autoCalibrating` flag auto-triggers on first data, sends `calibration_complete` when done.
 
 Legacy manual calibration: `CalibrationManager` class sends `calibration_progress` every 10 samples, `calibration_complete` with offsets when done. Requires `btProvider.isAuthenticated == true` before enabling. Calibration offsets subtracted from raw gyro data in isolate processing.
+
+---
+
+## Live Tracking (MantisX-Style)
+
+### Architecture
+- **Isolate** (`sensor_data_isolate.dart`): Gyro integration → quaternion → atan2 projection → trace coordinates
+- **Widget** (`muzzle_trace_widget.dart`): 60fps ticker, dot lerp, camera follow, auto-zoom, trace painting
+
+### Quaternion Projection (from stasysz.py)
+1. Bias-correct raw gyro (`gx - offsetGx`)
+2. Remap MPU6050 axes: `kGyroAxisX=2, kGyroAxisY=1, kGyroAxisZ=0`
+3. Integrate quaternion: `_quatIntegrate(q, wx, wy, wz, dt)`
+4. Compute relative quaternion: `qRel = normalize(qTare_conj * q)`
+5. Project barrel vector `[0,0,1]` through `qRel` → screen coords via `atan2(-v[1], v[2])`, `atan2(v[0], v[2])`
+
+### Auto-Tare (ShotDetector.autoTare)
+Triggers when: hardware stationary for ~0.5s (gyro magnitude < 1.0 rad/s) AND trace drift > 0.02 rad (~1.1°)
+- Resets `_qTare = _q.copy()` and clears trace buffer
+- `stationaryThreshold = 1.0 rad/s`, `driftThreshold = 0.02 rad`, `autoTareInterval = 3.0s`
+- **Critical**: `process()` receives **raw** gyro (not pre-corrected) — bias correction happens exactly once inside `process()` to avoid double-subtraction drift bug
+
+### Camera Follow + Auto-Zoom
+- Camera lerp: `_cameraLerp = 0.03` (~500ms delay)
+- Auto-zoom: tracks max trace extent relative to camera center, zooms between `_minZoom=0.015` and `_maxZoom=0.12` with lerp `_autoZoomLerp=0.02`
+- Dot lerp: `t = deltaMs/16.0` toward target position (smooth 60fps movement)
+
+### Bug Fixed (2026-04-26)
+Isolate was calling `fixedGx = gx - _offsetGyroX` then passing `fixedGx` to `process()`. Inside `process()`, it would `gxBc = gx - offsetGx` (where `offsetGx == _offsetGyroX`) → effectively `gx - 2*offsetGx`. This systematic double subtraction caused trace drift. Fixed by passing raw `gx/gy/gz` to `process()`.
 
 ---
 
@@ -207,7 +238,8 @@ go_router: ^15.1.0                    # Navigation routing
 
 | Branch | Status | Description |
 |--------|---------|-------------|
-| `migrasi_firmware_awal` | **Active** | Current working branch — Upstream firmware protocol (text auth + XOR + 30-byte float), auto-calibration, camera-follow with lerp 0.8 |
+| `migrasi_firmware_awal` | **Active** | Current working branch — upstream firmware protocol, live trace with auto-tare, auto-zoom, camera follow, double bias correction fix |
+| `migrasi_firmware_awal_v1` | **New** | Snapshot after live trace drift fix — double bias correction resolved, auto-tare (1.0 rad/s, 3s interval), auto-zoom (0.015–0.12), demo mode trace fix |
 | `backup-dark-theme-redesign` | Backup | Full backup of all uncommitted changes pushed to remote |
 | `develop` | Staged | Dark theme elements pending merge |
 | `main` | Base | Initial commit only |

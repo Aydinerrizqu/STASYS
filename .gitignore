@@ -1,43 +1,13 @@
-# PlatformIO / ESP32 Firmware
-Firmware_STSYS32/.pio/
-!.pio/lib/
-!.pio/build/esp32dev/partitions.bin
+# ===========================
+# STASYS - Shooter Stability Analysis System
+# ===========================
 
-# Assets & References
-Gambar_ui/
-Video tracking mantisx refrence/
-
-# Claude Code
-.claude/
-
-# Flutter assets
-ssa_app/assets/
-
-# Misc
-*.mp4
-*.mov
-*.avi
-
-# Claude Code
-.claude/
-
-# Python
-venv/
-__pycache__/
-*.pyc
-*.pyo
-*.db-journal
-*.db-wal
-*.db-shm
-shooter_data.db
-
-# Flutter / Dart
+# Flutter / Mobile App
 ssa_app/.dart_tool/
 ssa_app/.packages
 ssa_app/.flutter-plugins
 ssa_app/.flutter-plugins-dependencies
 ssa_app/build/
-ssa_app/.idea/
 ssa_app/android/.gradle/
 ssa_app/android/app/build/
 ssa_app/android/app/src/main/kotlin/
@@ -49,24 +19,32 @@ ssa_app/macos/Pods/
 ssa_app/linux/build/
 ssa_app/windows/build/
 ssa_app/web/build/
+ssa_app/assets/
+
+# ESP32 Firmware
+Firmware_STSYS32/.pio/
+!.pio/lib/
+
+# Claude Code
+.claude/
 
 # IDE / Editor
 .vscode/
 *.code-workspace
+.idea/
 
 # OS
 .DS_Store
 Thumbs.db
 desktop.ini
 
-# Compressed / Archives
-*.rar
-*.zip
-*.7z
-*.tar
-*.gz
-
-# Misc
+# Build artifacts
 *.log
 *.lock
 package-lock.json
+
+# Local data (not for repo)
+shooter_data.db
+*.db-journal
+*.db-wal
+*.db-shm

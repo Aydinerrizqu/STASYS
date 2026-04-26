@@ -312,6 +312,19 @@ intl: ^0.19.0
 go_router: ^15.1.0
 ```
 
+### Release Build Note (2026-04-26)
+`flutter_bluetooth_serial ^0.4.0` has a dependency on `androidx.appcompat:appcompat:1.3.0` which uses `android:attr/lStar` (Android 12+ API). This causes AAPT error on release builds with AGP 8.9+.
+
+**Fix**: Patch the pub cache copy before building:
+```
+# flutter_bluetooth_serial-0.4.0/android/build.gradle:
+compileSdkVersion 30  → 34
+buildToolsVersion '30.0.3'  → '34.0.0'
+implementation 'androidx.appcompat:appcompat:1.3.0'  → 1.7.0
+```
+Path: `C:/Users/<USER>/AppData/Local/Pub/Cache/hosted/pub.dev/flutter_bluetooth_serial-0.4.0/android/build.gradle`
+⚠️ `flutter pub cache repair` will revert this — re-patch after repair.
+
 ### Arduino / ESP32 (PlatformIO)
 ```
 framework: arduino (ESP32 arduino core 3.20017)

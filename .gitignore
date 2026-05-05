@@ -19,11 +19,23 @@ ssa_app/macos/Pods/
 ssa_app/linux/build/
 ssa_app/windows/build/
 ssa_app/web/build/
-ssa_app/assets/
+
+# Test files (keep test/unit/)
+ssa_app/test/unit/
+!ssa_app/test/unit/models/
+!ssa_app/test/unit/utils/
+
+# Backup files
+ssa_app/*.zip
+ssa_app/*.rar
 
 # ESP32 Firmware
 Firmware_STSYS32/.pio/
 !.pio/lib/
+
+# Python files (desktop app, not Flutter)
+*.py
+!ssa_app/**/*.py
 
 # Claude Code
 .claude/
@@ -41,10 +53,24 @@ desktop.ini
 # Build artifacts
 *.log
 *.lock
-package-lock.json
 
 # Local data (not for repo)
 shooter_data.db
 *.db-journal
 *.db-wal
 *.db-shm
+
+# Media files (not for repo)
+*.mp4
+*.mov
+*.png
+*.jpg
+!assets/**/*
+!ssa_app/assets/**
+
+# Documentation (local only)
+__pycache__/
+docs/
+reports/
+Gambar*/
+settings.json

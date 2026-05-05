@@ -30,7 +30,7 @@ ssa_app/*.zip
 ssa_app/*.rar
 
 # ESP32 Firmware
-Firmware_STSYS32/.pio/
+Firmware_STASYS32/.pio/
 !.pio/lib/
 
 # Python files (desktop app, not Flutter)

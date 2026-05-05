@@ -232,7 +232,7 @@ Per-shot scoring:
 ## Settings Persistence
 
 - **SharedPreferences** for app settings only
-- **SQLite** for session/shots persistence (stsys_sessions.db)
+- **SQLite** for session/shots persistence (stasys_sessions.db)
 - **Key strings**: `firearmType`, `trainingMode`, `maxSamples`
 
 ---

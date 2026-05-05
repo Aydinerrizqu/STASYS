@@ -1,8 +1,8 @@
 # STASYS - Shooter Stability Analysis System
 
 > **Note**: For Flutter app development, see `ssa_app/CLAUDE.md`.
-> For firmware development, see `Firmware_STSYS32/CLAUDE.md`.
-> That file covers PlatformIO build, module architecture, remote sync workflow, and hardware pinout.
+> For firmware development, see `Firmware_STASYS32/CLAUDE.md`.
+> That file covers PlatformIO build, module architecture, FreeRTOS tasks, and hardware pinout.
 
 ## Project Overview
 
@@ -10,7 +10,7 @@ STASYS is a DIY shooter training device inspired by MantisX ($99-$249). It consi
 - **Hardware**: ESP32 + MPU6050 + Piezo sensor, Bluetooth Classic
 - **Python App**: `Python Code (SSA)/STASYS.py` - Desktop analysis tool (PyQt5)
 - **Flutter App**: `ssa_app/` - Mobile companion (Android/iOS)
-- **Firmware**: `Firmware_STSYS32/` - Single-file PlatformIO ESP32 firmware (upstream original)
+- **Firmware**: `Firmware_STASYS32/` - Modular PlatformIO ESP32 firmware (STASYS_FW)
 
 **Goal**: Open-source alternative to MantisX for dry/live fire training with shot scoring, muzzle trace visualization, and session analysis.
 
@@ -30,7 +30,7 @@ d:\Aydiner\Projek Flutter SSA\
 │       │   ├── database_service.dart   # CRUD operations, binary BLOB encoding
 │       │   └── export_service.dart     # CSV export via Share Sheet (all sessions)
 │       ├── providers/
-│       │   ├── bluetooth_provider.dart  # Text auth (upstream) + dual-mode parser (text auth → binary float 30-byte)
+│       │   ├── bluetooth_provider.dart  # CRC16 verification (31-byte packets)
 │       │   ├── sensor_data_provider.dart # UI state, isolate communication, demo mode
 │       │   ├── sensor_data_isolate.dart  # Shot detection + 3-phase analysis
 │       │   ├── settings_provider.dart    # + isDemoMode, setDemoMode()
@@ -45,21 +45,25 @@ d:\Aydiner\Projek Flutter SSA\
 │       │   ├── history_screen.dart      # Session list + clear all + refresh
 │       │   ├── settings_screen.dart     # BT scan overlay + settings
 │       │   └── session_detail_screen.dart # POST SHOT 3-phase + shot chips
-│       ├── screens/tabs/                # (legacy — used by tracking_mode_view)
-│       │   ├── home_tab.dart
-│       │   ├── graph_tab.dart            # TRACE (muzzle trace) + POST SHOT (3-phase)
-│       │   ├── connection_tab.dart
-│       │   ├── settings_tab.dart
-│       │   └── shot_timer_tab.dart
 │       └── widgets/
 │           ├── muzzle_trace_widget.dart  # MantisX-style live trace
 │           ├── shot_analysis_panel.dart  # 3-phase post-shot chart
 │           ├── shot_history_list.dart    # Session shot list
 │           └── gyro_realtime_chart.dart  # Real-time gyro chart
 │
-├── Firmware_STSYS32/                 # Single-file PlatformIO ESP32 firmware (upstream original)
+├── Firmware_STASYS32/                 # Modular ESP32 firmware (STASYS_FW)
 │   └── src/
-│       └── main.cpp           # ~297 lines, polling loop, text-based auth, XOR checksum
+│       ├── main.cpp                    # Entry, 4 FreeRTOS tasks
+│       ├── storage/
+│       │   ├── storage.h/cpp           # NVS config/stats/auth
+│       │   ├── crc.h/cpp               # CRC16-CCITT
+│       │   ├── status_led.h/cpp         # LED patterns
+│       │   └── ota.h/cpp               # OTA manager
+│       └── sensor/
+│           ├── quaternion.h             # Header-only quaternion ops
+│           ├── madgwick.h/cpp           # AHRS filter
+│           ├── calibration.h/cpp        # IMU calibration + ZUPT
+│           └── i2c_bus_recovery.h/cpp   # I2C bus recovery
 │
 └── Python Code (SSA)/
     └── STASYS.py               # Desktop app with ProtocolDecoder class
@@ -69,11 +73,9 @@ d:\Aydiner\Projek Flutter SSA\
 
 ## Communication Protocol
 
-> **Dual-protocol support** (2026-04-22): Flutter app now handles upstream firmware (text auth + XOR + 30-byte float packets) in parallel with the modular firmware protocol via dual-mode parser.
+> **Updated (2026-05-05)**: Firmware STASYS_FW menggunakan CRC16-CCITT (31 bytes), bukan XOR (30 bytes).
 
-### Upstream Original (Firmware_STSYS32 — Active)
-
-**Binary Packet Format** (30 bytes):
+### Binary Packet Format (STASYS_FW — 31 bytes)
 
 | Offset | Size | Field | Notes |
 |--------|------|-------|-------|
@@ -87,95 +89,26 @@ d:\Aydiner\Projek Flutter SSA\
 | 22 | 4 | gz | float rad/s |
 | 26 | 2 | piezo | uint16 ADC peak |
 | 28 | 1 | battery | uint8 % |
-| 29 | 1 | checksum | XOR of bytes 2..28 |
+| 29 | 2 | crc16 | CRC16-CCITT over bytes 2..28 |
+
+**CRC16-CCITT**: Initial `0xFFFF`, polynomial `0x1021`.
+Test vector: `'123456789'` → `0x29B1`
 
 **Authentication** (text-based):
 ```
 ESP32 → App: "READY\n"
 App → ESP32: "AUTH_CHALLENGE\n"
 ESP32 → App: SHA256(challenge + SECRET_KEY) hex\n
-ESP32 → App: streams 30-byte binary packets @ 100Hz
+ESP32 → App: streams 31-byte binary packets @ 100Hz
 ```
 **Secret Key**: `12ebaf10h12fa9123z21sti`
-**Parser**: `_ConnectionPhase` state machine (waitingForReady → waitingForHash → streaming)
-
-### Modular Firmware (Legacy — documented below)
-
-| Offset | Size | Field | Notes |
-|--------|------|-------|-------|
-| 0 | 1 | Sync0 | `0xAA` |
-| 1 | 1 | Sync1 | `0x55` |
-| 2 | 1 | Type | Packet type (see table below) |
-| 3 | 1 | LenLo | Payload length (LSB) |
-| 4 | 1 | LenHi | Payload length (MSB) |
-| 5..N | N | Payload | Packet-type-specific data |
-| N+1 | 1 | CrcLo | CRC16-CCITT over TYPE(1)+LEN_LO(1)+LEN_HI(1)+payload(N) |
-| N+2 | 1 | CrcHi | Total scope = 3+N bytes, not 2+N |
-
-**CRC16-CCITT**: Initial `0xFFFF`, polynomial `0x1021`, no reflection, no final XOR.
-Verified with test vector `'123456789'` → `0x29B1`.
-
-### Packet Types
-
-| Type | Name | Direction | Description |
-|------|------|-----------|-------------|
-| 0x01 | `CMD_START_SESSION` | App→Firmware | Start sensor streaming + trigger auth |
-| 0x02 | `CMD_STOP_SESSION` | App→Firmware | Stop sensor streaming |
-| 0x03 | `CMD_GET_INFO` | App→Firmware | Request device info |
-| 0x04 | `CMD_GET_CONFIG` | App→Firmware | Request current config |
-| 0x05 | `CMD_SET_CONFIG` | App→Firmware | Set config values |
-| 0x06 | `CMD_AUTH` | App→Firmware | HMAC-SHA256 auth response |
-| 0x10 | `EVT_SESSION_STARTED` | Firmware→App | Session started, session_id included |
-| 0x11 | `EVT_SESSION_STOPPED` | Firmware→App | Session summary |
-| 0x12 | `EVT_SHOT_DETECTED` | Firmware→App | Shot detected with peaks (info only) |
-| 0x13 | `EVT_SENSOR_HEALTH` | Firmware→App | Sensor health heartbeat @ ~10Hz (8 bytes) |
-| 0x14 | `EVT_AUTH_CHALLENGE` | Firmware→App | 16-byte challenge + session_id |
-| 0x15 | `EVT_AUTH_SUCCESS` | Firmware→App | Auth successful |
-| 0x1F | `EVT_ERROR` | Firmware→App | Error with code + message |
-| 0x20 | `DATA_RAW_SAMPLE` | Firmware→App | Sensor data @ 100Hz (24 bytes) |
-| 0x81 | `RSP_INFO` | Firmware→App | Device info response |
-| 0x82 | `RSP_CONFIG` | Firmware→App | Config response |
-| 0x83 | `RSP_ACK` | Firmware→App | Command acknowledgment |
-| 0x85 | `RSP_SHOT_STATS` | Firmware→App | Shot statistics response |
-
-### DATA_RAW_SAMPLE Payload (24 bytes — compiler-aligned)
-
-| Offset | Size | Field | Type | Conversion |
-|--------|------|-------|------|-----------|
-| 0 | 4 | counter | uint32 | — |
-| 1 | 4 | timestamp_us | uint32 | — |
-| 2 | 2 | ax | int16 | raw / 8192.0 * 9.81 → m/s² |
-| 3 | 2 | ay | int16 | raw / 8192.0 * 9.81 → m/s² |
-| 4 | 2 | az | int16 | raw / 8192.0 * 9.81 → m/s² |
-| 5 | 2 | gx | int16 | raw / 65.5 * 0.0174533 → rad/s |
-| 6 | 2 | gy | int16 | raw / 65.5 * 0.0174533 → rad/s |
-| 7 | 2 | gz | int16 | raw / 65.5 * 0.0174533 → rad/s |
-| 8 | 2 | piezo | uint16 | ADC peak value |
-| 9 | 2 | reserved | uint16 | was: temperature (unused) |
-
-> ⚠️ **Struct alignment**: `sizeof(PktRawSample) = 24 bytes` (compiler packs). ESP32 is little-endian.
-
-### Authentication Protocol
-
-```
-Flutter → ESP32: CMD_START_SESSION (0x01)
-ESP32 → Flutter: EVT_AUTH_CHALLENGE (0x14) [session_id(4) + challenge(16) = 20 bytes]
-Flutter → ESP32: CMD_AUTH (0x06) [session_id(4) + HMAC-SHA256(32) = 36 bytes]
-ESP32 → Flutter: EVT_AUTH_SUCCESS (0x15) [session_id(4) = 4 bytes]
-ESP32 → Flutter: EVT_SESSION_STARTED (0x10) [17 bytes]
-ESP32 → Flutter: DATA_RAW_SAMPLE (0x20) @ 100Hz [24 bytes + 2 CRC = 31 bytes total frame]
-```
-
-**Secret Key**: `12ebaf10h12fa9123z21sti`
-**HMAC Input**: challenge(16 bytes) + session_id(4 bytes LE)
-**HMAC Output**: 32-byte digest, sent as-is (not hex-encoded)
 
 ---
 
-## Database Schema (SQLite — stsys_sessions.db)
+## Database Schema (SQLite — stasys_sessions.db)
 
 > **Implemented**: 2026-04-14 — migrated from SharedPreferences (JSON) to SQLite for production scalability.
-> Storage location: `getDatabasesPath() + '/stsys_sessions.db'` (Android internal storage).
+> Storage location: `getDatabasesPath() + '/stasys_sessions.db'` (Android internal storage).
 
 ### Table: `sessions`
 ```sql
@@ -232,43 +165,6 @@ Time series and phase traces are stored as binary BLOB (not JSON) for compactnes
 
 Benefits: ~40% more compact than JSON, 5x faster decode, no JSON parsing overhead.
 
-### Settings Persistence
-App settings (firearm type, training mode, demo mode, max samples) remain in **SharedPreferences** — small, rarely accessed, no query needed.
-
----
-
-## Key Algorithms
-
-### Shot Detection State Machine (Firmware + Flutter Isolate)
-`IDLE → ARMING → ARMED → POST_GATHER → COOLDOWN`
-
-- **IDLE**: Waiting for stability (gyro < 4.0 rad/s)
-- **ARMING**: Gyro stable for 200ms
-- **ARMED**: Ready to detect shot trigger
-- **POST_GATHER**: Collecting recoil data (10 samples @ 100Hz)
-- **COOLDOWN**: 500ms cooldown before next shot
-
-### Trigger Detection
-- **Dry Fire**: Piezo ADC > 100 (configurable) while gyro stable
-- **Live Fire**: Accelerometer jerk > threshold
-
-### MantisX-Style Scoring (Soft Curve)
-
-Uses `sqrt`-based penalties for gradual score drop-off:
-
-```
-score = 100 - sqrt(total_travel) * 30 * difficulty_multiplier
-       - sqrt(peak_jerk) * 25 * difficulty_multiplier
-       - sqrt(avg_hold_delta) * 10 * difficulty_multiplier
-       - sqrt(avg_press_delta) * 15 * difficulty_multiplier
-       - sqrt(avg_recoil_delta) * 5 * difficulty_multiplier
-       - sqrt(elev_travel) * 15 * difficulty_multiplier
-       - sqrt(wind_travel) * 15 * difficulty_multiplier
-```
-
-**Difficulty Multipliers**: Pistol: 1.0, Rifle: 0.7, Archery: 1.3, Shotgun: 0.9
-**Training Mode**: Live Fire gets 0.8x multiplier (more forgiving)
-
 ---
 
 ## Development Workflow
@@ -276,12 +172,17 @@ score = 100 - sqrt(total_travel) * 30 * difficulty_multiplier
 ### Building & Uploading Firmware (PlatformIO)
 ```bash
 # Find ESP32 COM port first
-python -c "import serial.tools.list_ports; [print(p.device) for p in serial.tools.list_ports.comports()]"
+powershell -Command "[System.IO.Ports.SerialPort]::GetPortNames()"
 
-# Upload to ESP32
-cd Firmware_STSYS32
-pio run --target upload --upload-port COM8
-pio device monitor --port COM8 --baud 115200
+# Build
+cd Firmware_STASYS32
+python -m platformio run -e esp32dev
+
+# Upload (COM12 detected 2026-05-05)
+python -m platformio run -e esp32dev --target upload --upload-port COM12
+
+# Monitor serial
+python -m platformio device monitor --port COM12 --baud 115200
 ```
 
 ### Testing Flutter App
@@ -330,7 +231,9 @@ Path: `C:/Users/<USER>/AppData/Local/Pub/Cache/hosted/pub.dev/flutter_bluetooth_
 framework: arduino (ESP32 arduino core 3.20017)
 BluetoothSerial (built-in ESP32)
 Wire (built-in)
+WiFi (built-in)
 Preferences (built-in)
+esp_https_ota (built-in)
 ```
 
 ---
@@ -359,15 +262,15 @@ User requirements for MantisX-style live tracking:
 - Gyro-only for tracking (integrate → quaternion → atan2 projection). Accel only for init orientation + shot detection.
 - **Bug fixed (2026-04-26)**: `_shotDetector.process()` was receiving **bias-corrected** gyro from isolate, then bias-correcting AGAIN internally → double subtraction caused accumulated drift. Fixed by passing **raw** gyro to `process()` — bias correction now happens exactly once inside `process()`.
 
-### Migration Status
+### Migration Status (2026-05-05)
 
 | Component | Protocol | Status |
 |-----------|---------|--------|
-| `Firmware_STSYS32/` | Upstream original (text auth, XOR, float 30-byte) | ✅ Complete — reset to `dylemmas/STASYSESP32` single-file |
-| `Python Code (SSA)/STASYS.py` | Upstream original | ✅ Compatible via ProtocolDecoder class |
-| `ssa_app/` Flutter | Upstream original protocol | ✅ **Synced** — dual-mode parser handles text auth → binary streaming |
+| `Firmware_STASYS32/` | STASYS_FW (CRC16, 31-byte, FreeRTOS) | ✅ **Updated** — from `dylemmas/STASYSFW` |
+| `Flutter bluetooth_provider.dart` | CRC16 verification | ✅ Updated for new protocol |
+| `Python Code (SSA)/STASYS.py` | XOR (30-byte) | ⚠️ Needs update for CRC16 |
 
-> ⚠️ **Flutter app NOT compatible with upstream firmware** — different protocol. Demo mode is primary way to use the app without ESP32 hardware.
+> **Firmware Uploaded**: 2026-05-05 via COM12. Chip ESP32-D0WD-V3, MAC 78:1c:3c:f5:16:18.
 
 ### App Shell Redesign (2026-04-09) + SQLite Migration (2026-04-14)
 - [x] GoRouter with ShellRoute (3-tab bottom nav: Tracking/History/Settings)
@@ -421,7 +324,7 @@ d:\Aydiner\Projek Flutter SSA\
 └── UI UX Design\
     ├── Currently_used\                  # Exact replica of current Flutter UI
     │   ├── index.html
-    │   ├── splash-screen.html
+    │   ���── splash-screen.html
     │   ├── connection-screen.html
     │   ├── tracking-mode-selection.html
     │   ├── tracking-live.html

@@ -41,8 +41,14 @@ class BluetoothProvider extends ChangeNotifier {
   // Binary parser state
   static const int _SYNC0 = 0xAA;
   static const int _SYNC1 = 0xBB;
-  // Struct: header(2) + ax/ay/az/gx/gy/gz(4×6=24) + piezo(2) + battery(1) + checksum(1) = 30 bytes
-  static const int _PACKET_SIZE = 30;
+  // STASYS_FW packet structure (31 bytes):
+  // [0-1] sync (0xAA, 0xBB)
+  // [2-5] ax, [6-9] ay, [10-13] az (float, m/s²)
+  // [14-17] gx, [18-21] gy, [22-25] gz (float, rad/s)
+  // [26-27] piezo (uint16 ADC peak)
+  // [28] battery (uint8 %)
+  // [29-30] crc16 (CRC-16 CCITT over bytes 2-28)
+  static const int _PACKET_SIZE = 31;
   final List<int> _binaryBuffer = [];
 
   // Statistics
@@ -160,18 +166,27 @@ class BluetoothProvider extends ChangeNotifier {
       }
       if (_binaryBuffer.length == _PACKET_SIZE) {
         if (_binaryBuffer[0] == _SYNC0 && _binaryBuffer[1] == _SYNC1) {
-          if (_verifyXorChecksum(_binaryBuffer)) {
+          if (_verifyCrc16(_binaryBuffer)) {
             _parseBinaryPacket(_binaryBuffer);
             _totalPacketsReceived++;
           } else {
             _checksumErrorsCount++;
             if (_debugBinaryPrinted < 3) {
-              // Compute XOR for debugging
-              int computedXor = 0;
-              for (int i = 2; i < _PACKET_SIZE - 1; i++) {
-                computedXor ^= _binaryBuffer[i];
+              // Compute CRC-16 for debugging
+              int crc = 0xFFFF;
+              for (int i = 2; i < 29; i++) {
+                crc ^= _binaryBuffer[i] << 8;
+                for (int j = 0; j < 8; j++) {
+                  if ((crc & 0x8000) != 0) {
+                    crc = (crc << 1) ^ 0x1021;
+                  } else {
+                    crc <<= 1;
+                  }
+                }
               }
-              debugPrint('[BT] XOR fail: got=$_binaryBuffer.last.toRadixString(16), expected=$computedXor.toRadixString(16), bytes=${_binaryBuffer.sublist(2).map((e) => e.toRadixString(16).padLeft(2, '0')).join(' ')}');
+              crc &= 0xFFFF;
+              int receivedCrc = (_binaryBuffer[30] << 8) | _binaryBuffer[29];
+              debugPrint('[BT] CRC16 fail: got=$receivedCrc.toRadixString(16), expected=$crc.toRadixString(16), bytes=${_binaryBuffer.sublist(2, 29).map((e) => e.toRadixString(16).padLeft(2, '0')).join(' ')}');
               _debugBinaryPrinted++;
             }
           }
@@ -181,19 +196,30 @@ class BluetoothProvider extends ChangeNotifier {
     }
   }
 
-  bool _verifyXorChecksum(List<int> buf) {
-    // XOR bytes 2..28 (27 bytes, i.e. everything after sync until checksum byte)
-    int xor = 0;
-    for (int i = 2; i < _PACKET_SIZE - 1; i++) {
-      xor ^= buf[i];
+  bool _verifyCrc16(List<int> buf) {
+    // CRC-16 CCITT over bytes 2-28 (27 bytes: floats + piezo + battery)
+    // Initial: 0xFFFF, Polynomial: 0x1021
+    int crc = 0xFFFF;
+    for (int i = 2; i < 29; i++) {
+      crc ^= buf[i] << 8;
+      for (int j = 0; j < 8; j++) {
+        if ((crc & 0x8000) != 0) {
+          crc = (crc << 1) ^ 0x1021;
+        } else {
+          crc <<= 1;
+        }
+      }
     }
-    return xor == buf[_PACKET_SIZE - 1]; // byte 29 is the checksum
+    crc &= 0xFFFF;
+
+    int receivedCrc = (buf[30] << 8) | buf[29];
+    return crc == receivedCrc;
   }
 
   void _parseBinaryPacket(List<int> buf) {
     ByteData bd = ByteData.sublistView(Uint8List.fromList(buf));
 
-    // [0-1] sync, [2-5] ax, [6-9] ay, [10-13] az, [14-17] gx, [18-21] gy, [22-25] gz, [26-27] piezo, [28] battery, [29] checksum
+    // [0-1] sync, [2-5] ax, [6-9] ay, [10-13] az, [14-17] gx, [18-21] gy, [22-25] gz, [26-27] piezo, [28] battery, [29-30] crc16
     double ax = bd.getFloat32(2, Endian.little);
     double ay = bd.getFloat32(6, Endian.little);
     double az = bd.getFloat32(10, Endian.little);

@@ -100,9 +100,49 @@ Implemented in `sensor_data_provider.dart`:
 
 ---
 
-## Communication Protocol (Upstream Original)
+## Communication Protocol (STASYS_FW)
 
-> **Synced** (2026-04-22): Flutter app now uses upstream original protocol (text auth + 30-byte float binary). See parent `CLAUDE.md` for full protocol details.
+> **Updated** (2026-05-05): Flutter app now uses STASYS_FW protocol from `dylemmas/STASYSFW`.
+> Source: https://github.com/dylemmas/STASYSFW
+
+### Binary Packet Format (31 bytes)
+
+| Offset | Size | Field | Notes |
+|--------|------|-------|-------|
+| 0 | 1 | Sync0 | `0xAA` |
+| 1 | 1 | Sync1 | `0xBB` |
+| 2 | 4 | ax | float m/s² |
+| 6 | 4 | ay | float m/s² |
+| 10 | 4 | az | float m/s² |
+| 14 | 4 | gx | float rad/s |
+| 18 | 4 | gy | float rad/s |
+| 22 | 4 | gz | float rad/s |
+| 26 | 2 | piezo | uint16 ADC peak |
+| 28 | 1 | battery | uint8 % |
+| 29 | 2 | crc16 | CRC-16 CCITT over bytes 2-28 |
+
+**Checksum**: CRC-16 CCITT (was XOR in older firmware)
+- Initial: `0xFFFF`
+- Polynomial: `0x1021`
+- Coverage: bytes 2-28 (27 bytes)
+
+### Authentication Protocol (unchanged)
+
+```
+Flutter → ESP32: "AUTH_CHALLENGE\n"
+ESP32 → Flutter: SHA256("AUTH_CHALLENGE" + SECRET_KEY) hex (64 chars)
+Flutter → ESP32: verifies hash
+```
+
+**Secret Key**: `12ebaf10h12fa9123z21sti`
+
+### Firmware Features (STASYS_FW)
+
+- **AHRS**: Madgwick filter for orientation
+- **ZUPT**: Zero Velocity Update for runtime gyro bias correction
+- **Factory Calibration**: 500 samples on first boot, offsets saved to NVS
+- **Battery Monitoring**: 100Hz normal, 20Hz low battery, deep sleep at <5%
+- **Session Timeout**: 5 minutes inactivity auto-disconnect
 
 ---
 
@@ -238,9 +278,9 @@ go_router: ^15.1.0                    # Navigation routing
 
 | Branch | Status | Description |
 |--------|---------|-------------|
-| `PreProduction_0` | **New** | TDD implementation + production readiness: memory leaks fixed, error handling added, unit tests (27 passing), lifecycle-aware ticker for battery efficiency |
-| `migrasi_firmware_awal_v1` | Active | Current working branch — upstream firmware protocol, live trace with auto-tare, auto-zoom, camera follow, double bias correction fix |
-| `migrasi_firmware_awal` | Backup | Snapshot of previous working version |
+| `PreProduction_0` | **Active** | TDD + STASYS_FW: CRC-16 checksum, 31-byte packets, memory leaks fixed, unit tests (27 passing), lifecycle-aware ticker |
+| `migrasi_firmware_awal_v1` | Backup | Previous version with XOR checksum (30-byte packets) |
+| `migrasi_firmware_awal` | Backup | Snapshot of earlier version |
 | `backup-dark-theme-redesign` | Backup | Full backup of all uncommitted changes pushed to remote |
 | `develop` | Staged | Dark theme elements pending merge |
 | `main` | Base | Initial commit only |

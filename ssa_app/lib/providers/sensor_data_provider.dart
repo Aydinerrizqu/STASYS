@@ -509,12 +509,18 @@ class SensorDataProvider extends ChangeNotifier {
   }
 
   @override
+  @override
   void dispose() {
     _recordingTimer?.cancel();
+    _recordingTimer = null;
     _demoTimer?.cancel();
+    _demoTimer = null;
     _isolateSendPort?.send(SensorDataMessage('reset'));
     _mainReceivePort?.close();
+    _mainReceivePort = null;
+    _isolateSendPort = null;
     _dataIsolate?.kill(priority: Isolate.immediate);
+    _dataIsolate = null;
     super.dispose();
   }
 

@@ -37,7 +37,7 @@ class MuzzleTraceWidget extends StatefulWidget {
 }
 
 class _MuzzleTraceWidgetState extends State<MuzzleTraceWidget>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   // --- 60fps lerp: dot animates toward target ---
   double _dotX = 0.0, _dotY = 0.0;    // current rendered position
   double _targetX = 0.0, _targetY = 0.0; // EMA-smoothed target
@@ -90,13 +90,36 @@ class _MuzzleTraceWidgetState extends State<MuzzleTraceWidget>
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _ticker = createTicker(_onTick);
     _ticker.start();
     _lastTickTime = DateTime.now().millisecondsSinceEpoch.toDouble();
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    switch (state) {
+      case AppLifecycleState.paused:
+      case AppLifecycleState.inactive:
+      case AppLifecycleState.hidden:
+        if (_ticker.isActive) {
+          _ticker.stop();
+        }
+        break;
+      case AppLifecycleState.resumed:
+        if (!_ticker.isActive) {
+          _lastTickTime = DateTime.now().millisecondsSinceEpoch.toDouble();
+          _ticker.start();
+        }
+        break;
+      case AppLifecycleState.detached:
+        break;
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _ticker.dispose();
     _phaseResetTimer?.cancel();
     super.dispose();

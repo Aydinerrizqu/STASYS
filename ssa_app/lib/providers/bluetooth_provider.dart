@@ -387,7 +387,9 @@ class BluetoothProvider extends ChangeNotifier {
   @override
   void dispose() {
     _dataSubscription?.cancel();
+    _dataSubscription = null;
     _connection?.dispose();
+    _connection = null;
     super.dispose();
   }
 }

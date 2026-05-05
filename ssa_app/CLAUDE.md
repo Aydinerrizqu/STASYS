@@ -238,8 +238,9 @@ go_router: ^15.1.0                    # Navigation routing
 
 | Branch | Status | Description |
 |--------|---------|-------------|
-| `migrasi_firmware_awal` | **Active** | Current working branch — upstream firmware protocol, live trace with auto-tare, auto-zoom, camera follow, double bias correction fix |
-| `migrasi_firmware_awal_v1` | **New** | Snapshot after live trace drift fix — double bias correction resolved, auto-tare (1.0 rad/s, 3s interval), auto-zoom (0.015–0.12), demo mode trace fix |
+| `PreProduction_0` | **New** | TDD implementation + production readiness: memory leaks fixed, error handling added, unit tests (27 passing), lifecycle-aware ticker for battery efficiency |
+| `migrasi_firmware_awal_v1` | Active | Current working branch — upstream firmware protocol, live trace with auto-tare, auto-zoom, camera follow, double bias correction fix |
+| `migrasi_firmware_awal` | Backup | Snapshot of previous working version |
 | `backup-dark-theme-redesign` | Backup | Full backup of all uncommitted changes pushed to remote |
 | `develop` | Staged | Dark theme elements pending merge |
 | `main` | Base | Initial commit only |
@@ -292,4 +293,101 @@ Bluetooth debug logs in `bluetooth_provider.dart`:
 [BT] Auth successful
 [BT] Session started: ...
 [CFG] *** data_mode=N ***  (printed on connect)
+```
+
+---
+
+## TDD Implementation & Production Readiness (2026-05-05)
+
+### Completed Changes
+
+#### Phase 1: Test Infrastructure ✅
+- Added `mocktail: ^1.0.3` — library-based mocking (no code generation)
+- Added `coverage: ^1.7.2` — coverage reporting
+- Added `firebase_crashlytics: ^4.0.0` + `firebase_core: ^3.0.0` — crash reporting (pending setup)
+- Created test directory structure:
+  ```
+  test/
+  ├── unit/
+  │   ├── models/data_models_test.dart
+  │   └── utils/ring_buffer_test.dart
+  ```
+
+#### Phase 2: Critical Bug Fixes ✅
+**Memory leak fixes:**
+- `providers/sensor_data_provider.dart` — Fixed `dispose()`:
+  - Added `_mainReceivePort?.close()` + null assignment
+  - Added `_dataIsolate?.kill()` + null assignment
+  - Added `_recordingTimer?.cancel()` + null assignment
+  - Added `super.dispose()` call
+
+- `providers/bluetooth_provider.dart` — Fixed `dispose()`:
+  - Added `_dataSubscription = null` after cancel
+  - Added `_connection = null` after dispose
+  - Added `super.dispose()` call
+
+**Error handling:**
+- `providers/session_logger.dart` — Added try-catch to `saveSession()`:
+  - Logs session ID on success
+  - Logs error with stack trace on failure
+  - Re-throws exception for caller handling
+
+#### Phase 3: Unit Tests ✅
+**27 tests passing:**
+- `test/unit/models/data_models_test.dart` (16 tests):
+  - FirearmType.fromString, displayName
+  - TrainingMode.fromString, displayName
+  - DataPoint creation, toMap, fromMap
+  - ShotResult creation, serialization, deserialization
+  - Null phase traces handling
+  - Missing enum fallback handling
+
+- `test/unit/utils/ring_buffer_test.dart` (11 tests):
+  - Capacity, add, toList
+  - Overflow behavior
+  - Clear and resize operations
+  - Edge cases (zero, negative resize)
+
+#### Phase 4: Production Hardening ✅
+**Battery efficiency:**
+- `widgets/muzzle_trace_widget.dart` — Added `WidgetsBindingObserver`:
+  - 60fps ticker stops when app backgrounded (AppLifecycleState.paused/inactive/hidden)
+  - Ticker resumes when app foregrounded (AppLifecycleState.resumed)
+  - Prevents battery drain while app not visible
+
+### Pending Changes (TODO)
+
+#### Firebase Crashlytics Setup
+- [ ] Create Firebase project in Firebase Console
+- [ ] Download `google-services.json` to `ssa_app/android/app/`
+- [ ] Add Firebase plugins to `android/app/build.gradle`:
+  ```groovy
+  plugins {
+    id 'com.google.gms.google-services'
+  }
+  ```
+- [ ] Initialize Crashlytics in `main.dart`:
+  ```dart
+  await Firebase.initializeApp();
+  FlutterError.onError = (details) {
+    FirebaseCrashlytics.instance.recordFlutterError(details);
+    FlutterError.presentError(details);
+  };
+  ```
+
+#### Additional Test Coverage
+- [ ] Service tests: `database_service_test.dart`, `export_service_test.dart`
+- [ ] Provider tests: `settings_provider_test.dart`, `session_provider_test.dart`
+- [ ] Widget tests: `shot_history_list_test.dart`, `shot_analysis_panel_test.dart`
+
+#### Production Enhancements
+- [ ] Offline session queue — queue failed saves for retry when connectivity restored
+- [ ] ErrorWidget fallback — global error boundary for widget tree crashes
+- [ ] Global exception handler in `main.dart` — catch and report unhandled exceptions
+
+### Test Execution
+```bash
+flutter test                    # Run all tests
+flutter test --coverage         # Run with coverage report
+flutter analyze --no-fatal-infos # Check for warnings/errors
 ```

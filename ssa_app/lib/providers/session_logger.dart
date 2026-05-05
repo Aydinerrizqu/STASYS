@@ -1,6 +1,7 @@
 // ============================================
 // File: providers/session_logger.dart
 // ============================================
+import 'dart:developer' as developer;
 import '../models/data_models.dart';
 import '../services/database_service.dart';
 
@@ -112,7 +113,18 @@ class SessionLogger {
   SessionLogger({DatabaseService? db}) : _db = db ?? DatabaseService();
 
   Future<void> saveSession(SessionLog log) async {
-    await _db.saveSession(log);
+    try {
+      await _db.saveSession(log);
+      developer.log('Session saved successfully: ${log.id}');
+    } catch (e, stack) {
+      developer.log(
+        'Failed to save session: ${log.id}',
+        name: 'SessionLogger',
+        error: e,
+        stackTrace: stack,
+      );
+      rethrow;
+    }
   }
 
   Future<List<SessionLog>> loadAllSessions() async {

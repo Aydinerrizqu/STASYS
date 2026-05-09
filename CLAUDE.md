@@ -241,7 +241,9 @@ esp_https_ota (built-in)
 ## Known Issues / TODOs
 
 ### Pending
-- [ ] **Frame freeze / gralloc4 GPU buffer failure** — GPU/driver incompatibility with Impeller rendering engine. **Not app code issue**. Test on different device.
+- [ ] **Firebase Crashlytics** — dependency added (2026-05-05), setup pending (needs Firebase account + google-services.json)
+- [ ] **Python STASYS.py sync** — still XOR 30-byte, needs CRC16 31-byte
+- [ ] **Frame freeze / gralloc4 GPU buffer failure** — GPU/driver incompatibility with Impeller. **Not app code issue**. Test on different device.
 - [ ] **Trace window sync with Python** — Flutter 2s window vs Python 0.5s cursor-normalized.
 - [ ] **MantisX feature parity** — drill modes, trend analysis, split time, session notes, etc.
 
@@ -262,15 +264,22 @@ User requirements for MantisX-style live tracking:
 - Gyro-only for tracking (integrate → quaternion → atan2 projection). Accel only for init orientation + shot detection.
 - **Bug fixed (2026-04-26)**: `_shotDetector.process()` was receiving **bias-corrected** gyro from isolate, then bias-correcting AGAIN internally → double subtraction caused accumulated drift. Fixed by passing **raw** gyro to `process()` — bias correction now happens exactly once inside `process()`.
 
-### Migration Status (2026-05-05)
+### Migration Status (2026-05-09)
 
 | Component | Protocol | Status |
 |-----------|---------|--------|
-| `Firmware_STASYS32/` | STASYS_FW (CRC16, 31-byte, FreeRTOS) | ✅ **Updated** — from `dylemmas/STASYSFW` |
-| `Flutter bluetooth_provider.dart` | CRC16 verification | ✅ Updated for new protocol |
+| `Firmware_STASYS32/` | STASYS_FW (CRC16, 31-byte, FreeRTOS) | ✅ Updated — from `dylemmas/STASYSFW` |
+| `Flutter bluetooth_provider.dart` | CRC16 verification | ✅ Updated |
+| `Flutter settings_tab.dart` | Mount Direction/Position + RESET AXIS | ✅ Implemented (2026-05-09) |
 | `Python Code (SSA)/STASYS.py` | XOR (30-byte) | ⚠️ Needs update for CRC16 |
 
 > **Firmware Uploaded**: 2026-05-05 via COM12. Chip ESP32-D0WD-V3, MAC 78:1c:3c:f5:16:18.
+
+### Quick Wins (2026-05-09) ✅
+- [x] Fix duplicate `@override` in `sensor_data_provider.dart:512`
+- [x] Mount Direction FW/BW toggle (enum `MountDirection` + SettingsProvider + isolate + UI binding)
+- [x] Mount Mode selector TOP/BOT/LEFT/RIGHT (enum `MountPosition` + 4-button grid with active state)
+- [x] RESET AXIS button (clears gyro offsets, re-runs 50-sample auto-calibration via isolate)
 
 ### App Shell Redesign (2026-04-09) + SQLite Migration (2026-04-14)
 - [x] GoRouter with ShellRoute (3-tab bottom nav: Tracking/History/Settings)

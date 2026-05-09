@@ -15,6 +15,8 @@ class SettingsProvider extends ChangeNotifier {
   // Training settings
   FirearmType _firearmType = FirearmType.pistol;
   TrainingMode _trainingMode = TrainingMode.dryFire;
+  MountDirection _mountDirection = MountDirection.forward;
+  MountPosition _mountPosition = MountPosition.top;
 
   // Demo mode
   bool _isDemoMode = false;
@@ -25,6 +27,8 @@ class SettingsProvider extends ChangeNotifier {
   FirearmType get firearmType => _firearmType;
   TrainingMode get trainingMode => _trainingMode;
   bool get isDemoMode => _isDemoMode;
+  MountDirection get mountDirection => _mountDirection;
+  MountPosition get mountPosition => _mountPosition;
 
   SettingsProvider() {
     _loadSettings();
@@ -32,12 +36,19 @@ class SettingsProvider extends ChangeNotifier {
 
   Future<void> _loadSettings() async {
     _prefs = await SharedPreferences.getInstance();
-    _maxSamples = _prefs.getInt('maxSamples') ?? 6;
+    _maxSamples = (_prefs.getInt('maxSamples') ?? 6).clamp(2, 10);
+    await _prefs.setInt('maxSamples', _maxSamples); // overwrite corrupt value
     _firearmType = FirearmType.fromString(
       _prefs.getString('firearmType') ?? 'pistol',
     );
     _trainingMode = TrainingMode.fromString(
       _prefs.getString('trainingMode') ?? 'dryFire',
+    );
+    _mountDirection = MountDirection.fromString(
+      _prefs.getString('mountDirection') ?? 'forward',
+    );
+    _mountPosition = MountPosition.fromString(
+      _prefs.getString('mountPosition') ?? 'top',
     );
     notifyListeners();
   }
@@ -60,6 +71,20 @@ class SettingsProvider extends ChangeNotifier {
     if (_trainingMode == mode) return;
     _trainingMode = mode;
     await _prefs.setString('trainingMode', mode.name);
+    notifyListeners();
+  }
+
+  Future<void> updateMountDirection(MountDirection dir) async {
+    if (_mountDirection == dir) return;
+    _mountDirection = dir;
+    await _prefs.setString('mountDirection', dir.name);
+    notifyListeners();
+  }
+
+  Future<void> updateMountPosition(MountPosition pos) async {
+    if (_mountPosition == pos) return;
+    _mountPosition = pos;
+    await _prefs.setString('mountPosition', pos.name);
     notifyListeners();
   }
 

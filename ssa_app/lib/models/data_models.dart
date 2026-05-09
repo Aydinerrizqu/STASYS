@@ -36,6 +36,38 @@ enum TrainingMode {
   }
 }
 
+enum MountDirection {
+  forward('FW'),
+  backward('BW');
+
+  final String shortCode;
+  const MountDirection(this.shortCode);
+
+  static MountDirection fromString(String value) {
+    return MountDirection.values.firstWhere(
+      (e) => e.name == value,
+      orElse: () => MountDirection.forward,
+    );
+  }
+}
+
+enum MountPosition {
+  top('TOP'),
+  bottom('BOT'),
+  left('LEFT'),
+  right('RIGHT');
+
+  final String displayName;
+  const MountPosition(this.displayName);
+
+  static MountPosition fromString(String value) {
+    return MountPosition.values.firstWhere(
+      (e) => e.name == value,
+      orElse: () => MountPosition.top,
+    );
+  }
+}
+
 // --- Shot Result Model (for scoring & analysis) ---
 class ShotResult {
   final DateTime timestamp;

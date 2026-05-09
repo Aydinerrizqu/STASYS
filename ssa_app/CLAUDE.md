@@ -58,7 +58,8 @@ ssa_app/
 │   │   ├── benchmark_analysis_widget.dart
 │   │   └── debug_overlay.dart
 │   └── models/
-│       └── data_models.dart          # DataPoint, SessionLog, ShotResult, FirearmType, TrainingMode
+│       └── data_models.dart          # DataPoint, SessionLog, ShotResult
+│                                        FirearmType, TrainingMode, MountDirection, MountPosition
 ```
 
 ---
@@ -233,7 +234,8 @@ Per-shot scoring:
 
 - **SharedPreferences** for app settings only
 - **SQLite** for session/shots persistence (stasys_sessions.db)
-- **Key strings**: `firearmType`, `trainingMode`, `maxSamples`
+- **Key strings**: `firearmType`, `trainingMode`, `maxSamples`, `mountDirection`, `mountPosition`
+- **`maxSamples` clamp**: Di-load dengan `.clamp(2, 10)` di `SettingsProvider._loadSettings`. Nilai corrupt (misal 15 dari slider lama) auto-di-fix dan di-overwrite ke SharedPreferences.
 
 ---
 
@@ -294,10 +296,16 @@ go_router: ^15.1.0                    # Navigation routing
 - [ ] **MantisX feature parity** — drill modes, trend analysis, split time, session notes, etc.
 - [ ] **Frame freeze / gralloc4 GPU failure** — GPU/driver incompatibility with Impeller rendering engine. **Not app code issue**. Test on different device.
 
-### Settings (Pending Implementation)
-- [ ] Mount mode selector — `onTap` stub in settings_tab.dart
-- [ ] Direction FW/BW toggle — `onChanged` empty in settings_tab.dart
-- [ ] RESET AXIS button — `onTap` no-op in settings_tab.dart
+### Settings (Implemented 2026-05-09)
+- [x] Mount position selector (TOP/BOT/LEFT/RIGHT) — `settings_tab.dart`, persisted via SharedPreferences
+- [x] Mount direction FW/BW toggle — `_MiniToggle` bound to `SettingsProvider`, passed to isolate via `update_settings`
+- [x] RESET AXIS button — triggers `SensorDataProvider.resetAxis()` → isolate `reset_axis` message → clears offsets, re-runs 50-sample auto-calibration
+
+### Dead Code (Pending Cleanup)
+- `services/sensor_data_stream.dart` — fully commented out, unused
+- `providers/bluetooth_isolate.dart` — old 28-byte protocol implementation, unused
+- `widgets/benchmark_analysis_widget_asli.dart` + `benchmark_anlysis_adjust.dart` — 3 versions of benchmark widget, not all in use
+- `screens/main_screen.dart` — old 4-tab navigation (replaced by `main_shell.dart`)
 
 ---
 
@@ -397,7 +405,16 @@ Bluetooth debug logs in `bluetooth_provider.dart`:
 
 ### Pending Changes (TODO)
 
-#### Firebase Crashlytics Setup
+### Quick Wins (2026-05-09) ✅
+- [x] Fix duplicate `@override` in `sensor_data_provider.dart:512`
+- [x] Implement Mount Direction FW/BW toggle (enum + SettingsProvider + isolate + UI)
+- [x] Implement RESET AXIS button (SensorDataProvider → isolate → clear offsets + re-cal)
+- [x] Implement Mount Mode selector (4-position grid with active state)
+- [x] Fix maxSamples slider range di settings_tab.dart (min: 3→2, max: 15→10, divisions: 4→8)
+- [x] Fix slider labels di settings_tab.dart ('3s'→'2s', '15s'→'10s')
+- [x] Tambah clamp di SettingsProvider._loadSettings untuk auto-fix corrupt values (15→10)
+
+#### Firebase Crashlytics Setup (Pending)
 - [ ] Create Firebase project in Firebase Console
 - [ ] Download `google-services.json` to `ssa_app/android/app/`
 - [ ] Add Firebase plugins to `android/app/build.gradle`:

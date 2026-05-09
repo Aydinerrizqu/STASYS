@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/settings_provider.dart';
+import '../../providers/sensor_data_provider.dart';
 import '../../models/data_models.dart';
 import '../../theme/app_theme.dart';
 
@@ -163,28 +164,34 @@ class _SpatialGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final mountOptions = ['TOP', 'BOT', 'LEFT', 'RIGHT'];
+    final mountOptions = [
+      (MountPosition.top, 'TOP'),
+      (MountPosition.bottom, 'BOT'),
+      (MountPosition.left, 'LEFT'),
+      (MountPosition.right, 'RIGHT'),
+    ];
     return Column(
       children: [
         Row(
-          children: mountOptions.map((label) {
-            final idx = mountOptions.indexOf(label);
+          children: mountOptions.map((entry) {
+            final pos = entry.$1;
+            final label = entry.$2;
+            final idx = mountOptions.indexOf(entry);
+            final isActive = settings.mountPosition == pos;
             return Expanded(
               child: GestureDetector(
-                onTap: () {
-                  // TODO: implement mount mode
-                },
+                onTap: () => settings.updateMountPosition(pos),
                 child: Container(
                   margin: EdgeInsets.only(
                     right: idx < mountOptions.length - 1 ? 8 : 0),
                   padding: const EdgeInsets.symmetric(vertical: 12),
                   decoration: BoxDecoration(
-                    color: idx == 0
+                    color: isActive
                         ? StsysTheme.primary.withValues(alpha: 0.15)
                         : StsysTheme.surfaceContainerHigh,
                     borderRadius: BorderRadius.circular(8),
                     border: Border.all(
-                      color: idx == 0
+                      color: isActive
                           ? StsysTheme.primary.withValues(alpha: 0.3)
                           : Colors.transparent,
                     ),
@@ -197,7 +204,7 @@ class _SpatialGrid extends StatelessWidget {
                         fontSize: 12,
                         fontWeight: FontWeight.w800,
                         letterSpacing: 1,
-                        color: idx == 0
+                        color: isActive
                             ? StsysTheme.primary
                             : StsysTheme.onSurface.withValues(alpha: 0.5),
                       ),
@@ -234,8 +241,12 @@ class _SpatialGrid extends StatelessWidget {
                     const Spacer(),
                     _MiniToggle(
                       labels: const ['FW', 'BW'],
-                      selectedIndex: 0,
-                      onChanged: (i) {},
+                      selectedIndex: settings.mountDirection == MountDirection.forward ? 0 : 1,
+                      onChanged: (i) {
+                        settings.updateMountDirection(
+                          i == 0 ? MountDirection.forward : MountDirection.backward,
+                        );
+                      },
                     ),
                   ],
                 ),
@@ -265,7 +276,9 @@ class _SpatialGrid extends StatelessWidget {
                     ),
                     const SizedBox(height: 8),
                     GestureDetector(
-                      onTap: () {},
+                      onTap: () {
+                        context.read<SensorDataProvider>().resetAxis();
+                      },
                       child: Container(
                         width: double.infinity,
                         padding: const EdgeInsets.symmetric(vertical: 8),
@@ -411,17 +424,17 @@ class _GraphDurationSlider extends StatelessWidget {
             ),
             child: Slider(
               value: settings.maxSamples.toDouble(),
-              min: 3,
-              max: 15,
-              divisions: 4,
-              onChanged: (v) => settings.updateMaxSamples(v.toInt()),
+              min: 2,
+              max: 10,
+              divisions: 8,
+              onChanged: (v) => settings.updateMaxSamples(v.round()),
             ),
           ),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                '3s',
+                '2s',
                 style: TextStyle(
                   fontFamily: 'Inter',
                   fontSize: 10,
@@ -429,7 +442,7 @@ class _GraphDurationSlider extends StatelessWidget {
                 ),
               ),
               Text(
-                '15s',
+                '10s',
                 style: TextStyle(
                   fontFamily: 'Inter',
                   fontSize: 10,

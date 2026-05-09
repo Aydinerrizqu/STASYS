@@ -134,6 +134,7 @@ class SensorDataProvider extends ChangeNotifier {
       'firearmType': settings.firearmType.name,
       'trainingMode': settings.trainingMode.name,
       'displayWindowSeconds': settings.maxSamples,
+      'mountDirection': settings.mountDirection.name,
     }));
   }
 
@@ -345,6 +346,7 @@ class SensorDataProvider extends ChangeNotifier {
     _isolateSendPort?.send(SensorDataMessage('update_settings', {
       'firearmType': _settingsProvider!.firearmType.name,
       'trainingMode': _settingsProvider!.trainingMode.name,
+      'mountDirection': _settingsProvider!.mountDirection.name,
     }));
   }
 
@@ -440,6 +442,11 @@ class SensorDataProvider extends ChangeNotifier {
     _isolateSendPort?.send(SensorDataMessage('reset'));
   }
 
+  /// Reset axis — clears gyro offsets, re-runs auto-calibration
+  void resetAxis() {
+    _isolateSendPort?.send(SensorDataMessage('reset_axis'));
+  }
+
   /// Save session - request data dari isolate dulu
   Future<void> saveCurrentSession() async {
     if (_sessionGyroX == null || _sessionGyroX!.isEmpty) {
@@ -508,7 +515,6 @@ class SensorDataProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  @override
   @override
   void dispose() {
     _recordingTimer?.cancel();

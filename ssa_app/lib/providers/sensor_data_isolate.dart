@@ -299,6 +299,7 @@ class ShotDetector {
   // Settings (from provider)
   FirearmType firearmType = FirearmType.pistol;
   TrainingMode trainingMode = TrainingMode.dryFire;
+  MountDirection mountDirection = MountDirection.forward;
   double accelThresh = ScoringConfig.defaultAccelThresh;
   double piezoThresh = ScoringConfig.defaultPiezoMin;
 
@@ -364,6 +365,10 @@ class ShotDetector {
     state = ShotState.idle;
     stateTimer = 0;
     gatherCounter = 0;
+  }
+
+  void updateMountDirection(MountDirection dir) {
+    mountDirection = dir;
   }
 
   ShotResult? process({
@@ -695,6 +700,7 @@ class SensorDataIsolate {
   // Settings
   FirearmType _firearmType = FirearmType.pistol;
   TrainingMode _trainingMode = TrainingMode.dryFire;
+  MountDirection _mountDirection = MountDirection.forward;
 
   // State
   late SendPort _mainSendPort;
@@ -787,6 +793,9 @@ class SensorDataIsolate {
         case 'update_settings':
           _updateSettings(message.data!);
           break;
+        case 'reset_axis':
+          _resetAxis();
+          break;
       }
     } catch (e) {
       // Silently catch errors to keep isolate alive
@@ -809,6 +818,21 @@ class SensorDataIsolate {
         _rebuildBuffers();
       }
     }
+    if (data.containsKey('mountDirection')) {
+      _mountDirection = MountDirection.fromString(data['mountDirection']);
+      _shotDetector.updateMountDirection(_mountDirection);
+    }
+  }
+
+  void _resetAxis() {
+    // Clear auto-calibration flag and offsets
+    _offsetGyroX = 0.0;
+    _offsetGyroY = 0.0;
+    _offsetGyroZ = 0.0;
+    _autoCalibrating = true;
+    _autoCalSamples.clear();
+    _shotDetector.reset();
+    _mainSendPort.send(SensorDataMessage('reset_axis_complete'));
   }
 
   void _rebuildBuffers() {

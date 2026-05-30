@@ -30,10 +30,14 @@ Firmware_STASYS32/
 ├── src/
 │   ├── main.cpp                  # Entry point, 4 FreeRTOS tasks
 │   ├── storage/
-│   │   ├── storage.h/cpp         # NVS config/stats/auth
+│   │   ├── storage.h/cpp         # NVS config/stats/auth + firmware version
 │   │   ├── crc.h/cpp             # CRC16-CCITT implementation
 │   │   ├── status_led.h/cpp      # LED pattern driver
-│   │   └── ota.h/cpp             # OTA update manager
+│   │   └── ota.h/cpp             # OTA update manager (WiFi + BT dual-mode)
+│   ├── ota/
+│   │   ├── bt_ota_commands.h     # OTA command IDs, structs (512-byte chunks)
+│   │   ├── bt_ota.h              # BT OTA handler declarations
+│   │   └── bt_ota.cpp            # BT OTA command task + state machine
 │   └── sensor/
 │       ├── quaternion.h           # Header-only quaternion math
 │       ├── madgwick.h/cpp         # AHRS filter
@@ -91,6 +95,61 @@ ESP32 → App: (starts streaming 31-byte packets @ 100Hz)
 
 **Secret Key**: `12ebaf10h12fa9123z21sti`
 
+### OTA Firmware Update via Bluetooth — ✅ WORKING (2026-05-23)
+
+**Text Commands** (terminated by `\n`):
+
+| Command | Direction | Response |
+|---------|-----------|----------|
+| `GET_VERSION` | App → ESP32 | `VERSION=X.Y.Z` |
+| `OTA_START:size=N` | App → ESP32 | `OTA_READY` or `OTA_ERR:reason` |
+| `OTA_DATA:seq=N:base64=...` | App → ESP32 | `OTA_ACK:seq=N` or `OTA_NAK:seq=N:err` |
+| `OTA_FINISH:sha256=HASH` | App → ESP32 | `OTA_COMPLETE` or `OTA_ERR:reason` |
+| `OTA_ABORT` | App → ESP32 | `OTA_ABORTED` |
+| `REBOOT` | App → ESP32 | (reboots, no response) |
+
+**Protocol flow**:
+1. App connects + authenticates (existing challenge-response)
+2. App sends `GET_VERSION` → compare with assets version
+3. If update needed: `OTA_START:size=N` → `OTA_READY`
+4. For each 128-byte chunk: base64 encode → `OTA_DATA:seq=X:base64=...` → wait `OTA_ACK:seq=X`
+5. After all chunks: `OTA_FINISH:sha256=HASH` → ESP32 verifies SHA256 → `OTA_COMPLETE`
+6. App sends `REBOOT` → ESP32 calls `esp_ota_set_boot_partition()` + `esp_restart()`
+7. ESP32 boots new firmware from alternate partition (dual-bank OTA)
+
+**State Machine** (`BtOtaState_t` in `bt_ota_commands.h`):
+- `BT_OTA_IDLE` — default state
+- `BT_OTA_RECEIVING` — receiving chunks
+- `BT_OTA_WRITING` — (same as RECEIVING, for future use)
+- `BT_OTA_VERIFYING` — after OTA_FINISH, computing SHA256
+- `BT_OTA_COMPLETE` — ready to reboot
+- `BT_OTA_ERROR` — error occurred
+
+**Files**:
+- `src/ota/bt_ota_commands.h` — BtOtaState_t enum, OTA_CHUNK_SIZE=128
+- `src/ota/bt_ota.h` — declarations: btOtaInit(), btOtaReset(), btOtaTask(), btOtaGetState(), btOtaIsActive()
+- `src/ota/bt_ota.cpp` — Dual-task FreeRTOS (drain + write), base64 decoder, SHA256 streaming, command parser
+- `src/storage/storage.h` — FIRMWARE_VERSION macro, storageGetFirmwareVersion(), storageSetFirmwareVersion()
+- `src/storage/storage.cpp` — NVS get/set for fw_version in `config` namespace
+
+**Implementation details (2026-05-23)**:
+- **Dual-task architecture**: drain task (priority 2, Core 0) + write task (priority 1, Core 0)
+- **Drain task**: reads SerialBT byte-by-byte, parses text commands, sends ACKs. `taskYIELD()` after EVERY byte prevents BT RX buffer overflow.
+- **Write task**: receives chunks from FreeRTOS queue (size 4), calls `esp_ota_write()` (~500ms blocking), updates SHA256
+- **Binary semaphore**: write task signals drain task when chunk is done (non-blocking ACK)
+- **Queue size**: 4 entries × 128 bytes = 512 bytes total buffer
+- **Chunk size**: 128 bytes raw → ~172 bytes base64 → ~200 bytes BT transfer (fits ESP32 BT RX buffer)
+- **Speed**: ~13,500 chunks @ 200ms Flutter delay + 500ms esp_ota_write = ~45 minutes for 1.7MB
+- `isAuthenticated` (main.cpp, non-static volatile) guards btOtaTask from reading SerialBT during auth phase
+- `btOtaTask()` loops: `if (!isAuthenticated) { btOtaReset() if needed; delay(50); continue; }`
+- `btOtaReset()` — properly aborts OTA handle, frees SHA context, resets state. Called on disconnect.
+- `GET_VERSION` always allowed (no state check). Other commands require `BT_OTA_IDLE`.
+- Version stored in NVS (`config` namespace, key `fw_version`) and compile-time `FIRMWARE_VERSION` macro.
+- After `OTA_COMPLETE`, ESP32 saves version to NVS via `storageSetFirmwareVersion()`.
+- `btOtaIsActive()` flag pauses sensor task during OTA to prevent BT buffer contention
+
+**Status**: ✅ Production-ready, tested E2E with 1.7MB firmware. See `ssa_app/CLAUDE.md` for Flutter-side implementation.
+
 ---
 
 ## Build & Upload
@@ -106,13 +165,13 @@ python -m platformio run -e esp32dev
 # Find COM port
 powershell -Command "[System.IO.Ports.SerialPort]::GetPortNames()"
 
-# Upload
-python -m platformio run -e esp32dev --target upload --upload-port COM12
+# Upload (COM3 detected 2026-05-23)
+python -m platformio run -e esp32dev --target upload --upload-port COM3
 ```
 
 ### Monitor Serial Output
 ```bash
-python -m platformio device monitor --port COM12 --baud 115200
+python -m platformio device monitor --port COM3 --baud 115200
 ```
 
 ---
@@ -157,9 +216,11 @@ python -m platformio device monitor --port COM12 --baud 115200
 ## Memory Usage
 
 ```
-RAM:   22.0% (72156 / 327680 bytes)
-Flash: 54.5% (1715037 / 3145728 bytes)
+RAM:   22.1% (72580 / 327680 bytes)
+Flash: 97.3% (1721769 / 1769472 bytes)
 ```
+
+> ⚠️ Flash usage is 97.3% with OTA + BT dual mode. Ensure partition table has sufficient space.
 
 ---
 
@@ -183,8 +244,7 @@ Flash: 54.5% (1715037 / 3145728 bytes)
 ## Known Issues / TODOs
 
 ### Pending
-- [ ] Test dengan Flutter app — verify BT connection + data streaming
-- [ ] Verify CRC16 packet verification works end-to-end
+- [ ] **OTA Speed Optimization** — Current: 45 min for 1.7MB. Target: 10-15 min. Approaches: larger chunks (256 bytes), burst mode (batched ACKs), reduced Flutter delay. Needs incremental testing.
 
 ### Fixed (2026-05-05)
 - [x] Firmware rebuild dari STASYS_FW GitHub
@@ -192,6 +252,14 @@ Flash: 54.5% (1715037 / 3145728 bytes)
 - [x] Fixed `storage.h`: `storageLoadConfig` return type `void` not `bool`
 - [x] Removed duplicate `quaternion.cpp` (header-only)
 - [x] Build successful: RAM 22%, Flash 54.5%
+
+### Fixed (2026-05-23) ✅
+- [x] **OTA Bluetooth Firmware Update** — Full E2E working! See OTA Firmware Update section above.
+  - `bt_ota.cpp` — dual-task FreeRTOS (drain + write), semaphore ACK, taskYIELD per byte
+  - `main.cpp` — `btOtaIsActive()` pauses sensor task during OTA
+  - `isAuthenticated` (non-static volatile) guards btOtaTask from consuming auth bytes
+  - Partition table: `partitions_dual_ota.csv` (app0=ota_0, app1=ota_1, ~1.7MB each)
+  - Tested E2E with 1.7MB firmware via COM3, uploaded successfully
 - [x] Uploaded to ESP32 via COM12
 
 ---

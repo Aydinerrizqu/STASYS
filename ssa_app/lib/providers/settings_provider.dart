@@ -21,12 +21,18 @@ class SettingsProvider extends ChangeNotifier {
   // Demo mode
   bool _isDemoMode = false;
 
+  // OTA settings
+  bool _autoUpdateFirmware = false;
+  String? _lastCheckedFirmwareVersion;
+
   // Getters
   int get maxSamples => _maxSamples;
   double get stableAxisLimit => _stableAxisLimit;
   FirearmType get firearmType => _firearmType;
   TrainingMode get trainingMode => _trainingMode;
   bool get isDemoMode => _isDemoMode;
+  bool get autoUpdateFirmware => _autoUpdateFirmware;
+  String? get lastCheckedFirmwareVersion => _lastCheckedFirmwareVersion;
   MountDirection get mountDirection => _mountDirection;
   MountPosition get mountPosition => _mountPosition;
 
@@ -50,6 +56,8 @@ class SettingsProvider extends ChangeNotifier {
     _mountPosition = MountPosition.fromString(
       _prefs.getString('mountPosition') ?? 'top',
     );
+    _autoUpdateFirmware = _prefs.getBool('autoUpdateFirmware') ?? false;
+    _lastCheckedFirmwareVersion = _prefs.getString('lastCheckedFirmwareVersion');
     notifyListeners();
   }
 
@@ -91,6 +99,21 @@ class SettingsProvider extends ChangeNotifier {
   void setDemoMode(bool value) {
     if (_isDemoMode == value) return;
     _isDemoMode = value;
+    notifyListeners();
+  }
+
+  Future<void> setAutoUpdateFirmware(bool value) async {
+    if (_autoUpdateFirmware == value) return;
+    _autoUpdateFirmware = value;
+    await _prefs.setBool('autoUpdateFirmware', value);
+    notifyListeners();
+  }
+
+  Future<void> setLastCheckedFirmwareVersion(String? version) async {
+    _lastCheckedFirmwareVersion = version;
+    if (version != null) {
+      await _prefs.setString('lastCheckedFirmwareVersion', version);
+    }
     notifyListeners();
   }
 }

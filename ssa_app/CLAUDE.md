@@ -21,26 +21,33 @@ ssa_app/
 │   ├── services/
 │   │   ├── database_helper.dart     # SQLite singleton, schema creation, migrations
 │   │   ├── database_service.dart    # CRUD operations, binary BLOB encoding
-│   │   └── export_service.dart      # CSV export via Share Sheet
+│   │   ├── export_service.dart      # CSV export via Share Sheet
+│   │   └── firmware_service.dart     # OTA firmware loading + chunking + SHA256
 │   ├── providers/
 │   │   ├── bluetooth_provider.dart  # Text auth (READY→challenge→SHA256 hex) + dual-mode parser
-│   │   │                              # Binary: 0xAA 0xBB + 6 floats + piezo + battery + XOR checksum
+│   │   │                              # Binary: 0xAA 0xBB + 6 floats + piezo + battery + CRC16
 │   │   │                              # 3-state parser: waitingForReady → waitingForHash → streaming
+│   │   │                              # + OTA command methods: sendOtaStart, sendOtaChunk, sendOtaFinish,
+│   │   │                              #   sendRebootCommand, getFirmwareVersion
 │   │   ├── sensor_data_provider.dart  # UI state, isolate communication, demo mode
-│   │   ├── sensor_data_isolate.dart  # Shot detection + 3-phase analysis (hold/press/recoil)
+│   │   ├── sensor_data_isolate.dart    # Shot detection + 3-phase analysis (hold/press/recoil)
 │   │   │                              # + auto-calibration on first 50 samples (gyro zero-offset)
-│   │   ├── settings_provider.dart     # Firearm type, training mode, demo mode, preferences
-│   │   ├── session_provider.dart     # Session list management
-│   │   └── session_logger.dart       # Delegates to DatabaseService (SQLite)
+│   │   ├── settings_provider.dart      # Firearm type, training mode, demo mode, preferences
+│   │   │                              # + autoUpdateFirmware (bool, default false)
+│   │   ├── session_provider.dart       # Session list management
+│   │   ├── session_logger.dart         # Delegates to DatabaseService (SQLite)
+│   │   └── ota_provider.dart           # OTA state machine: idle→loading→sending→verifying→rebooting→completed/failed
 │   ├── screens/
 │   │   ├── splash_screen.dart        # STSYS branding, 2s auto-navigate
-│   │   ├── connection_screen.dart     # BT scan/connect + Explore App demo mode
+│   │   ├── connection_screen.dart     # BT scan/connect + Explore App demo mode + firmware version check
 │   │   ├── main_shell.dart           # Bottom 3-tab navigation shell
 │   │   ├── tracking_screen.dart      # Mode selection (4 firearm cards)
 │   │   ├── tracking_mode_view.dart   # Live graph with mode change dialog
 │   │   ├── history_screen.dart       # Session list + export CSV + clear all + refresh
-│   │   ├── settings_screen.dart      # BT scan overlay + settings
-│   │   └── session_detail_screen.dart # POST SHOT + shot chips
+│   │   ├── settings_screen.dart      # BT scan overlay + settings + auto-update firmware toggle
+│   │   ├── session_detail_screen.dart # POST SHOT + shot chips
+│   │   ├── ota_update_screen.dart    # Full-screen OTA progress UI (route /ota-update)
+│   │   └── ota_prompt_dialog.dart    # Modal dialog: version compare + Skip/Update buttons
 │   ├── screens/tabs/
 │   │   ├── graph_tab.dart            # TRACE (muzzle trace) + POST SHOT (3-phase analysis)
 │   │   ├── home_tab.dart             # Dashboard (STSYSStyle)
@@ -70,7 +77,7 @@ ssa_app/
 App Launch
   └── SplashScreen (STSYS branding, 2s auto-navigate)
         └── ConnectionScreen
-              ├── Scan Bluetooth → connect → /tracking
+              ├── Scan Bluetooth → connect → [firmware check] → /tracking or /ota-update
               └── Explore App → demo mode → /tracking
 
 MainShell (3-tab bottom nav):
@@ -269,10 +276,165 @@ path: ^1.9.0                          # Path utilities for DB
 share_plus: ^10.0.0                  # CSV export via Share Sheet
 permission_handler: ^12.0.1           # Android permissions
 path_provider: ^2.1.1                  # File paths
-crypto: ^3.0.3                        # SHA256 auth
+crypto: ^3.0.3                        # SHA256 auth + OTA checksum
 intl: ^0.19.0                         # Formatting
 go_router: ^15.1.0                    # Navigation routing
+mime: ^2.0.0                          # MIME type for export
 ```
+
+**Assets:**
+```yaml
+flutter:
+  assets:
+    - assets/firmware/stasys_fw.bin  # OTA firmware binary (update on each release)
+```
+
+---
+
+## OTA Firmware Update (Bluetooth Classic)
+
+### Architecture
+
+```
+Flutter App                    ESP32 Firmware
+    │                               │
+    │ GET_VERSION ──────────────►   │
+    │ ◄──────────── VERSION=1.0.0   │
+    │                               │
+    │ Compare: device vs APK        │
+    │                               │
+    │ OTA_START:size=1726576 ──►   │
+    │ ◄──────────── OTA_READY       │
+    │                               │
+    │ (512-byte chunks × 3372)      │
+    │ OTA_DATA:seq=0:base64=... ─► │
+    │ ◄──────────── OTA_ACK:seq=0   │
+    │ ...repeat...                  │
+    │                               │
+    │ OTA_FINISH:sha256=... ─────► │
+    │ (ESP32 verifies SHA256)       │
+    │ ◄──────────── OTA_COMPLETE   │
+    │                               │
+    │ REBOOT ──────────────────────►│ esp_restart()
+    │                               │
+    └─ ESP32 boots new firmware ────┘
+```
+
+### Key Files
+
+| File | Role |
+|------|------|
+| `services/firmware_service.dart` | Load `.bin` from assets, compute SHA256, chunk into 512-byte pieces |
+| `providers/ota_provider.dart` | State machine: idle→loading→sending→verifying→rebooting→completed/failed. 3 retries per chunk |
+| `providers/bluetooth_provider.dart` | `sendOtaStart()`, `sendOtaChunk()`, `sendOtaFinish()`, `getFirmwareVersion()` |
+| `screens/ota_update_screen.dart` | Full-screen progress UI (circular %, step indicators) |
+| `screens/ota_prompt_dialog.dart` | Modal dialog: version compare + Skip/Update buttons |
+| `screens/connection_screen.dart` | After auth, calls `_checkFirmwareUpdate()` → shows dialog or navigates to `/tracking` |
+| `router/app_router.dart` | Route `/ota-update` (full-screen, outside ShellRoute) |
+| `assets/firmware/stasys_fw.bin` | Bundled firmware binary (updated on each release) |
+| `pubspec.yaml` | Declares `assets/firmware/stasys_fw.bin` |
+
+### State Machine (OtaProvider)
+
+```
+OtaState.idle → loading → sending → verifying → rebooting → completed
+                ↓                    ↓                      ↓
+             failed (on error)   failed (OTA_FINISH fail)  failed
+```
+
+### Version Logic
+
+- ESP32 firmware version: compile-time `FIRMWARE_VERSION` macro (storage.h) + NVS (`config` namespace, key `fw_version`)
+- APK assets version: `firmware_service.dart` → `expectedVersion = '1.3.0'` (update on release)
+- Dialog appears when `currentFw != newFw.version`
+
+## OTA Firmware Update (Bluetooth Classic) — ✅ WORKING (2026-05-23)
+
+### Architecture
+
+```
+Flutter App                    ESP32 Firmware
+    │                               │
+    │ GET_VERSION ──────────────►   │
+    │ ◄──────────── VERSION=X.Y.Z   │
+    │                               │
+    │ Compare: device vs APK        │
+    │                               │
+    │ OTA_START:size=1728512 ──►   │
+    │ ◄──────────── OTA_READY       │
+    │                               │
+    │ (128-byte chunks × 13473)     │
+    │ OTA_DATA:seq=0:base64=... ─► │
+    │ ◄──────────── OTA_ACK:seq=0   │
+    │ ...repeat...                  │
+    │                               │
+    │ OTA_FINISH:sha256=... ─────► │
+    │ (ESP32 verifies SHA256)       │
+    │ ◄──────────── OTA_COMPLETE   │
+    │                               │
+    │ REBOOT ──────────────────────►│ esp_restart()
+    │                               │
+    └─ ESP32 boots new firmware ────┘
+```
+
+### Key Files
+
+| File | Role |
+|------|------|
+| `services/firmware_service.dart` | Load `.bin` from assets, compute SHA256, chunk into 128-byte pieces |
+| `providers/ota_provider.dart` | State machine: idle→loading→sending→verifying→rebooting→completed/failed. 3 retries per chunk, 200ms delay between chunks |
+| `providers/bluetooth_provider.dart` | Dedicated `_otaMode` phase, `_otaTextBuffer` (no 2048 trim), `sendOtaStart()`, `sendOtaChunk()`, `sendOtaFinish()`, `getFirmwareVersion()` |
+| `screens/ota_update_screen.dart` | Full-screen progress UI (circular %, step indicators) |
+| `screens/ota_prompt_dialog.dart` | Modal dialog: version compare + Skip/Update buttons |
+| `screens/connection_screen.dart` | After auth, calls `_checkFirmwareUpdate()` → shows dialog or navigates to `/tracking` |
+| `router/app_router.dart` | Route `/ota-update` (full-screen, outside ShellRoute) |
+| `assets/firmware/stasys_fw.bin` | Bundled firmware binary (updated on each release) |
+| `pubspec.yaml` | Declares `assets/firmware/stasys_fw.bin` |
+
+### State Machine (OtaProvider)
+
+```
+OtaState.idle → loading → sending → verifying → rebooting → completed
+                ↓                    ↓                      ↓
+             failed (on error)   failed (OTA_FINISH fail)  failed
+```
+
+### Version Logic
+
+- ESP32 firmware version: compile-time `FIRMWARE_VERSION` macro (storage.h) + NVS (`config` namespace, key `fw_version`)
+- APK assets version: `firmware_service.dart` → `expectedVersion = '1.4.0'` (update on release)
+- Dialog appears when `currentFw != newFw.version`
+
+### Implementation Details (2026-05-23)
+
+**Flutter side**:
+- `_connectionPhase = _ConnectionPhase.otaMode` — dedicated OTA parsing, no binary collision
+- `_otaTextBuffer = ''` cleared BEFORE switching phase (prevents RangeError)
+- `_waitForOtaResponse()` uses `_otaTextBuffer` in OTA mode (unlimited, no 2048 trim)
+- 200ms delay between chunks (prevents ESP32 BT RX buffer overflow)
+- 3 retries per chunk, 5000ms timeout per response
+
+**ESP32 side**:
+- Dual-task FreeRTOS: drain task (priority 2, Core 0) + write task (priority 1, Core 0)
+- Drain task: reads SerialBT, parses text commands, sends ACKs. `taskYIELD()` after every byte prevents buffer overflow.
+- Write task: receives chunks from queue, calls `esp_ota_write()` (~500ms blocking), updates SHA256
+- Binary semaphore: write task signals drain task when chunk is done
+- Queue size: 4 entries (128 bytes each = 512 bytes total)
+- `btOtaReset()` called on disconnect, auth fail, or OTA_ABORT
+
+**Speed**: ~13,500 chunks @ 200ms delay + esp_ota_write ~500ms per chunk = ~45 minutes for 1.7MB. See pending optimization below.
+
+### Auto-Update Toggle
+
+`settings_screen.dart` has switch for "Auto-update firmware" → stored in SharedPreferences as `autoUpdateFirmware` (bool, default false).
+
+### Build Process for Release
+
+1. Update `Firmware_STASYS32/src/storage/storage.h` → `#define FIRMWARE_VERSION "X.Y.Z"`
+2. Build firmware: `cd Firmware_STASYS32 && python -m platformio run -e esp32dev`
+3. Copy binary: `cp .pio/build/esp32dev/firmware.bin ../ssa_app/assets/firmware/stasys_fw.bin`
+4. Update `firmware_service.dart` → `expectedVersion = 'X.Y.Z'`
+5. Build APK: `cd ssa_app && flutter build apk --debug`
 
 ---
 
@@ -280,7 +442,7 @@ go_router: ^15.1.0                    # Navigation routing
 
 | Branch | Status | Description |
 |--------|---------|-------------|
-| `PreProduction_0` | **Active** | TDD + STASYS_FW: CRC-16 checksum, 31-byte packets, memory leaks fixed, unit tests (27 passing), lifecycle-aware ticker |
+| `PreProduction_0` | **Active** | TDD + STASYS_FW: CRC-16 checksum, 31-byte packets, OTA working, unit tests (27 passing), lifecycle-aware ticker |
 | `migrasi_firmware_awal_v1` | Backup | Previous version with XOR checksum (30-byte packets) |
 | `migrasi_firmware_awal` | Backup | Snapshot of earlier version |
 | `backup-dark-theme-redesign` | Backup | Full backup of all uncommitted changes pushed to remote |
@@ -292,9 +454,13 @@ go_router: ^15.1.0                    # Navigation routing
 ## Known Issues / TODOs
 
 ### Pending
+- [ ] **OTA Speed Optimization** — Current: 45 min for 1.7MB. Target: 10-15 min. Approaches: larger chunks (256 bytes), burst mode (batched ACKs), reduced delay. Needs incremental testing (test each chunk size change).
 - [ ] **Trace window sync with Python** — Flutter 2s window vs Python 0.5s cursor-normalized.
 - [ ] **MantisX feature parity** — drill modes, trend analysis, split time, session notes, etc.
 - [ ] **Frame freeze / gralloc4 GPU failure** — GPU/driver incompatibility with Impeller rendering engine. **Not app code issue**. Test on different device.
+
+### Completed (2026-05-23) ✅
+- [x] **OTA Bluetooth Firmware Update** — ✅ WORKING! Full E2E implementation complete. See detailed implementation above. Tested E2E with 1.7MB firmware, ~45 min transfer time.
 
 ### Settings (Implemented 2026-05-09)
 - [x] Mount position selector (TOP/BOT/LEFT/RIGHT) — `settings_tab.dart`, persisted via SharedPreferences

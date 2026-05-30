@@ -240,7 +240,22 @@ esp_https_ota (built-in)
 
 ## Known Issues / TODOs
 
+### Completed (2026-05-23)
+- [x] **OTA Bluetooth Firmware Update** — ✅ WORKING! Full E2E implementation complete.
+  - **Architecture**: Dual-task FreeRTOS (drain loop + write task), semaphore signaling, queue-based async write
+  - **Protocol**: Text commands (GET_VERSION, OTA_START, OTA_DATA, OTA_FINISH, REBOOT), base64 encoding, SHA256 verification
+  - **Chunk size**: 128 bytes (raw) → ~172 bytes (base64) → ~200 bytes (BT transfer) — fits ESP32 BT RX buffer
+  - **Speed**: ~13,500 chunks @ 200ms delay = ~45 minutes for 1.7MB firmware
+  - **Key fixes**: 
+    - Flutter `_otaTextBuffer` cleared BEFORE switching to `otaMode` (prevents RangeError)
+    - ESP32 drain loop: `taskYIELD()` after EVERY byte processed (prevents BT buffer overflow)
+    - ESP32 drain loop: 5ms delay between iterations (fast enough to prevent overflow)
+    - Semaphore-based ACK signaling (non-blocking, responsive)
+  - **Files**: `bt_ota.cpp`, `bt_ota.h`, `bt_ota_commands.h`, `bluetooth_provider.dart`, `ota_provider.dart`, `firmware_service.dart`, `ota_update_screen.dart`, `ota_prompt_dialog.dart`
+  - **Status**: Production-ready, tested E2E, firmware uploaded via COM3
+
 ### Pending
+- [ ] **OTA Speed Optimization** — Current: 45 min for 1.7MB. Target: 10-15 min. Approaches: larger chunks (256 bytes), burst mode (batched ACKs), reduced delay. Needs incremental testing.
 - [ ] **Firebase Crashlytics** — dependency added (2026-05-05), setup pending (needs Firebase account + google-services.json)
 - [ ] **Python STASYS.py sync** — still XOR 30-byte, needs CRC16 31-byte
 - [ ] **Frame freeze / gralloc4 GPU buffer failure** — GPU/driver incompatibility with Impeller. **Not app code issue**. Test on different device.

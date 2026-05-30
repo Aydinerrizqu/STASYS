@@ -13,6 +13,7 @@
 #include "storage/crc.h"
 #include "storage/status_led.h"
 #include "storage/ota.h"
+#include "ota/bt_ota.h"
 #include "sensor/quaternion.h"
 #include "sensor/madgwick.h"
 #include "sensor/calibration.h"
@@ -62,10 +63,10 @@ static const char* SECRET_KEY = DEFAULT_SECRET_KEY;
 
 // =================================================
 
-static BluetoothSerial SerialBT;
+BluetoothSerial SerialBT;
 
 // --- SHARED STATE ---
-static volatile bool isAuthenticated = false;
+volatile bool isAuthenticated = false;
 static volatile bool sensorReady = false;
 static volatile uint8_t batteryPercentage = 0;
 static volatile uint8_t currentSampleRate = SAMPLE_RATE_NORMAL;
@@ -496,7 +497,17 @@ static void sensorTask(void* parameter) {
                 }
 
                 pkt.crc16 = computeCRC16(&pkt);
-                SerialBT.write((const uint8_t*)&pkt, sizeof(DataPacket));
+
+                // Skip transmission during OTA update to prevent BT buffer overflow
+                static uint32_t lastOtaDebug = 0;
+                bool otaActive = btOtaIsActive();
+                if (millis() - lastOtaDebug > 10000) {
+                    Serial.printf("[Sensor] btOtaIsActive()=%d, authenticated=%d\n", otaActive, isAuthenticated);
+                    lastOtaDebug = millis();
+                }
+                if (!otaActive) {
+                    SerialBT.write((const uint8_t*)&pkt, sizeof(DataPacket));
+                }
 
                 pmReleaseMaxFreq();
             } else {
@@ -663,8 +674,11 @@ void setup() {
     xTaskCreatePinnedToCore(factoryResetButtonTask, "ResetBtn", 2048, NULL, 3, &resetButtonTaskHandle, 0);
 
     otaInit();
+    btOtaInit();
 
-    Serial.printf("[Boot] STASYS_ONE v%s ready\n", FIRMWARE_VERSION);
+    char runningVersion[16];
+    storageGetFirmwareVersion(runningVersion, sizeof(runningVersion));
+    Serial.printf("[Boot] STASYS_ONE v%s ready\n", runningVersion);
     ledSetPattern(LED_IDLE);
 }
 

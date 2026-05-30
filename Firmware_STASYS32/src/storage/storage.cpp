@@ -231,3 +231,23 @@ bool storageHasLinkKey(void) {
     g_prefs.end();
     return has;
 }
+
+bool storageGetFirmwareVersion(char* outVersion, size_t maxLen) {
+    if (beginNamespace("config", true)) {
+        String v = g_prefs.getString("fw_version", FIRMWARE_VERSION);
+        g_prefs.end();
+        strncpy(outVersion, v.c_str(), maxLen - 1);
+    } else {
+        // NVS unavailable — use compile-time fallback
+        strncpy(outVersion, FIRMWARE_VERSION, maxLen - 1);
+    }
+    outVersion[maxLen - 1] = '\0';
+    return true;
+}
+
+bool storageSetFirmwareVersion(const char* version) {
+    if (!beginNamespace("config", false)) return false;
+    bool ok = g_prefs.putString("fw_version", version) > 0;
+    g_prefs.end();
+    return ok;
+}

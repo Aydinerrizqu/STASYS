@@ -104,6 +104,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   _buildBluetoothSection(),
                   const SizedBox(height: 24),
 
+                  // Firmware Update Section
+                  _buildSectionHeader('FIRMWARE UPDATE'),
+                  _buildFirmwareUpdateSection(),
+                  const SizedBox(height: 24),
+
                   // Trace Window
                   _buildSectionHeader('TRACE WINDOW'),
                   _buildTraceWindowSection(),
@@ -375,6 +380,68 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                   ],
                 ],
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildFirmwareUpdateSection() {
+    return Consumer<SettingsProvider>(
+      builder: (context, settings, _) {
+        return Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: StsysTheme.surfaceContainerLow,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFF6B3D).withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(
+                  Icons.system_update_alt,
+                  color: Color(0xFFFF6B3D),
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Auto-update firmware',
+                      style: TextStyle(
+                        fontFamily: 'Manrope',
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Langsung update tanpa bertanya',
+                      style: TextStyle(
+                        fontFamily: 'Inter',
+                        fontSize: 11,
+                        color: StsysTheme.onSurface.withValues(alpha: 0.5),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Switch(
+                value: settings.autoUpdateFirmware,
+                activeTrackColor: const Color(0xFFFF6B3D),
+                onChanged: (v) => settings.setAutoUpdateFirmware(v),
               ),
             ],
           ),

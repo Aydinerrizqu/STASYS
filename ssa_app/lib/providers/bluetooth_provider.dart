@@ -13,7 +13,11 @@ enum _ConnectionPhase {
   waitingForReady,  // Waiting for "READY\n" from ESP32
   waitingForHash,   // Sent challenge, waiting for SHA256 hex response
   streaming,        // Auth succeeded, receiving 0xAA 0xBB binary packets
+  otaMode,          // Dedicated OTA mode — pure text parser, no binary
 }
+
+// Separate text buffer for OTA mode — unlimited, no trim, no collision
+String _otaTextBuffer = '';
 
 const String _secretKey = "12ebaf10h12fa9123z21sti";
 
@@ -94,6 +98,9 @@ class BluetoothProvider extends ChangeNotifier {
       case _ConnectionPhase.streaming:
         _handleBinaryData(data);
         break;
+      case _ConnectionPhase.otaMode:
+        _handleOtaData(data);
+        break;
     }
   }
 
@@ -146,8 +153,38 @@ class BluetoothProvider extends ChangeNotifier {
     }
   }
 
-  // ================= BINARY PACKET PARSER (34-byte float packets) =================
+  // ================= OTA MODE: PURE TEXT PARSER =================
+  // No binary parsing, no buffer trim, no collision with streaming mode.
+  void _handleOtaData(Uint8List data) {
+    // Accumulate raw bytes into dedicated OTA buffer (unbounded)
+    for (int b in data) {
+      _otaTextBuffer += String.fromCharCode(b);
+    }
+  }
+
+  void resetFromOtaMode() {
+    _connectionPhase = _ConnectionPhase.streaming;
+    _otaTextBuffer = '';
+  }
+
+  void exitOtaMode() {
+    _connectionPhase = _ConnectionPhase.streaming;
+    _otaTextBuffer = '';
+  }
+
+  // ================= BINARY PACKET PARSER (31-byte float packets) =================
   void _handleBinaryData(Uint8List data) {
+    // Also accumulate printable ASCII for OTA text responses during streaming
+    for (int b in data) {
+      if (b >= 32 && b <= 126 || b == 10 || b == 13) {
+        _textBuffer += String.fromCharCode(b);
+      }
+    }
+    // Trim text buffer to last 2048 chars to prevent unbounded growth
+    if (_textBuffer.length > 2048) {
+      _textBuffer = _textBuffer.substring(_textBuffer.length - 2048);
+    }
+
     for (int b in data) {
       _binaryBuffer.add(b);
 
@@ -408,6 +445,148 @@ class BluetoothProvider extends ChangeNotifier {
       _sensorDataProvider.resetTimeReference();
       notifyListeners();
     }
+  }
+
+  // ================= OTA (Over-The-Air Firmware Update) =================
+
+  /// Sends OTA_START:size=N and waits for OTA_READY response.
+  Future<String> sendOtaStart(int totalSize) async {
+    if (_connection == null || !_isConnected) return 'ERROR:not_connected';
+    // CRITICAL: Clear buffer BEFORE switching phase to prevent RangeError
+    _otaTextBuffer = '';
+    _connectionPhase = _ConnectionPhase.otaMode;
+    try {
+      _connection!.output.add(Uint8List.fromList('OTA_START:size=$totalSize\n'.codeUnits));
+      await _connection!.output.allSent;
+      return await _waitForOtaResponse(timeoutMs: 5000);
+    } catch (e) {
+      resetFromOtaMode();
+      return 'ERROR:$e';
+    }
+  }
+
+  void _exitOtaMode() {
+    _connectionPhase = _ConnectionPhase.streaming;
+    _otaTextBuffer = '';
+  }
+
+    /// Sends one OTA chunk as base64-encoded data. Returns 'OTA_ACK:seq=N' on success.
+  Future<String> sendOtaChunk(int seq, Uint8List chunkData) async {
+    if (_connection == null || !_isConnected) return 'OTA_NAK:seq=$seq:err';
+    try {
+      // Send the chunk immediately (no flow control wait)
+      final base64Data = base64.encode(chunkData);
+      final cmd = 'OTA_DATA:seq=$seq:base64=$base64Data\n';
+      _connection!.output.add(Uint8List.fromList(cmd.codeUnits));
+      await _connection!.output.allSent;
+
+      // Wait for ACK
+      return await _waitForOtaResponse(timeoutMs: 5000);
+    } catch (e) {
+      print('[OTA] sendOtaChunk($seq) exception: $e');
+      return 'OTA_NAK:seq=$seq:err';
+    }
+  }
+
+  /// Sends OTA_FINISH with SHA256 hash and waits for OTA_COMPLETE.
+  Future<String> sendOtaFinish(String sha256) async {
+    if (_connection == null || !_isConnected) return 'ERROR:not_connected';
+    try {
+      _connection!.output.add(Uint8List.fromList('OTA_FINISH:sha256=$sha256\n'.codeUnits));
+      await _connection!.output.allSent;
+      final response = await _waitForOtaResponse(timeoutMs: 10000);
+      // Exit OTA mode after finish (success or fail)
+      _exitOtaMode();
+      return response;
+    } catch (e) {
+      _exitOtaMode();
+      return 'ERROR:$e';
+    }
+  }
+
+  /// Sends REBOOT command.
+  Future<void> sendRebootCommand() async {
+    if (_connection == null || !_isConnected) return;
+    try {
+      _connection!.output.add(Uint8List.fromList('REBOOT\n'.codeUnits));
+      await _connection!.output.allSent;
+    } catch (_) {}
+  }
+
+  /// Queries firmware version from ESP32.
+  Future<String?> getFirmwareVersion() async {
+    if (_connection == null || !_isConnected) return null;
+    try {
+      _connection!.output.add(Uint8List.fromList('GET_VERSION\n'.codeUnits));
+      await _connection!.output.allSent;
+      final response = await _waitForOtaResponse(timeoutMs: 3000);
+      if (response.startsWith('VERSION=')) {
+        return response.substring(8).trim();
+      }
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Internal: waits for an OTA text response from the accumulated _otaTextBuffer (in OTA mode) or _textBuffer (in streaming mode).
+  /// Polls buffer for OTA response patterns.
+  Future<String> _waitForOtaResponse({required int timeoutMs}) async {
+    int waited = 0;
+    while (waited < timeoutMs) {
+      await Future.delayed(const Duration(milliseconds: 50));
+      waited += 50;
+
+      // Use dedicated OTA buffer if in OTA mode, otherwise use shared _textBuffer
+      String buffer = _connectionPhase == _ConnectionPhase.otaMode ? _otaTextBuffer : _textBuffer;
+
+      // Check buffer for OTA response patterns
+      if (buffer.contains('VERSION=') ||
+          buffer.contains('OTA_READY') ||
+          buffer.contains('OTA_ACK:') ||
+          buffer.contains('OTA_NAK:') ||
+          buffer.contains('OTA_COMPLETE') ||
+          buffer.contains('OTA_ERR:') ||
+          buffer.contains('OTA_ABORTED') ||
+          buffer.contains('OTA_TIMEOUT')) {
+        // Find the last newline-delimited line that matches OTA patterns
+        String searchFor = '';
+        if (buffer.contains('VERSION=')) {
+          searchFor = 'VERSION=';
+        } else if (buffer.contains('OTA_COMPLETE')) {
+          searchFor = 'OTA_COMPLETE';
+        } else if (buffer.contains('OTA_READY')) {
+          searchFor = 'OTA_READY';
+        } else if (buffer.contains('OTA_ERR:')) {
+          searchFor = 'OTA_ERR:';
+        } else if (buffer.contains('OTA_ACK:')) {
+          searchFor = 'OTA_ACK:';
+        } else if (buffer.contains('OTA_NAK:')) {
+          searchFor = 'OTA_NAK:';
+        } else if (buffer.contains('OTA_ABORTED')) {
+          searchFor = 'OTA_ABORTED';
+        } else if (buffer.contains('OTA_TIMEOUT')) {
+          searchFor = 'OTA_TIMEOUT';
+        }
+
+        int idx = buffer.lastIndexOf(searchFor);
+        if (idx >= 0) {
+          int endIdx = buffer.indexOf('\n', idx);
+          if (endIdx < 0) {
+            endIdx = buffer.length;
+          }
+          String line = buffer.substring(idx, endIdx).trim();
+          // Clear up to this point to prevent accumulation
+          if (_connectionPhase == _ConnectionPhase.otaMode) {
+            _otaTextBuffer = buffer.substring(endIdx + 1);
+          } else {
+            _textBuffer = buffer.substring(endIdx + 1);
+          }
+          return line;
+        }
+      }
+    }
+    throw Exception('BT response timeout');
   }
 
   @override

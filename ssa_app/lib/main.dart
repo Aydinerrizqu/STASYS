@@ -5,6 +5,8 @@ import 'providers/bluetooth_provider.dart';
 import 'providers/session_provider.dart';
 import 'providers/settings_provider.dart';
 import 'providers/session_logger.dart';
+import 'providers/ota_provider.dart';
+import 'services/firmware_service.dart';
 import 'router/app_router.dart';
 import 'theme/app_theme.dart';
 
@@ -20,6 +22,7 @@ class MyApp extends StatelessWidget {
     return MultiProvider(
       providers: [
         Provider(create: (_) => SessionLogger()),
+        Provider(create: (_) => FirmwareService()),
         ChangeNotifierProvider(create: (_) => SettingsProvider()),
         ChangeNotifierProxyProvider<SessionLogger, SessionProvider>(
           create: (context) => SessionProvider(
@@ -45,6 +48,19 @@ class MyApp extends StatelessWidget {
           update: (context, sensorData, previousBluetoothProvider) {
             previousBluetoothProvider!.sensorDataProvider = sensorData;
             return previousBluetoothProvider;
+          },
+        ),
+        ChangeNotifierProxyProvider2<BluetoothProvider, FirmwareService, OtaProvider>(
+          create: (context) => OtaProvider(
+            btProvider: Provider.of<BluetoothProvider>(context, listen: false),
+            firmwareService: Provider.of<FirmwareService>(context, listen: false),
+          ),
+          update: (context, btProvider, firmwareService, previous) {
+            return previous ??
+                OtaProvider(
+                  btProvider: btProvider,
+                  firmwareService: firmwareService,
+                );
           },
         ),
       ],

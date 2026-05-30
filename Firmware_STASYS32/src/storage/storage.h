@@ -5,7 +5,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-#define FIRMWARE_VERSION "1.0.0"
+#define FIRMWARE_VERSION "1.3.0"
 #define DEVICE_NAME_MAX_LEN 32
 #define VOLTAGE_DIVIDER_RATIO 2.0f
 #define DEFAULT_SECRET_KEY "12ebaf10h12fa9123z21sti"
@@ -44,5 +44,7 @@ bool storageSaveLinkKey(const uint8_t* key, size_t keyLen, const uint8_t* addr, 
 bool storageHasLinkKey(void);
 bool storageIsInitialized(void);
 bool storageSetInitialized(void);
+bool storageGetFirmwareVersion(char* outVersion, size_t maxLen);
+bool storageSetFirmwareVersion(const char* version);
 
 #endif  // STORAGE_H

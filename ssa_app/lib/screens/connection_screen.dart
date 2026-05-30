@@ -6,6 +6,8 @@ import 'package:provider/provider.dart';
 import '../providers/bluetooth_provider.dart';
 import '../providers/settings_provider.dart';
 import '../providers/sensor_data_provider.dart';
+import '../services/firmware_service.dart';
+import '../screens/ota_prompt_dialog.dart';
 import '../theme/app_theme.dart';
 
 class ConnectionScreen extends StatefulWidget {
@@ -19,6 +21,7 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
   bool _isScanning = false;
   List<BluetoothDevice> _devices = [];
   StreamSubscription<BluetoothDiscoveryResult>? _discoverySubscription;
+  final FirmwareService _firmwareService = FirmwareService();
 
   @override
   void dispose() {
@@ -94,7 +97,7 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
     if (mounted) {
       Navigator.of(context).pop();
       if (btProvider.isConnected && btProvider.isAuthenticated) {
-        context.go('/tracking');
+        await _checkFirmwareUpdate(context);
       }
     }
   }
@@ -129,6 +132,44 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
     settings.setDemoMode(true);
     sensor.setDemoMode(true);
     context.go('/tracking');
+  }
+
+  Future<void> _checkFirmwareUpdate(BuildContext context) async {
+    final bt = context.read<BluetoothProvider>();
+    final router = GoRouter.of(context);
+    try {
+      final currentFw = await bt.getFirmwareVersion();
+      final newFw = await _firmwareService.loadFirmware();
+
+      if (!mounted) return;
+
+      if (currentFw != null && currentFw != newFw.version) {
+        showDialog(
+          // ignore: use_build_context_synchronously — context captured before async gap
+          context: context,
+          barrierDismissible: false,
+          builder: (ctx) => OtaPromptDialog(
+            currentVersion: currentFw,
+            newVersion: newFw.version,
+            onUpdate: () {
+              Navigator.of(ctx).pop();
+              router.go('/ota-update');
+            },
+            onSkip: () {
+              Navigator.of(ctx).pop();
+              router.go('/tracking');
+            },
+          ),
+        );
+      } else {
+        router.go('/tracking');
+      }
+    } catch (e) {
+      debugPrint('[BT] Firmware version check failed: $e');
+      if (mounted) {
+        router.go('/tracking');
+      }
+    }
   }
 
   @override

@@ -37,6 +37,9 @@ Firmware_STASYS32/.pio/
 *.py
 !ssa_app/**/*.py
 
+# Python legacy archive (XOR/30-byte protocol, superseded by Flutter)
+_python_legacy/
+
 # Claude Code
 .claude/
 

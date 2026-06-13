@@ -203,6 +203,19 @@ void btOtaTask(void* parameter) {
             continue;
         }
 
+        // CRITICAL FIX: Only drain SerialBT during an active OTA transfer.
+        // Without this guard, the drain loop runs 24/7 from auth success
+        // and consumes every byte the sensor task writes via SerialBT.write().
+        // 31-byte binary packets are non-printable, get pushed into g_lineBuf
+        // (max 255), and silently discarded on overflow — so the Flutter app
+        // never receives a single sensor packet while OTA is idle.
+        // g_state == BT_OTA_IDLE == no OTA in progress == sensor packets own the stream.
+        if (g_state == BT_OTA_IDLE) {
+            // Idle: still feed the watchdog and yield so lower-priority tasks run.
+            taskYIELD();
+            continue;
+        }
+
         // Drain ALL available bytes — no artificial delay in inner loop
         // taskYIELD inside inner loop gives write task CPU time without
         // sacrificing drain responsiveness. This prevents BT RX buffer overflow.

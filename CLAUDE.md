@@ -4,12 +4,74 @@
 > For firmware development, see `Firmware_STASYS32/CLAUDE.md`.
 > That file covers PlatformIO build, module architecture, FreeRTOS tasks, and hardware pinout.
 
+---
+
+## Coding Behavioral Guidelines
+
+These guidelines bias toward caution over speed. For trivial tasks, use judgment.
+
+### 1. Think Before Coding
+
+**Don't assume. Don't hide confusion. Surface tradeoffs.**
+
+Before implementing:
+- State your assumptions explicitly. If uncertain, ask.
+- If multiple interpretations exist, present them — don't pick silently.
+- If a simpler approach exists, say so. Push back when warranted.
+- If something is unclear, stop. Name what's confusing. Ask.
+
+### 2. Simplicity First
+
+**Minimum code that solves the problem. Nothing speculative.**
+
+- No features beyond what was asked.
+- No abstractions for single-use code.
+- No "flexibility" or "configurability" that wasn't requested.
+- No error handling for impossible scenarios.
+- If you write 200 lines and it could be 50, rewrite it.
+
+Ask yourself: "Would a senior engineer say this is overcomplicated?" If yes, simplify.
+
+### 3. Surgical Changes
+
+**Touch only what you must. Clean up only your own mess.**
+
+When editing existing code:
+- Don't "improve" adjacent code, comments, or formatting.
+- Don't refactor things that aren't broken.
+- Match existing style, even if you'd do it differently.
+- If you notice unrelated dead code, mention it — don't delete it.
+
+When your changes create orphans:
+- Remove imports/variables/functions that YOUR changes made unused.
+- Don't remove pre-existing dead code unless asked.
+
+Every changed line should trace directly to the user's request.
+
+### 4. Goal-Driven Execution
+
+**Define success criteria. Loop until verified.**
+
+Transform tasks into verifiable goals:
+- "Add validation" → "Write tests for invalid inputs, then make them pass"
+- "Fix the bug" → "Write a test that reproduces it, then make it pass"
+- "Refactor X" → "Ensure tests pass before and after"
+
+For multi-step tasks, state a brief plan:
+```
+1. [Step] → verify: [check]
+2. [Step] → verify: [check]
+3. [Step] → verify: [check]
+```
+
+---
+
 ## Project Overview
 
 STASYS is a DIY shooter training device inspired by MantisX ($99-$249). It consists of:
 - **Hardware**: ESP32 + MPU6050 + Piezo sensor, Bluetooth Classic
-- **Python App**: `Python Code (SSA)/STASYS.py` - Desktop analysis tool (PyQt5)
-- **Flutter App**: `ssa_app/` - Mobile companion (Android/iOS)
+- **Python Legacy**: `_python_legacy/` - Old Python desktop apps (XOR/30-byte protocol, archived 2026-06-13)
+- **Flutter App**: `ssa_app/` - Mobile companion (Android/iOS) — **PRIMARY DEVELOPMENT TARGET**
 - **Firmware**: `Firmware_STASYS32/` - Modular PlatformIO ESP32 firmware (STASYS_FW)
 
 **Goal**: Open-source alternative to MantisX for dry/live fire training with shot scoring, muzzle trace visualization, and session analysis.
@@ -65,8 +127,8 @@ d:\Aydiner\Projek Flutter SSA\
 │           ├── calibration.h/cpp        # IMU calibration + ZUPT
 │           └── i2c_bus_recovery.h/cpp   # I2C bus recovery
 │
-└── Python Code (SSA)/
-    └── STASYS.py               # Desktop app with ProtocolDecoder class
+└── Python Code (SSA)/          # OLD — all moved to _python_legacy/ (2026-06-13)
+    └── (archived)
 ```
 
 ---
@@ -240,26 +302,42 @@ esp_https_ota (built-in)
 
 ## Known Issues / TODOs
 
+### Completed (2026-06-13)
+- [x] **OTA Drain Loop Steals Sensor Packets — CRITICAL FIX**
+  - **Symptom**: Live tracking UI kosong setelah fitur OTA Bluetooth ditambahkan. Tidak ada gambar = data sensor tidak sampai ke Flutter.
+  - **Root cause**: `btOtaTask` di `Firmware_STASYS32/src/ota/bt_ota.cpp:198-237` membaca SerialBT **terus-menerus sejak auth sukses**, tidak peduli OTA aktif atau tidak. Byte dari `SerialBT.write()` (sensor packets 31-byte) di-read → masuk `g_lineBuf` (max 255) → overflow → discarded.
+  - **Fix**: Tambah guard `if (g_state == BT_OTA_IDLE) { taskYIELD(); continue; }` di line 207-213. Drain loop **hanya** aktif saat OTA berjalan (`g_state != BT_OTA_IDLE`).
+  - **Verification**: Build sukses (RAM 22.1%, Flash 97.3% — sama dengan sebelumnya). Perlu test upload + live tracking.
+  - **Files**: `Firmware_STASYS32/src/ota/bt_ota.cpp`
+
+- [x] **Cancel OTA via BT disconnect — Safety Analysis (2026-06-13)**
+  - **Firmware**: AMAN. Saat `SerialBT.connected()` return false → `isAuthenticated = false` → `btOtaReset()` trigger → `esp_ota_abort()` cleanup → ESP32 boot dari partisi lama (tidak ada brick risk).
+  - **Flutter**: AMAN secara safety. `OtaProvider._state` tidak ter-reset ke idle otomatis saat disconnect (hanya saat app restart), tapi tidak ada crash/leak.
+  - **Decision**: User akan re-do OTA dari awal (~45 menit) saat reconnect — tidak implement resume untuk simplicity. Progress OTA tidak resume, tapi firmware selalu boot dari partisi valid.
+
+- [x] **Python Desktop App — Archived (2026-06-13)**
+  - 16 file Python (XOR/30-byte protocol) dipindahkan ke `_python_legacy/`. Folder ditambah ke `.gitignore`. Folder kosong `Python/` dan `ssa_app/Simulasi Python/` dihapus.
+  - Fokus sekarang hanya Flutter + Firmware. Update Python ke CRC16/31-byte deferred.
+
 ### Completed (2026-05-23)
 - [x] **OTA Bluetooth Firmware Update** — ✅ WORKING! Full E2E implementation complete.
   - **Architecture**: Dual-task FreeRTOS (drain loop + write task), semaphore signaling, queue-based async write
   - **Protocol**: Text commands (GET_VERSION, OTA_START, OTA_DATA, OTA_FINISH, REBOOT), base64 encoding, SHA256 verification
   - **Chunk size**: 128 bytes (raw) → ~172 bytes (base64) → ~200 bytes (BT transfer) — fits ESP32 BT RX buffer
   - **Speed**: ~13,500 chunks @ 200ms delay = ~45 minutes for 1.7MB firmware
-  - **Key fixes**: 
+  - **Key fixes**:
     - Flutter `_otaTextBuffer` cleared BEFORE switching to `otaMode` (prevents RangeError)
     - ESP32 drain loop: `taskYIELD()` after EVERY byte processed (prevents BT buffer overflow)
     - ESP32 drain loop: 5ms delay between iterations (fast enough to prevent overflow)
     - Semaphore-based ACK signaling (non-blocking, responsive)
   - **Files**: `bt_ota.cpp`, `bt_ota.h`, `bt_ota_commands.h`, `bluetooth_provider.dart`, `ota_provider.dart`, `firmware_service.dart`, `ota_update_screen.dart`, `ota_prompt_dialog.dart`
   - **Status**: Production-ready, tested E2E, firmware uploaded via COM3
+  - ⚠️ **NOTE 2026-06-13**: Drain loop originally ran 24/7 from auth — fixed to only run during active OTA (see OTA Drain Loop Steals Sensor Packets above).
 
 ### Pending
 - [ ] **OTA Speed Optimization** — Current: 45 min for 1.7MB. Target: 10-15 min. Approaches: larger chunks (256 bytes), burst mode (batched ACKs), reduced delay. Needs incremental testing.
 - [ ] **Firebase Crashlytics** — dependency added (2026-05-05), setup pending (needs Firebase account + google-services.json)
-- [ ] **Python STASYS.py sync** — still XOR 30-byte, needs CRC16 31-byte
 - [ ] **Frame freeze / gralloc4 GPU buffer failure** — GPU/driver incompatibility with Impeller. **Not app code issue**. Test on different device.
-- [ ] **Trace window sync with Python** — Flutter 2s window vs Python 0.5s cursor-normalized.
 - [ ] **MantisX feature parity** — drill modes, trend analysis, split time, session notes, etc.
 
 ### Live Tracking Requirements (2026-04-24)
@@ -286,7 +364,7 @@ User requirements for MantisX-style live tracking:
 | `Firmware_STASYS32/` | STASYS_FW (CRC16, 31-byte, FreeRTOS) | ✅ Updated — from `dylemmas/STASYSFW` |
 | `Flutter bluetooth_provider.dart` | CRC16 verification | ✅ Updated |
 | `Flutter settings_tab.dart` | Mount Direction/Position + RESET AXIS | ✅ Implemented (2026-05-09) |
-| `Python Code (SSA)/STASYS.py` | XOR (30-byte) | ⚠️ Needs update for CRC16 |
+| `Python desktop apps` | XOR (30-byte) | 📁 Archived to `_python_legacy/` (2026-06-13). Update deferred. |
 
 > **Firmware Uploaded**: 2026-05-05 via COM12. Chip ESP32-D0WD-V3, MAC 78:1c:3c:f5:16:18.
 

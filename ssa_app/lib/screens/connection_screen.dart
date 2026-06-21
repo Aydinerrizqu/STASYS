@@ -143,7 +143,25 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
 
       if (!mounted) return;
 
-      if (currentFw != null && currentFw != newFw.version) {
+      if (currentFw == null) {
+        // ESP32 didn't respond to GET_VERSION. Stay on connection screen
+        // and show a clear error — don't silently allow tracking.
+        if (!context.mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Gagal membaca versi firmware dari STASYS. '
+              'Pastikan firmware mendukung perintah GET_VERSION, '
+              'lalu coba lagi.',
+            ),
+            backgroundColor: StsysTheme.error,
+            duration: Duration(seconds: 6),
+          ),
+        );
+        return;
+      }
+
+      if (currentFw != newFw.version) {
         showDialog(
           // ignore: use_build_context_synchronously — context captured before async gap
           context: context,
@@ -155,10 +173,6 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
               Navigator.of(ctx).pop();
               router.go('/ota-update');
             },
-            onSkip: () {
-              Navigator.of(ctx).pop();
-              router.go('/tracking');
-            },
           ),
         );
       } else {
@@ -166,9 +180,14 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
       }
     } catch (e) {
       debugPrint('[BT] Firmware version check failed: $e');
-      if (mounted) {
-        router.go('/tracking');
-      }
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Firmware check error: $e'),
+          backgroundColor: StsysTheme.error,
+          duration: const Duration(seconds: 6),
+        ),
+      );
     }
   }
 

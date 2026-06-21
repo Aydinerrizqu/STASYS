@@ -5,7 +5,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-#define FIRMWARE_VERSION "1.3.0"
+#define FIRMWARE_VERSION "1.4.0"
 #define DEVICE_NAME_MAX_LEN 32
 #define VOLTAGE_DIVIDER_RATIO 2.0f
 #define DEFAULT_SECRET_KEY "12ebaf10h12fa9123z21sti"

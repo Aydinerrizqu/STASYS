@@ -303,6 +303,20 @@ esp_https_ota (built-in)
 ## Known Issues / TODOs
 
 ### Completed (2026-06-13)
+- [x] **CRC16 Scope Mismatch in `computeCRC16()` — CRITICAL FIX (Live Tracking Now Working!)**
+  - **Symptom**: Bluetooth auth berhasil, ESP32 mulai streaming, tapi Flutter reject SEMUA packet dengan `[BT] CRC16 fail`. Muzzle trace kosong.
+  - **Root cause**: `computeCRC16()` di `Firmware_STASYS32/src/main.cpp:199-201` pakai `sizeof(DataPacket) - 2` = 29 bytes. Itu termasuk 2 byte CRC field itu sendiri (yang masih 0x0000 saat compute). Flutter hitung CRC dari 27 bytes (bytes 2-28, exclude CRC) → mismatch permanent.
+  - **Fix**: Ubah ke `crc16_ccitt((const uint8_t*)pkt + 2, 27)` — hanya 27 bytes payload (6 floats + piezo + battery), exclude sync header DAN crc16 field.
+  - **Verification**: Upload firmware via COM3. Build sukses (RAM 22.1%, Flash 97.3%). Test di HP: live tracking muncul, trace path dan dot bergerak real-time mengikuti gerakan ESP32.
+  - **Files**: `Firmware_STASYS32/src/main.cpp`
+
+- [x] **Firmware Version Sync ke 1.4.0 (2026-06-13)**
+  - **Firmware**: `storage.h:8` ubah `#define FIRMWARE_VERSION "1.3.0"` → `"1.4.0"`
+  - **Flutter**: `firmware_service.dart:20` `expectedVersion = '1.4.0'` (sebelumnya sudah 1.4.0)
+  - **Result**: Dialog OTA tidak muncul lagi saat connect — versi cocok antara ESP32 dan Flutter.
+  - **Upload method**: USB/COM3 langsung (10-15 detik) bukan OTA Bluetooth (~45 menit). User pilih jalur cepat.
+
+### Completed (2026-06-13)
 - [x] **OTA Drain Loop Steals Sensor Packets — CRITICAL FIX**
   - **Symptom**: Live tracking UI kosong setelah fitur OTA Bluetooth ditambahkan. Tidak ada gambar = data sensor tidak sampai ke Flutter.
   - **Root cause**: `btOtaTask` di `Firmware_STASYS32/src/ota/bt_ota.cpp:198-237` membaca SerialBT **terus-menerus sejak auth sukses**, tidak peduli OTA aktif atau tidak. Byte dari `SerialBT.write()` (sensor packets 31-byte) di-read → masuk `g_lineBuf` (max 255) → overflow → discarded.
@@ -366,7 +380,8 @@ User requirements for MantisX-style live tracking:
 | `Flutter settings_tab.dart` | Mount Direction/Position + RESET AXIS | ✅ Implemented (2026-05-09) |
 | `Python desktop apps` | XOR (30-byte) | 📁 Archived to `_python_legacy/` (2026-06-13). Update deferred. |
 
-> **Firmware Uploaded**: 2026-05-05 via COM12. Chip ESP32-D0WD-V3, MAC 78:1c:3c:f5:16:18.
+> **Firmware Uploaded**: 2026-06-13 via COM3 (latest, v1.4.0 with CRC16 scope fix). Chip ESP32-D0WD-V3, MAC 78:1c:3c:f5:16:18.
+> **Live Tracking Status**: ✅ WORKING (verified 2026-06-13). Bluetooth auth + CRC16 verification + streaming data + muzzle trace rendering semua berfungsi.
 
 ### Quick Wins (2026-05-09) ✅
 - [x] Fix duplicate `@override` in `sensor_data_provider.dart:512`

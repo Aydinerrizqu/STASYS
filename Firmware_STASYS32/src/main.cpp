@@ -197,7 +197,9 @@ static int calculateBatteryPercentage(float voltage) {
 }
 
 static uint16_t computeCRC16(const DataPacket* pkt) {
-    return crc16_ccitt((const uint8_t*)pkt + 2, sizeof(DataPacket) - 2);
+    // CRC over bytes 2-28 (27 bytes: 6 floats + piezo + battery).
+    // Excludes [0-1] sync header and [29-30] crc16 field itself.
+    return crc16_ccitt((const uint8_t*)pkt + 2, 27);
 }
 
 // --- AUTHENTICATION ---

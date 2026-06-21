@@ -20,6 +20,7 @@ static const DeviceStats DEFAULT_STATS = {
 };
 
 static bool beginNamespace(const char* ns, bool readOnly) {
+    g_prefs.end();
     if (!g_prefs.begin(ns, readOnly)) {
         Serial.printf("[Storage] Failed to begin namespace '%s'\n", ns);
         return false;

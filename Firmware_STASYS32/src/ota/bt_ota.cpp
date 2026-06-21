@@ -203,19 +203,6 @@ void btOtaTask(void* parameter) {
             continue;
         }
 
-        // CRITICAL FIX: Only drain SerialBT during an active OTA transfer.
-        // Without this guard, the drain loop runs 24/7 from auth success
-        // and consumes every byte the sensor task writes via SerialBT.write().
-        // 31-byte binary packets are non-printable, get pushed into g_lineBuf
-        // (max 255), and silently discarded on overflow — so the Flutter app
-        // never receives a single sensor packet while OTA is idle.
-        // g_state == BT_OTA_IDLE == no OTA in progress == sensor packets own the stream.
-        if (g_state == BT_OTA_IDLE) {
-            // Idle: still feed the watchdog and yield so lower-priority tasks run.
-            taskYIELD();
-            continue;
-        }
-
         // Drain ALL available bytes — no artificial delay in inner loop
         // taskYIELD inside inner loop gives write task CPU time without
         // sacrificing drain responsiveness. This prevents BT RX buffer overflow.
@@ -224,28 +211,30 @@ void btOtaTask(void* parameter) {
             int c = SerialBT.read();
             if (c < 0) break;
 
-            if (c == '\n' || c == '\r') {
-                if (g_linePos > 0) {
-                    g_lineBuf[g_linePos] = '\0';
-                    btOtaHandleTextCommand(g_lineBuf);
-                    g_linePos = 0;
-                    memset(g_lineBuf, 0, sizeof(g_lineBuf));
-                }
-            } else {
-                if (g_linePos < BT_OTA_LINE_MAX - 1) {
-                    g_lineBuf[g_linePos++] = (char)c;
+            // Binary data from sensor stream (0xAA 0xBB sync bytes) should NOT
+            // be consumed by the OTA text drain loop. When not in an active OTA
+            // transfer, skip non-printable bytes so the sensor stream is not
+            // disrupted. During OTA, all text commands are printable ASCII.
+            if (c >= 32 && c <= 126 || c == '\n' || c == '\r') {
+                if (c == '\n' || c == '\r') {
+                    if (g_linePos > 0) {
+                        g_lineBuf[g_linePos] = '\0';
+                        btOtaHandleTextCommand(g_lineBuf);
+                        g_linePos = 0;
+                        memset(g_lineBuf, 0, sizeof(g_lineBuf));
+                    }
                 } else {
-                    // Line buffer overflow — reset and skip
-                    g_linePos = 0;
-                    memset(g_lineBuf, 0, sizeof(g_lineBuf));
+                    if (g_linePos < BT_OTA_LINE_MAX - 1) {
+                        g_lineBuf[g_linePos++] = (char)c;
+                    } else {
+                        g_linePos = 0;
+                        memset(g_lineBuf, 0, sizeof(g_lineBuf));
+                    }
                 }
             }
+            // Non-printable bytes (binary sensor data) are read and discarded,
+            // letting them pass through to the sensor task's SerialBT.write().
 
-            // CRITICAL: yield after EVERY byte processed.
-            // This allows esp_ota_write (~500ms) to progress in write task
-            // without blocking BT RX buffer drainage. Without this, the inner
-            // loop spins 100% consuming all CPU, preventing write task from
-            // running → queue fills up → overflow.
             taskYIELD();
         }
 

@@ -52,11 +52,12 @@ void main() {
       expect(rotated.z, closeTo(0.0005, 1e-4));
     });
 
-    test('rotateVector: barrel pointing +Z rotated 90deg around Y points to -X', () {
-      // Rotate +Z by 90deg around Y axis: should land at -X
+    test('rotateVector: barrel pointing +Z rotated 90deg around Y points to +X', () {
+      // Rotate +Z by 90deg around +Y axis: right-handed Hamilton gives +X
+      // (matches the live-tracking _quatRotateVector in sensor_data_isolate.dart)
       final q = Quaternion.fromAxisAngle(0, 1, 0, 1.5707963); // 90deg
       final v = q.rotateVector([0, 0, 1]);
-      expect(v[0], closeTo(-1.0, 1e-4));
+      expect(v[0], closeTo(1.0, 1e-4));
       expect(v[1], closeTo(0.0, 1e-4));
       expect(v[2], closeTo(0.0, 1e-4));
     });

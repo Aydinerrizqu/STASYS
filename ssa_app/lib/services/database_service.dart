@@ -173,6 +173,29 @@ class DatabaseService {
     );
   }
 
+  /// Decode the raw sensor time series for a session from the DB.
+  /// Returns a map with keys 'gyroX/Y/Z' and 'accelX/Y/Z'.
+  /// Each value is the decoded List<DataPoint>.
+  /// Returns an empty map if the session doesn't exist.
+  Future<Map<String, List<DataPoint>>> decodeRawSession(String sessionId) async {
+    final db = await _dbHelper.database;
+    final rows = await db.query(
+      'sessions',
+      where: 'id = ?',
+      whereArgs: [sessionId],
+    );
+    if (rows.isEmpty) return {};
+    final row = rows.first;
+    return {
+      'gyroX': _decodeBlob(row['gyro_x']),
+      'gyroY': _decodeBlob(row['gyro_y']),
+      'gyroZ': _decodeBlob(row['gyro_z']),
+      'accelX': _decodeBlob(row['accel_x']),
+      'accelY': _decodeBlob(row['accel_y']),
+      'accelZ': _decodeBlob(row['accel_z']),
+    };
+  }
+
   // ==========================================
   // Row → SessionLog reconstruction
   // ==========================================

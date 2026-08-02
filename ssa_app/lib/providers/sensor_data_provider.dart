@@ -574,7 +574,7 @@ class SensorDataProvider extends ChangeNotifier {
   void _stopDemoTimer() {
     _demoTimer?.cancel();
     _demoTimer = null;
-    // Clear data
+    // Clear display buffers (UI-only, 200pt rolling window)
     _gyroXData = [];
     _gyroYData = [];
     _gyroZData = [];
@@ -585,6 +585,9 @@ class SensorDataProvider extends ChangeNotifier {
     _traceYData = [];
     _liveTraceX = 0;
     _liveTraceY = 0;
+    // Do NOT clear _sessionGyro* — they persist for save/replay.
+    // _sessionShots are cleared here because they belong to the demo run;
+    // user must re-enter demo or connect hardware to generate new shots.
     _sessionShots = [];
     _latestShot = null;
     notifyListeners();
@@ -635,6 +638,21 @@ class SensorDataProvider extends ChangeNotifier {
     _accelXData = [..._accelXData, DataPoint(_demoTime, _demoAccelX)];
     _accelYData = [..._accelYData, DataPoint(_demoTime, _demoAccelY)];
     _accelZData = [..._accelZData, DataPoint(_demoTime, _demoAccelZ)];
+
+    // Also write to session buffers so demo sessions can be replayed.
+    // Session data is NOT cleared on demo stop — only display buffers are.
+    _sessionGyroX ??= [];
+    _sessionGyroY ??= [];
+    _sessionGyroZ ??= [];
+    _sessionAccelX ??= [];
+    _sessionAccelY ??= [];
+    _sessionAccelZ ??= [];
+    _sessionGyroX!.add(DataPoint(_demoTime, _demoGyroX));
+    _sessionGyroY!.add(DataPoint(_demoTime, _demoGyroY));
+    _sessionGyroZ!.add(DataPoint(_demoTime, _demoGyroZ));
+    _sessionAccelX!.add(DataPoint(_demoTime, _demoAccelX));
+    _sessionAccelY!.add(DataPoint(_demoTime, _demoAccelY));
+    _sessionAccelZ!.add(DataPoint(_demoTime, _demoAccelZ));
 
     // Trace data: integrated gyro (MantisX-style)
     _liveTraceX = _demoTraceXPos;

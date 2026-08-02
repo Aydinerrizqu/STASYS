@@ -233,8 +233,8 @@ class _GraphTabState extends State<GraphTab> with SingleTickerProviderStateMixin
                       icon: Icons.save_outlined,
                       label: 'SAVE',
                       color: const Color(0xFF4CAF50),
-                      enabled: btProvider.isConnected &&
-                          sensorData.canSaveSession,
+                      enabled: sensorData.canSaveSession &&
+                          (!btProvider.isConnected || btProvider.isAuthenticated || sensorData.isDemoMode),
                       onTap: () async {
                         final scaffold = ScaffoldMessenger.of(context);
                         try {

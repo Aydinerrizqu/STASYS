@@ -7,6 +7,8 @@
 // Pre-allocates all Paint objects as static finals so repaint
 // cycles (e.g. selection changes) don't reallocate.
 
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import '../services/trajectory/replay_models.dart';
 
@@ -14,11 +16,14 @@ class ReplayTracePainter extends CustomPainter {
   final ReplayTrace trace;
   final ReplayShot? selectedShot;
   final Color Function(double) getScoreColor;
+  /// Target distance in metres for SCATT ring overlay. Default 10.0.
+  final double targetDistanceM;
 
   ReplayTracePainter({
     required this.trace,
     required this.selectedShot,
     required this.getScoreColor,
+    this.targetDistanceM = 10.0,
   });
 
   // Pre-allocated paints (singleton-style)
@@ -81,6 +86,7 @@ class ReplayTracePainter extends CustomPainter {
 
     _drawGrid(canvas, size, cx, cy);
     _drawRings(canvas, cx, cy, maxDev * scaleX, maxDev * scaleY);
+    _drawTargetOverlay(canvas, size, cx, cy, scaleX, scaleY);
 
     // Draw trace polyline with recency-based opacity
     final frames = trace.frames;
@@ -178,6 +184,59 @@ class ReplayTracePainter extends CustomPainter {
         ),
         _ringPaint,
       );
+    }
+  }
+
+  void _drawTargetOverlay(Canvas canvas, Size size, double cx, double cy,
+      double scaleX, double scaleY) {
+    // SCATT target rings: 5° circle at targetDistanceM.
+    // Radius on target plane: r = distance * tan(5°)
+    const targetAngleDeg = 5.0;
+    final rad = targetAngleDeg * math.pi / 180.0;
+    final targetRadiusM = targetDistanceM * math.tan(rad);
+    final targetRadiusPx = targetRadiusM * scaleX;
+
+    // Draw 5 target rings (0.2, 0.4, 0.6, 0.8, 1.0 of full radius)
+    final ringPaint = Paint()
+      ..color = const Color(0xFF6B7280).withValues(alpha: 0.25)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 0.5;
+    for (final r in [0.2, 0.4, 0.6, 0.8, 1.0]) {
+      canvas.drawOval(
+        Rect.fromCenter(
+          center: Offset(cx, cy),
+          width: r * targetRadiusPx * 2,
+          height: r * targetRadiusPx * 2,
+        ),
+        ringPaint,
+      );
+    }
+
+    // Draw shot hit markers on target plane (mm offset).
+    final shotMarkers = trace.frames
+        .where((f) => f.shotMarker != null)
+        .toList(growable: false);
+    if (shotMarkers.isEmpty) return;
+
+    for (final frame in shotMarkers) {
+      final marker = frame.shotMarker!;
+      final px = cx + frame.targetXmm / (targetRadiusM * 1000) * targetRadiusPx;
+      final py = cy - frame.targetYmm / (targetRadiusM * 1000) * targetRadiusPx;
+      final color = getScoreColor(marker.totalScore);
+
+      // Hit dot
+      final dotPaint = Paint()
+        ..color = color
+        ..style = PaintingStyle.fill;
+      final strokePaint = Paint()
+        ..color = Colors.black
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.0;
+      canvas.drawCircle(Offset(px, py), 4, dotPaint);
+      canvas.drawCircle(Offset(px, py), 4, strokePaint);
+
+      // Score label above hit
+      _drawScoreLabel(canvas, px, py - 10, marker.totalScore.toInt(), color);
     }
   }
 

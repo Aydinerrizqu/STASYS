@@ -24,6 +24,8 @@ ssa_app/web/build/
 ssa_app/test/unit/
 !ssa_app/test/unit/models/
 !ssa_app/test/unit/utils/
+!ssa_app/test/unit/services/
+!ssa_app/test/unit/widgets/
 
 # Backup files
 ssa_app/*.zip

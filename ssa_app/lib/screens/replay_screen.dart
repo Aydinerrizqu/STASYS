@@ -6,13 +6,15 @@
 // 3-phase breakdown.
 
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 import '../providers/session_logger.dart';
 import '../services/database_service.dart';
 import '../services/trajectory/replay_engine.dart';
 import '../services/trajectory/replay_models.dart';
 import '../theme/app_theme.dart';
-import '../widgets/replay_trace_painter.dart';
+import '../widgets/analysis/trajectory_canvas.dart';
+import '../widgets/analysis/trajectory_scrubber.dart';
+import '../widgets/analysis/phase_summary_card.dart';
+import '../widgets/analysis/factor_breakdown_card.dart';
 
 class ReplayScreen extends StatefulWidget {
   final String sessionId;
@@ -26,6 +28,7 @@ class ReplayScreen extends StatefulWidget {
 class _ReplayScreenState extends State<ReplayScreen> {
   late Future<_ReplayResult?> _future;
   ReplayShot? _selectedShot;
+  int _frameIndex = 0;
 
   @override
   void initState() {
@@ -39,6 +42,12 @@ class _ReplayScreenState extends State<ReplayScreen> {
     final trace = ReplayEngine().replay(session);
     if (trace.hasShots) {
       _selectedShot = trace.shots.first;
+      _frameIndex = trace.shots.first.breakIndex.clamp(
+        0,
+        trace.frames.length - 1,
+      );
+    } else if (trace.frames.isNotEmpty) {
+      _frameIndex = trace.frames.length - 1;
     }
     return _ReplayResult(session: session, trace: trace);
   }
@@ -52,7 +61,14 @@ class _ReplayScreenState extends State<ReplayScreen> {
   }
 
   void _selectShot(ReplayShot shot) {
-    setState(() => _selectedShot = shot);
+    setState(() {
+      _selectedShot = shot;
+      _frameIndex = shot.breakIndex.clamp(0, _frameIndex);
+    });
+  }
+
+  void _onFrameChanged(int idx) {
+    setState(() => _frameIndex = idx);
   }
 
   @override
@@ -85,6 +101,11 @@ class _ReplayScreenState extends State<ReplayScreen> {
         : trace.shots.map((s) => s.totalScore).reduce((a, b) => a + b) /
             trace.shots.length;
 
+    // If no raw IMU data was ever recorded, show a clear message.
+    if (!session.hasRawData) {
+      return _buildNoRawDataView();
+    }
+
     return Column(
       children: [
         _buildHeader(session, trace, avgScore),
@@ -97,6 +118,12 @@ class _ReplayScreenState extends State<ReplayScreen> {
           Expanded(
             flex: 2,
             child: _buildEmptyTrace(),
+          ),
+        if (trace.hasShots && !trace.isEmpty)
+          TrajectoryScrubber(
+            trace: trace,
+            frameIndex: _frameIndex,
+            onFrameChanged: _onFrameChanged,
           ),
         if (_selectedShot != null)
           Expanded(
@@ -117,6 +144,83 @@ class _ReplayScreenState extends State<ReplayScreen> {
             flex: 1,
             child: _buildShotChips(trace),
           ),
+      ],
+    );
+  }
+
+  Widget _buildNoRawDataView() {
+    return Column(
+      children: [
+        // header bar stays
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: BoxDecoration(
+            color: StsysTheme.surfaceContainerLow,
+            border: Border(bottom: BorderSide(color: StsysTheme.outlineVariant.withValues(alpha: 0.2))),
+          ),
+          child: Row(
+            children: [
+              GestureDetector(
+                onTap: () => Navigator.pop(context),
+                child: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: StsysTheme.surfaceContainerHigh,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(Icons.arrow_back, size: 20, color: StsysTheme.onSurface.withValues(alpha: 0.7)),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'OFFLINE REPLAY',
+                  style: TextStyle(
+                    fontFamily: 'Inter',
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: StsysTheme.onSurface.withValues(alpha: 0.5),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        // empty message
+        Expanded(
+          child: Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.trending_flat, size: 48, color: StsysTheme.onSurface.withValues(alpha: 0.15)),
+                const SizedBox(height: 12),
+                Text(
+                  'NO IMU DATA AVAILABLE',
+                  style: TextStyle(
+                    fontFamily: 'Manrope',
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 2,
+                    color: StsysTheme.onSurface.withValues(alpha: 0.4),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 32),
+                  child: Text(
+                    'This session was recorded without raw gyro/accel time-series data.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontFamily: 'Manrope',
+                      fontSize: 11,
+                      color: StsysTheme.onSurface.withValues(alpha: 0.3),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
       ],
     );
   }
@@ -280,15 +384,11 @@ class _ReplayScreenState extends State<ReplayScreen> {
               ),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(8),
-                child: RepaintBoundary(
-                  child: CustomPaint(
-                    painter: ReplayTracePainter(
-                      trace: trace,
-                      selectedShot: _selectedShot,
-                      getScoreColor: _scoreColor,
-                    ),
-                    size: Size.infinite,
-                  ),
+                child: TrajectoryCanvas(
+                  trace: trace,
+                  selectedShot: _selectedShot,
+                  getScoreColor: _scoreColor,
+                  onShotTapped: _selectShot,
                 ),
               ),
             ),
@@ -486,325 +586,18 @@ class _ReplayShotPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = getScoreColor(shot.totalScore);
-
-    return Container(
-      margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-      decoration: BoxDecoration(
-        color: StsysTheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Column(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(12),
-            child: Row(
-              children: [
-                Container(
-                  width: 72,
-                  height: 72,
-                  decoration: BoxDecoration(
-                    color: color.withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: color, width: 2),
-                  ),
-                  child: Center(
-                    child: Text(
-                      shot.totalScore.toInt().toString(),
-                      style: TextStyle(
-                        fontFamily: 'Manrope',
-                        fontSize: 32,
-                        fontWeight: FontWeight.w900,
-                        color: color,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'SHOT #${shotIndex + 1}'.toUpperCase(),
-                        style: const TextStyle(
-                          fontFamily: 'Inter',
-                          fontSize: 10,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: 1.5,
-                          color: StsysTheme.secondary,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        DateFormat('HH:mm:ss').format(shot.timestamp),
-                        style: TextStyle(
-                          fontFamily: 'Manrope',
-                          fontSize: 12,
-                          fontWeight: FontWeight.w800,
-                          color: StsysTheme.onSurface.withValues(alpha: 0.5),
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Row(
-                        children: [
-                          _phaseBadge('H', shot.holdScore.toInt(),
-                              const Color(0xFFFF4444)),
-                          const SizedBox(width: 6),
-                          _phaseBadge('P', shot.pressScore.toInt(),
-                              const Color(0xFFFFFF44)),
-                          const SizedBox(width: 6),
-                          _phaseBadge('R', shot.recoilScore.toInt(),
-                              const Color(0xFF44FFFF)),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
+    return Column(
+      children: [
+        Expanded(
+          child: PhaseSummaryCard(
+            shot: shot,
+            shotIndex: shotIndex,
+            getScoreColor: getScoreColor,
           ),
-          Expanded(
-            child: Container(
-              margin: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-              decoration: BoxDecoration(
-                color: StsysTheme.surfaceContainerLowest,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: RepaintBoundary(
-                  child: CustomPaint(
-                    painter: _ThreePhasePainter(shot: shot),
-                    size: Size.infinite,
-                  ),
-                ),
-              ),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-            child: Column(
-              children: [
-                Row(
-                  children: [
-                    _scoreChip('HOLD', shot.holdScore, const Color(0xFFFF4444)),
-                    const SizedBox(width: 4),
-                    _scoreChip('PRESS', shot.pressScore, const Color(0xFFFFFF44)),
-                    const SizedBox(width: 4),
-                    _scoreChip('RECOIL', shot.recoilScore, const Color(0xFF44FFFF)),
-                    const SizedBox(width: 4),
-                    _scoreChip('ELEV', shot.elevationScore, Colors.purple),
-                    const SizedBox(width: 4),
-                    _scoreChip('WIND', shot.windageScore, Colors.teal),
-                  ],
-                ),
-                const SizedBox(height: 6),
-                Row(
-                  children: [
-                    _metaChip(Icons.straighten, '${shot.travelDistance.toStringAsFixed(1)}°'),
-                    const SizedBox(width: 6),
-                    _metaChip(Icons.bolt, 'jerk ${shot.peakJerk.toStringAsFixed(1)}'),
-                    const SizedBox(width: 6),
-                    _metaChip(Icons.gps_fixed, shot.firearmType),
-                    const SizedBox(width: 6),
-                    _metaChip(Icons.center_focus_strong, shot.trainingMode),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _phaseBadge(String label, int score, Color color) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.2),
-        borderRadius: BorderRadius.circular(4),
-        border: Border.all(color: color.withValues(alpha: 0.5)),
-      ),
-      child: Text(
-        '$label:$score',
-        style: TextStyle(
-          fontFamily: 'Manrope',
-          fontSize: 9,
-          fontWeight: FontWeight.w800,
-          color: color,
         ),
-      ),
+        FactorBreakdownCard(shot: shot),
+      ],
     );
-  }
-
-  Widget _scoreChip(String label, double score, Color color) {
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 4),
-        decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.1),
-          borderRadius: BorderRadius.circular(6),
-        ),
-        child: Column(
-          children: [
-            Text(
-              label,
-              style: TextStyle(
-                fontFamily: 'Inter',
-                fontSize: 7,
-                letterSpacing: 1,
-                color: color.withValues(alpha: 0.7),
-              ),
-            ),
-            Text(
-              score.toInt().toString(),
-              style: TextStyle(
-                fontFamily: 'Manrope',
-                fontSize: 14,
-                fontWeight: FontWeight.w900,
-                color: color,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _metaChip(IconData icon, String text) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-      decoration: BoxDecoration(
-        color: StsysTheme.surfaceContainerLowest,
-        borderRadius: BorderRadius.circular(4),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 10, color: StsysTheme.onSurface.withValues(alpha: 0.5)),
-          const SizedBox(width: 3),
-          Text(
-            text,
-            style: TextStyle(
-              fontFamily: 'Inter',
-              fontSize: 9,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 0.5,
-              color: StsysTheme.onSurface.withValues(alpha: 0.7),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ============================================
-// 3-phase chart painter (small, inline)
-// ============================================
-class _ThreePhasePainter extends CustomPainter {
-  final ReplayShot shot;
-
-  _ThreePhasePainter({required this.shot});
-
-  static const Color _holdColor = Color(0xFFFF4444);
-  static const Color _pressColor = Color(0xFFFFFF44);
-  static const Color _recoilColor = Color(0xFF44FFFF);
-
-  static final Paint _gridPaint = Paint()
-    ..color = const Color(0xFF6B7280).withValues(alpha: 0.3)
-    ..strokeWidth = 0.5;
-
-  static final Paint _ringPaint = Paint()
-    ..style = PaintingStyle.stroke
-    ..strokeWidth = 0.5;
-
-  static final Paint _hitFill = Paint()
-    ..color = Colors.white
-    ..style = PaintingStyle.fill;
-
-  static final Paint _hitStroke = Paint()
-    ..color = Colors.black
-    ..style = PaintingStyle.stroke
-    ..strokeWidth = 1;
-
-  static final Paint _curvePaint = Paint()
-    ..strokeWidth = 2
-    ..style = PaintingStyle.stroke
-    ..strokeCap = StrokeCap.round
-    ..strokeJoin = StrokeJoin.round;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final cx = size.width / 2;
-    final cy = size.height / 2;
-
-    double maxDev = 0.005;
-    for (final v in shot.holdX) {
-      if (v.abs() > maxDev) maxDev = v.abs();
-    }
-    for (final v in shot.holdY) {
-      if (v.abs() > maxDev) maxDev = v.abs();
-    }
-    for (final v in shot.pressX) {
-      if (v.abs() > maxDev) maxDev = v.abs();
-    }
-    for (final v in shot.pressY) {
-      if (v.abs() > maxDev) maxDev = v.abs();
-    }
-    for (final v in shot.recoilX) {
-      if (v.abs() > maxDev) maxDev = v.abs();
-    }
-    for (final v in shot.recoilY) {
-      if (v.abs() > maxDev) maxDev = v.abs();
-    }
-    maxDev *= 1.3;
-    if (maxDev < 0.001) maxDev = 0.01;
-
-    final scaleX = size.width / 2 / maxDev;
-    final scaleY = size.height / 2 / maxDev;
-
-    canvas.drawLine(Offset(cx, 0), Offset(cx, size.height), _gridPaint);
-    canvas.drawLine(Offset(0, cy), Offset(size.width, cy), _gridPaint);
-
-    _ringPaint.color = const Color(0xFF6B7280).withValues(alpha: 0.15);
-    for (final r in [0.25, 0.5, 0.75, 1.0]) {
-      canvas.drawOval(
-        Rect.fromCenter(
-          center: Offset(cx, cy),
-          width: r * maxDev * scaleX * 2,
-          height: r * maxDev * scaleY * 2,
-        ),
-        _ringPaint,
-      );
-    }
-
-    _drawCurve(canvas, shot.holdX, shot.holdY, cx, cy, scaleX, scaleY, _holdColor);
-    _drawCurve(canvas, shot.pressX, shot.pressY, cx, cy, scaleX, scaleY, _pressColor);
-    _drawCurve(canvas, shot.recoilX, shot.recoilY, cx, cy, scaleX, scaleY, _recoilColor);
-
-    canvas.drawCircle(Offset(cx, cy), 3, _hitFill);
-    canvas.drawCircle(Offset(cx, cy), 3, _hitStroke);
-  }
-
-  void _drawCurve(Canvas canvas, List<double> xList, List<double> yList,
-      double cx, double cy, double sx, double sy, Color color) {
-    if (xList.length < 2) return;
-
-    final path = Path()..moveTo(cx + xList[0] * sx, cy + yList[0] * sy);
-    for (int i = 1; i < xList.length; i++) {
-      path.lineTo(cx + xList[i] * sx, cy + yList[i] * sy);
-    }
-
-    _curvePaint.color = color.withValues(alpha: 0.8);
-    canvas.drawPath(path, _curvePaint);
-  }
-
-  @override
-  bool shouldRepaint(covariant _ThreePhasePainter oldDelegate) {
-    return oldDelegate.shot != shot;
   }
 }
 

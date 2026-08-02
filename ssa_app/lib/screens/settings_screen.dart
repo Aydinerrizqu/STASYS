@@ -114,6 +114,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   _buildTraceWindowSection(),
                   const SizedBox(height: 24),
 
+                  // Target Distance
+                  _buildSectionHeader('TARGET DISTANCE'),
+                  _buildTargetDistanceSection(),
+                  const SizedBox(height: 24),
+
                   // Firearm Type
                   _buildSectionHeader('FIREARM TYPE'),
                   _buildFirearmTypeSection(),
@@ -481,6 +486,47 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   inactiveColor: StsysTheme.surfaceContainerHighest,
                   onChanged: (v) {
                     settings.updateMaxSamples(v.round());
+                  },
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildTargetDistanceSection() {
+    return Consumer<SettingsProvider>(
+      builder: (context, settings, _) {
+        return Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: StsysTheme.surfaceContainerLow,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Row(
+            children: [
+              Text(
+                'Distance: ${settings.targetDistanceM.toStringAsFixed(1)} m',
+                style: TextStyle(
+                  fontFamily: 'Inter',
+                  fontSize: 12,
+                  color: StsysTheme.onSurface,
+                ),
+              ),
+              const Spacer(),
+              SizedBox(
+                width: 150,
+                child: Slider(
+                  value: settings.targetDistanceM,
+                  min: 5.0,
+                  max: 25.0,
+                  divisions: 20,
+                  activeColor: StsysTheme.primary,
+                  inactiveColor: StsysTheme.surfaceContainerHighest,
+                  onChanged: (v) {
+                    settings.updateTargetDistanceM(v);
                   },
                 ),
               ),

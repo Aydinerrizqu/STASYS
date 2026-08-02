@@ -2,7 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../providers/session_logger.dart';
 import '../models/data_models.dart';
+import '../services/trajectory/replay_engine.dart';
+import '../services/trajectory/replay_models.dart';
 import '../theme/app_theme.dart';
+import '../widgets/analysis_tab.dart';
+
+enum _DetailTab { postShot, analysis }
 
 class SessionDetailScreen extends StatefulWidget {
   final SessionLog session;
@@ -16,6 +21,11 @@ class SessionDetailScreen extends StatefulWidget {
 class _SessionDetailScreenState extends State<SessionDetailScreen> {
   ShotResult? _selectedShot;
   int? _selectedShotIndex;
+  _DetailTab _tab = _DetailTab.postShot;
+
+  // Built lazily on first switch to ANALYSIS so the post-shot view
+  // (the default tab) stays snappy.
+  ReplayTrace? _analysisTrace;
 
   @override
   void initState() {
@@ -32,6 +42,69 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
       _selectedShot = shot;
       _selectedShotIndex = idx;
     });
+  }
+
+  void _setTab(_DetailTab tab) {
+    if (_tab == tab) return;
+    setState(() {
+      _tab = tab;
+      if (tab == _DetailTab.analysis && _analysisTrace == null) {
+        _analysisTrace = ReplayEngine().replay(widget.session);
+      }
+    });
+  }
+
+  Widget _buildAnalysisBody() {
+    final session = widget.session;
+    if (!session.hasRawData) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.trending_flat, size: 48, color: StsysTheme.onSurface.withValues(alpha: 0.15)),
+            const SizedBox(height: 12),
+            Text(
+              'NO IMU DATA AVAILABLE',
+              style: TextStyle(
+                fontFamily: 'Manrope',
+                fontSize: 14,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 2,
+                color: StsysTheme.onSurface.withValues(alpha: 0.4),
+              ),
+            ),
+            const SizedBox(height: 4),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 32),
+              child: Text(
+                'This session was recorded without raw gyro/accel time-series data. Replay requires raw sensor data captured during the session.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontFamily: 'Manrope',
+                  fontSize: 11,
+                  color: StsysTheme.onSurface.withValues(alpha: 0.3),
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+    if (_analysisTrace == null || _analysisTrace!.isEmpty) {
+      return Center(
+        child: Text(
+          'NO SHOTS DETECTED IN IMU DATA',
+          style: TextStyle(
+            fontFamily: 'Manrope',
+            fontSize: 14,
+            fontWeight: FontWeight.w800,
+            letterSpacing: 2,
+            color: StsysTheme.onSurface.withValues(alpha: 0.3),
+          ),
+        ),
+      );
+    }
+    return AnalysisTab(trace: _analysisTrace!);
   }
 
   Color _getScoreColor(double score) {
@@ -127,8 +200,15 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
               ),
             ),
 
-            // Selected shot 3-phase chart
-            if (_selectedShot != null && _selectedShotIndex != null)
+            // Tab toggle: POST SHOT | ANALYSIS
+            _buildTabToggle(),
+
+            // ANALYSIS tab: barrel trace + scrubber + per-shot panel.
+            if (_tab == _DetailTab.analysis)
+              Expanded(child: _buildAnalysisBody())
+            else ...[
+              // Selected shot 3-phase chart
+              if (_selectedShot != null && _selectedShotIndex != null)
               Expanded(
                 flex: 3,
                 child: _ShotDetailPanel(
@@ -267,7 +347,65 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                   ),
                 ),
               ),
+            ],
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTabToggle() {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+      color: StsysTheme.surfaceContainerLow,
+      child: Container(
+        decoration: BoxDecoration(
+          color: StsysTheme.surfaceContainerLowest,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        padding: const EdgeInsets.all(3),
+        child: Row(
+          children: [
+            _tabPill(_DetailTab.postShot, 'POST SHOT'),
+            _tabPill(_DetailTab.analysis, 'ANALYSIS'),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _tabPill(_DetailTab tab, String label) {
+    final selected = _tab == tab;
+    return Expanded(
+      child: GestureDetector(
+        onTap: () => _setTab(tab),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          decoration: BoxDecoration(
+            color: selected
+                ? StsysTheme.secondary.withValues(alpha: 0.18)
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(
+              color: selected
+                  ? StsysTheme.secondary
+                  : Colors.transparent,
+            ),
+          ),
+          alignment: Alignment.center,
+          child: Text(
+            label,
+            style: TextStyle(
+              fontFamily: 'Inter',
+              fontSize: 10,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 1.5,
+              color: selected
+                  ? StsysTheme.secondary
+                  : StsysTheme.onSurface.withValues(alpha: 0.4),
+            ),
+          ),
         ),
       ),
     );

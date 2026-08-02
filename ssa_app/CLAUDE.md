@@ -22,7 +22,12 @@ ssa_app/
 │   │   ├── database_helper.dart     # SQLite singleton, schema creation, migrations
 │   │   ├── database_service.dart    # CRUD operations, binary BLOB encoding
 │   │   ├── export_service.dart      # CSV export via Share Sheet
-│   │   └── firmware_service.dart     # OTA firmware loading + chunking + SHA256
+│   │   ├── firmware_service.dart    # OTA firmware loading + chunking + SHA256
+│   │   └── trajectory/
+│   │       ├── replay_engine.dart   # Offline replay: SessionLog → ReplayTrace
+│   │       ├── replay_models.dart   # ReplayFrame, ReplayShot, ReplayTrace
+│   │       ├── quaternion.dart      # Quaternion ops (extracted from isolate)
+│   │       └── barrel_projection.dart # Right-handed barrel projection + tests
 │   ├── providers/
 │   │   ├── bluetooth_provider.dart  # Text auth (READY→challenge→SHA256 hex) + dual-mode parser
 │   │   │                              # Binary: 0xAA 0xBB + 6 floats + piezo + battery + CRC16
@@ -32,7 +37,7 @@ ssa_app/
 │   │   ├── sensor_data_provider.dart  # UI state, isolate communication, demo mode
 │   │   ├── sensor_data_isolate.dart    # Shot detection + 3-phase analysis (hold/press/recoil)
 │   │   │                              # + auto-calibration on first 50 samples (gyro zero-offset)
-│   │   ├── settings_provider.dart      # Firearm type, training mode, demo mode, preferences
+│   │   ├── settings_provider.dart      # Firearm type, training mode, demo mode, target distance (5–25m)
 │   │   │                              # + autoUpdateFirmware (bool, default false)
 │   │   ├── session_provider.dart       # Session list management
 │   │   ├── session_logger.dart         # Delegates to DatabaseService (SQLite)
@@ -44,8 +49,9 @@ ssa_app/
 │   │   ├── tracking_screen.dart      # Mode selection (4 firearm cards)
 │   │   ├── tracking_mode_view.dart   # Live graph with mode change dialog
 │   │   ├── history_screen.dart       # Session list + export CSV + clear all + refresh
-│   │   ├── settings_screen.dart      # BT scan overlay + settings + auto-update firmware toggle
-│   │   ├── session_detail_screen.dart # POST SHOT + shot chips
+│   │   ├── settings_screen.dart      # BT scan overlay + settings + target distance slider
+│   │   ├── session_detail_screen.dart # POST SHOT + ANALYSIS toggle + shot chips
+│   │   ├── replay_screen.dart        # Full-screen replay (legacy, logic moved to AnalysisTab)
 │   │   ├── ota_update_screen.dart    # Full-screen OTA progress UI (route /ota-update)
 │   │   └── ota_prompt_dialog.dart    # Modal dialog: version compare + Skip/Update buttons
 │   ├── screens/tabs/
@@ -63,7 +69,13 @@ ssa_app/
 │   │   ├── control_panel.dart
 │   │   ├── status_bar.dart
 │   │   ├── benchmark_analysis_widget.dart
-│   │   └── debug_overlay.dart
+│   │   ├── debug_overlay.dart
+│   │   └── analysis/                  # New: offline trajectory replay widgets
+│   │       ├── analysis_tab.dart     # Composite: BarrelTraceCanvas + Scrubber + PhaseSummary + FactorBreakdown
+│   │       ├── trajectory_canvas.dart    # Barrel trace + target overlay + shot markers
+│   │       ├── trajectory_scrubber.dart  # Timeline scrubber + shot chip selector
+│   │       ├── phase_summary_card.dart   # Per-shot 3-phase chart
+│   │       └── factor_breakdown_card.dart # Stability/smoothness/harmonics factor scores
 │   └── models/
 │       └── data_models.dart          # DataPoint, SessionLog, ShotResult
 │                                        FirearmType, TrainingMode, MountDirection, MountPosition
@@ -234,6 +246,39 @@ Per-shot scoring:
 - POST SHOT 3-phase chart (H/P/R + ELEV/WIND)
 - Horizontal shot chips (tap → chart updates)
 - Delete session with confirmation
+- **POST SHOT | ANALYSIS toggle** — pill-shaped toggle in header. POST SHOT = 3-phase chart. ANALYSIS = offline trajectory replay (replay_engine.dart) rendering barrel trace + target overlay + timeline scrubber + factor breakdown cards.
+
+## Trajectory Replay Pipeline (2026-06-21)
+
+Offline replay engine: `SessionLog` (SQLite) → `ReplayEngine.replay()` → `ReplayTrace` (frames + shots). Uses extracted modules.
+
+### Modules
+1. **quaternion.dart** — extracted from isolate: `Quaternion.identity()`, `normalize()`, `conjugate()`, `multiply()`, `integrate()`, `applyEulerAngle()`. Header-only, no dependency on isolate context.
+2. **barrel_projection.dart** — right-handed frame (X=right, Y=down, Z=back). Exports `project(barRel, targetXDeg, targetYDeg)` → `(float x, float y)`. Barrel vector: `(0, 0, -1)`.
+3. **replay_engine.dart** — full pipeline:
+   - `_mergeAccelGyro(session)` bins gyro/accel by timestamp bucket (dt=10ms)
+   - `replay(session)` → iterates merged samples:
+     - Integrates gyro quaternion
+     - Auto-tare when stable (threshold=0.02 rad, stationary=1.0 rad/s)
+     - Applies barrel rotation + target offset
+     - Detects shots via hold/press/recoil state machine (same params as isolate)
+     - Produces `ReplayTrace` with `frames` (x,y,z=distance) and `shots` (scores per phase)
+
+### AnalysisTab Widget
+Composite widget that renders the replay output:
+1. **Header**: `BARREL TRACE` | `SHOT LIST` tabs (pill toggle) + target overlay geometry controls
+2. **TrajectoryCanvas**: `CustomPaint` rendering barrel trace path + target rings + shot markers (numbers on target)
+3. **Timeline**: Replay scrubber slider (shows frame count, time in sec)
+4. **Phase Summary Card**: Per-shot 3-phase chart + score breakdown
+5. **Factor Breakdown**: Aggregate scores for stability, smoothness, harmonics, trigger quality
+
+### Target Overlay Geometry
+- Target rings: outer → inner based on `targetRadiusDegrees` (default 5°) and `targetDistanceM` (default 10m, settings)
+- Formula: `radius_px = (distanceM / tan(degrees_to_radians(targetRadiusDegrees))) * scale`
+- Shot markers: numbered dots placed at projected target position per shot
+
+### Known Issue
+- `ReplayEngine._mergeAccelGyro()` accesses `session.gyroX/Y/Z` and `accelX/Y/Z` — these must be non-empty (BLOB decode from SQLite). Empty traces → "NO IMU DATA TO REPLAY" shown in AnalysisTab.
 
 ---
 
@@ -443,6 +488,7 @@ OtaState.idle → loading → sending → verifying → rebooting → completed
 | Branch | Status | Description |
 |--------|---------|-------------|
 | `PreProduction_0` | **Active** | TDD + STASYS_FW: CRC-16 checksum, 31-byte packets, OTA working, unit tests (27 passing), lifecycle-aware ticker |
+| `trajectory_refactor` | **In Progress** | Offline trajectory replay pipeline: quaternion extraction, barrel projection, replay engine, analysis tab |
 | `migrasi_firmware_awal_v1` | Backup | Previous version with XOR checksum (30-byte packets) |
 | `migrasi_firmware_awal` | Backup | Snapshot of earlier version |
 | `backup-dark-theme-redesign` | Backup | Full backup of all uncommitted changes pushed to remote |
@@ -458,6 +504,12 @@ OtaState.idle → loading → sending → verifying → rebooting → completed
 - [ ] **Trace window sync with Python** — Flutter 2s window vs Python 0.5s cursor-normalized.
 - [ ] **MantisX feature parity** — drill modes, trend analysis, split time, session notes, etc.
 - [ ] **Frame freeze / gralloc4 GPU failure** — GPU/driver incompatibility with Impeller rendering engine. **Not app code issue**. Test on different device.
+
+### Completed (2026-06-21) ✅
+- [x] **Trajectory Refactor Phase 1: Module Extraction** — `quaternion.dart` (isolated from isolate), `barrel_projection.dart` (right-handed frame, exported to tests). Both header-only, no isolate dependency.
+- [x] **Trajectory Refactor Phase 2: Replay Engine** — `replay_engine.dart`: offline `SessionLog` → `ReplayTrace` pipeline. Bins gyro/accel at 10ms dt, integrates quaternion, auto-tare (0.02 rad threshold, 1.0 rad/s stationary), holds target orientation, applies barrel rotation + target offset, detects shots via hold/press/recoil state machine.
+- [x] **Trajectory Refactor Phase 3: AnalysisTab** — Composite widget in `session_detail_screen.dart`. Toggle between POST SHOT (3-phase chart) and ANALYSIS (offline replay). Renders barrel trace canvas with target overlay, shot markers (numbered dots), timeline scrubber, phase summary cards, and factor breakdown scores.
+- [x] **Target Distance Settings** — `targetDistanceM` (5–25m, default 10m) in `SettingsProvider` + slider in `settings_screen.dart` under "TARGET DISTANCE" section.
 
 ### Completed (2026-05-23) ✅
 - [x] **OTA Bluetooth Firmware Update** — ✅ WORKING! Full E2E implementation complete. See detailed implementation above. Tested E2E with 1.7MB firmware, ~45 min transfer time.

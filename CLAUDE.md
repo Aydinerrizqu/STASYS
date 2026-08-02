@@ -105,13 +105,19 @@ d:\Aydiner\Projek Flutter SSA\
 │       │   ├── tracking_screen.dart     # Mode selection (4 firearm cards)
 │       │   ├── tracking_mode_view.dart   # Live graph + mode change dialog
 │       │   ├── history_screen.dart      # Session list + clear all + refresh
-│       │   ├── settings_screen.dart     # BT scan overlay + settings
-│       │   └── session_detail_screen.dart # POST SHOT 3-phase + shot chips
+│       │   ├── settings_screen.dart     # BT scan overlay + settings + target distance slider
+│       │   └── session_detail_screen.dart # POST SHOT | ANALYSIS toggle + shot chips
 │       └── widgets/
 │           ├── muzzle_trace_widget.dart  # MantisX-style live trace
 │           ├── shot_analysis_panel.dart  # 3-phase post-shot chart
 │           ├── shot_history_list.dart    # Session shot list
-│           └── gyro_realtime_chart.dart  # Real-time gyro chart
+│           ├── gyro_realtime_chart.dart  # Real-time gyro chart
+│           └── analysis/                 # Offline trajectory replay widgets
+│               ├── analysis_tab.dart     # Composite: BarrelTraceCanvas + Scrubber + PhaseSummary + FactorBreakdown
+│               ├── trajectory_canvas.dart    # Barrel trace + target overlay + shot markers
+│               ├── trajectory_scrubber.dart  # Timeline scrubber + shot chip selector
+│               ├── phase_summary_card.dart   # Per-shot 3-phase chart
+│               └── factor_breakdown_card.dart # Stability/smoothness/harmonics factor scores
 │
 ├── Firmware_STASYS32/                 # Modular ESP32 firmware (STASYS_FW)
 │   └── src/
@@ -129,6 +135,16 @@ d:\Aydiner\Projek Flutter SSA\
 │
 └── Python Code (SSA)/          # OLD — all moved to _python_legacy/ (2026-06-13)
     └── (archived)
+
+### Trajectory Replay Pipeline (2026-06-21)
+
+Offline replay engine converts saved `SessionLog` into visual trajectory:
+- `services/trajectory/`: quaternion ops, barrel projection, replay engine
+- `widgets/analysis/`: barrel trace canvas, timeline scrubber, phase summary, factor breakdown
+- Access: `SessionDetailScreen` → ANALYSIS tab → renders `AnalysisTab` composite widget
+
+See `ssa_app/CLAUDE.md` for full details.
+
 ```
 
 ---

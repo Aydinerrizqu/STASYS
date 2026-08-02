@@ -7,8 +7,12 @@
 class ReplayFrame {
   final int tIndex;
   final double tSeconds;
+  /// Barrel angular displacement in radians (atan2 projection).
   final double barrelX;
   final double barrelY;
+  /// Barrel target-plane offset in millimeters at the configured distance.
+  final double targetXmm;
+  final double targetYmm;
   final double gyroMagnitude;
   final ReplayShot? shotMarker;
 
@@ -17,6 +21,8 @@ class ReplayFrame {
     required this.tSeconds,
     required this.barrelX,
     required this.barrelY,
+    required this.targetXmm,
+    required this.targetYmm,
     required this.gyroMagnitude,
     this.shotMarker,
   });
@@ -53,12 +59,15 @@ class ReplayTrace {
   final List<ReplayShot> shots;
   final double totalDurationSeconds;
   final int sampleRateHz;
+  /// Target distance used for this replay (metres). Read from settings.
+  final double targetDistanceM;
 
   const ReplayTrace({
     required this.frames,
     required this.shots,
     required this.totalDurationSeconds,
     required this.sampleRateHz,
+    required this.targetDistanceM,
   });
 
   bool get hasShots => shots.isNotEmpty;

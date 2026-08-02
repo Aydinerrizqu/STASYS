@@ -5,7 +5,9 @@ void main() {
   test('ReplayFrame default fields', () {
     const f = ReplayFrame(
       tIndex: 0, tSeconds: 0.0,
-      barrelX: 0.0, barrelY: 0.0, gyroMagnitude: 0.0,
+      barrelX: 0.0, barrelY: 0.0,
+      targetXmm: 0.0, targetYmm: 0.0,
+      gyroMagnitude: 0.0,
     );
     expect(f.tIndex, 0);
     expect(f.shotMarker, isNull);
@@ -30,7 +32,7 @@ void main() {
   });
 
   test('ReplayTrace.isEmpty true when frames empty', () {
-    const t = ReplayTrace(frames: [], shots: [], totalDurationSeconds: 0, sampleRateHz: 100);
+    const t = ReplayTrace(frames: [], shots: [], totalDurationSeconds: 0, sampleRateHz: 100, targetDistanceM: 10.0);
     expect(t.isEmpty, true);
     expect(t.hasShots, false);
   });
@@ -51,6 +53,7 @@ void main() {
       ],
       totalDurationSeconds: 0,
       sampleRateHz: 100,
+      targetDistanceM: 10.0,
     );
     expect(t.isEmpty, true);
     expect(t.hasShots, true);

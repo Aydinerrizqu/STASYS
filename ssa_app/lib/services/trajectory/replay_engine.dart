@@ -4,7 +4,7 @@
 // ============================================
 import 'dart:math' as math;
 import '../../providers/session_logger.dart' show SessionLog;
-import 'quaternion.dart';
+import 'projection.dart';
 import 'replay_models.dart';
 
 class ReplayEngine {
@@ -25,14 +25,15 @@ class ReplayEngine {
   static const double kScreenXSign = 1.0;
   static const double kScreenYSign = 1.0;
 
-  ReplayTrace replay(SessionLog session) {
+  ReplayTrace replay(SessionLog session, {double targetDistanceM = 10.0}) {
     final samples = _mergeAccelGyro(session);
     if (samples.isEmpty) {
-      return const ReplayTrace(
+      return ReplayTrace(
         frames: [],
         shots: [],
         totalDurationSeconds: 0,
         sampleRateHz: 100,
+        targetDistanceM: targetDistanceM,
       );
     }
 
@@ -147,17 +148,39 @@ class ReplayEngine {
       ));
     }
 
+    // Re-run quaternion integration for target-plane projection (mm offset).
+    // Reuse calibration offsets and qTare from the first pass.
+    var qProj = Quaternion.identity();
     final frames = <ReplayFrame>[];
     for (int i = 0; i < traceX.length; i++) {
+      final s = samples[i];
+      final gxBc = s.gx - offsetGx;
+      final gyBc = s.gy - offsetGy;
+      final gzBc = s.gz - offsetGz;
+      final wx = kGyroSignX * gxBc;
+      final wy = kGyroSignY * gyBc;
+      final wz = kGyroSignZ * gzBc;
+      qProj = qProj.integrate(wx, wy, wz, dt);
+      final qRel = (qTare.conjugate() * qProj).normalized();
+      final proj = projectToTarget(
+        barrelOrientation: qRel,
+        targetDistanceM: targetDistanceM,
+      );
+      // Convert from metres to millimetres for target overlay.
+      final targetXmm = proj[0] * 1000.0;
+      final targetYmm = proj[1] * 1000.0;
+
       ReplayShot? marker;
-      for (final s in replayShots) {
-        if (s.breakIndex == i) { marker = s; break; }
+      for (final shot in replayShots) {
+        if (shot.breakIndex == i) { marker = shot; break; }
       }
       frames.add(ReplayFrame(
         tIndex: i,
         tSeconds: i * dt,
         barrelX: traceX[i],
         barrelY: traceY[i],
+        targetXmm: targetXmm,
+        targetYmm: targetYmm,
         gyroMagnitude: traceGyroMag[i],
         shotMarker: marker,
       ));
@@ -168,6 +191,7 @@ class ReplayEngine {
       shots: replayShots,
       totalDurationSeconds: traceX.length * dt,
       sampleRateHz: 100,
+      targetDistanceM: targetDistanceM,
     );
   }
 

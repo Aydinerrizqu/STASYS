@@ -17,6 +17,7 @@ class SettingsProvider extends ChangeNotifier {
   TrainingMode _trainingMode = TrainingMode.dryFire;
   MountDirection _mountDirection = MountDirection.forward;
   MountPosition _mountPosition = MountPosition.top;
+  double _targetDistanceM = 10.0;
 
   // Demo mode
   bool _isDemoMode = false;
@@ -35,6 +36,7 @@ class SettingsProvider extends ChangeNotifier {
   String? get lastCheckedFirmwareVersion => _lastCheckedFirmwareVersion;
   MountDirection get mountDirection => _mountDirection;
   MountPosition get mountPosition => _mountPosition;
+  double get targetDistanceM => _targetDistanceM;
 
   SettingsProvider() {
     _loadSettings();
@@ -56,6 +58,8 @@ class SettingsProvider extends ChangeNotifier {
     _mountPosition = MountPosition.fromString(
       _prefs.getString('mountPosition') ?? 'top',
     );
+    _targetDistanceM = (_prefs.getDouble('targetDistanceM') ?? 10.0).clamp(5.0, 25.0);
+    await _prefs.setDouble('targetDistanceM', _targetDistanceM);
     _autoUpdateFirmware = _prefs.getBool('autoUpdateFirmware') ?? false;
     _lastCheckedFirmwareVersion = _prefs.getString('lastCheckedFirmwareVersion');
     notifyListeners();
@@ -93,6 +97,14 @@ class SettingsProvider extends ChangeNotifier {
     if (_mountPosition == pos) return;
     _mountPosition = pos;
     await _prefs.setString('mountPosition', pos.name);
+    notifyListeners();
+  }
+
+  Future<void> updateTargetDistanceM(double meters) async {
+    final clamped = meters.clamp(5.0, 25.0);
+    if (_targetDistanceM == clamped) return;
+    _targetDistanceM = clamped;
+    await _prefs.setDouble('targetDistanceM', clamped);
     notifyListeners();
   }
 

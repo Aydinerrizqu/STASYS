@@ -12,6 +12,8 @@ ReplayFrame _frame(int idx, double x, double y, {ReplayShot? marker}) {
     tSeconds: idx / 100.0,
     barrelX: x,
     barrelY: y,
+    targetXmm: 0.0,
+    targetYmm: 0.0,
     gyroMagnitude: 0.1,
     shotMarker: marker,
   );
@@ -59,6 +61,7 @@ void main() {
         shots: const [],
         totalDurationSeconds: 0,
         sampleRateHz: 100,
+        targetDistanceM: 10.0,
       );
 
       await tester.pumpWidget(
@@ -88,6 +91,7 @@ void main() {
         shots: [s1, s2],
         totalDurationSeconds: 2.0,
         sampleRateHz: 100,
+        targetDistanceM: 10.0,
       );
 
       await tester.pumpWidget(
@@ -105,12 +109,13 @@ void main() {
 
     test('shouldRepaint returns true when trace changes', () {
       final t1 = ReplayTrace(frames: const [], shots: const [],
-          totalDurationSeconds: 0, sampleRateHz: 100);
+          totalDurationSeconds: 0, sampleRateHz: 100, targetDistanceM: 10.0);
       final t2 = ReplayTrace(
         frames: [_frame(0, 0, 0)],
         shots: const [],
         totalDurationSeconds: 0,
         sampleRateHz: 100,
+        targetDistanceM: 10.0,
       );
 
       final p1 = ReplayTracePainter(
@@ -128,6 +133,7 @@ void main() {
         shots: const [],
         totalDurationSeconds: 0.01,
         sampleRateHz: 100,
+        targetDistanceM: 10.0,
       );
       final p1 = ReplayTracePainter(
         trace: t, selectedShot: null, getScoreColor: _scoreColor,

@@ -35,6 +35,8 @@ class SessionLog {
     List<ShotResult>? shots,
   }) : shots = shots ?? [];
 
+  bool get hasRawData => gyroX.isNotEmpty && gyroY.isNotEmpty && gyroZ.isNotEmpty && accelX.isNotEmpty && accelY.isNotEmpty && accelZ.isNotEmpty;
+
   double get averageScore {
     if (shots.isEmpty) return 0;
     return shots.map((s) => s.totalScore).reduce((a, b) => a + b) / shots.length;

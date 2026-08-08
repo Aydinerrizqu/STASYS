@@ -277,9 +277,9 @@ class BluetoothProvider extends ChangeNotifier {
   }
 
   bool _isValidSensorData(double ax, double ay, double az, double gx, double gy, double gz) {
-    const double maxAccel = 25.0;
+    const double maxAccel = 100.0; // 10g — real recoil can hit 30-50 m/s²
     if (ax.abs() > maxAccel || ay.abs() > maxAccel || az.abs() > maxAccel) return false;
-    const double maxGyro = 10.0;
+    const double maxGyro = 50.0; // 50 rad/s — real shots can exceed 10 rad/s
     if (gx.abs() > maxGyro || gy.abs() > maxGyro || gz.abs() > maxGyro) return false;
     if (ax.isNaN || ay.isNaN || az.isNaN || gx.isNaN || gy.isNaN || gz.isNaN) return false;
     if (ax.isInfinite || ay.isInfinite || az.isInfinite || gx.isInfinite || gy.isInfinite || gz.isInfinite) return false;

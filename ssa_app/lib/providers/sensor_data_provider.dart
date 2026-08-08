@@ -218,7 +218,14 @@ class SensorDataProvider extends ChangeNotifier {
           debugPrint("[PROVIDER] Received session_data from isolate. "
               "gyroX_len=${(message.data!['gyroX'] as List?)?.length ?? 0}");
           _handleSessionData(message.data!);
-          _sessionFetchCompleter?.complete();
+          // Guard against double-complete (would throw 'Bad state: Future
+          // has already been completed'). This can happen if a stray
+          // 'session_data' arrives while a save is still waiting for the
+          // fetch response.
+          final completer = _sessionFetchCompleter;
+          if (completer != null && !completer.isCompleted) {
+            completer.complete();
+          }
           _sessionFetchCompleter = null;
           notifyListeners();
           break;
@@ -472,7 +479,7 @@ class SensorDataProvider extends ChangeNotifier {
 
     try {
       // If buffers are empty, wait for isolate to send fresh session_data.
-      // The main listener (line ~215) will call _handleSessionData and then
+      // The main listener (line ~217) will call _handleSessionData and then
       // complete _sessionFetchCompleter.  We do NOT add a second listener —
       // that throws 'Bad state: Stream is already listened to'.
       if (_sessionGyroX == null || _sessionGyroX!.isEmpty) {
@@ -484,68 +491,68 @@ class SensorDataProvider extends ChangeNotifier {
           await _sessionFetchCompleter!.future.timeout(
             const Duration(seconds: 5),
             onTimeout: () {
-              _sessionFetchCompleter = null;
               throw TimeoutException(
                   'Failed to get session data from isolate within 5s. '
                   'isolateReady=${_isolateSendPort != null}');
             },
           );
-        } catch (e) {
+        } finally {
+          // Always clear the completer reference so any stray 'session_data'
+          // arriving late does not try to complete it again.
           _sessionFetchCompleter = null;
-          rethrow;
         }
 
         debugPrint("[SAVE] After fetch: gyroX_len=${_sessionGyroX?.length ?? 0} "
             "sessionDataReady=${_sessionGyroX != null}");
       }
+
+      if (_sessionGyroX == null || _sessionGyroX!.isEmpty) {
+        debugPrint("[SAVE] ABORT: no gyro data after fetch. "
+            "Isolate may not have buffered any data during recording.");
+        throw Exception('No session data available — isolate returned empty buffers');
+      }
+
+      debugPrint("[SAVE] Saving session. "
+          "gyroX=${_sessionGyroX!.length} accelX=${_sessionAccelX!.length} "
+          "shots=${_sessionShots.length}");
+
+      final sessionId = "SESSION_${DateTime.now().millisecondsSinceEpoch}";
+      final firearmType = _settingsProvider?.firearmType ?? FirearmType.pistol;
+      final trainingMode = _settingsProvider?.trainingMode ?? TrainingMode.dryFire;
+
+      final log = SessionLog(
+        id: sessionId,
+        date: DateTime.now(),
+        duration: _recordingDuration.inMilliseconds / 1000.0,
+        gyroX: List.from(_sessionGyroX!),
+        gyroY: List.from(_sessionGyroY!),
+        gyroZ: List.from(_sessionGyroZ!),
+        accelX: List.from(_sessionAccelX!),
+        accelY: List.from(_sessionAccelY!),
+        accelZ: List.from(_sessionAccelZ!),
+        firearmType: firearmType,
+        trainingMode: trainingMode,
+        shots: List.from(_sessionShots),
+      );
+
+      await _sessionLogger.saveSession(log);
+
+      // Clear session data
+      _sessionGyroX = null;
+      _sessionGyroY = null;
+      _sessionGyroZ = null;
+      _sessionAccelX = null;
+      _sessionAccelY = null;
+      _sessionAccelZ = null;
+      _sessionShots.clear();
+      _latestShot = null;
+
+      _isolateSendPort?.send(SensorDataMessage('clear_session'));
+
+      notifyListeners();
     } finally {
       _isSaving = false;
     }
-
-    if (_sessionGyroX == null || _sessionGyroX!.isEmpty) {
-      debugPrint("[SAVE] ABORT: no gyro data after fetch. "
-          "Isolate may not have buffered any data during recording.");
-      throw Exception('No session data available — isolate returned empty buffers');
-    }
-
-    debugPrint("[SAVE] Saving session. "
-        "gyroX=${_sessionGyroX!.length} accelX=${_sessionAccelX!.length} "
-        "shots=${_sessionShots.length}");
-
-    final sessionId = "SESSION_${DateTime.now().millisecondsSinceEpoch}";
-    final firearmType = _settingsProvider?.firearmType ?? FirearmType.pistol;
-    final trainingMode = _settingsProvider?.trainingMode ?? TrainingMode.dryFire;
-
-    final log = SessionLog(
-      id: sessionId,
-      date: DateTime.now(),
-      duration: _recordingDuration.inMilliseconds / 1000.0,
-      gyroX: List.from(_sessionGyroX!),
-      gyroY: List.from(_sessionGyroY!),
-      gyroZ: List.from(_sessionGyroZ!),
-      accelX: List.from(_sessionAccelX!),
-      accelY: List.from(_sessionAccelY!),
-      accelZ: List.from(_sessionAccelZ!),
-      firearmType: firearmType,
-      trainingMode: trainingMode,
-      shots: List.from(_sessionShots),
-    );
-
-    await _sessionLogger.saveSession(log);
-
-    // Clear session data
-    _sessionGyroX = null;
-    _sessionGyroY = null;
-    _sessionGyroZ = null;
-    _sessionAccelX = null;
-    _sessionAccelY = null;
-    _sessionAccelZ = null;
-    _sessionShots.clear();
-    _latestShot = null;
-
-    _isolateSendPort?.send(SensorDataMessage('clear_session'));
-
-    notifyListeners();
   }
 
   @override

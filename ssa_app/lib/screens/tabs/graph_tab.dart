@@ -246,10 +246,16 @@ class _GraphTabState extends State<GraphTab> with SingleTickerProviderStateMixin
                               ),
                             );
                           }
-                        } catch (e) {
+                        } catch (e, stack) {
+                          debugPrint('[SAVE] Error type: ${e.runtimeType}');
+                          debugPrint('[SAVE] Error: $e');
+                          debugPrint('[SAVE] Stack: $stack');
                           if (context.mounted) {
                             scaffold.showSnackBar(
-                              SnackBar(content: Text('Failed: $e')),
+                              SnackBar(
+                                content: Text('Failed: ${e.runtimeType}: $e'),
+                                duration: const Duration(seconds: 8),
+                              ),
                             );
                           }
                         }

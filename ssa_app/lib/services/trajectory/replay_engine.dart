@@ -3,6 +3,7 @@
 // Re-runs the ShotDetector trace pipeline offline on a saved SessionLog.
 // ============================================
 import 'dart:math' as math;
+import 'package:flutter/foundation.dart';
 import '../../providers/session_logger.dart' show SessionLog;
 import 'projection.dart';
 import 'replay_models.dart';
@@ -27,6 +28,10 @@ class ReplayEngine {
 
   ReplayTrace replay(SessionLog session, {double targetDistanceM = 10.0}) {
     final samples = _mergeAccelGyro(session);
+    debugPrint('[REPLAY] gyroX=${session.gyroX.length} gyroY=${session.gyroY.length} gyroZ=${session.gyroZ.length} '
+        'accelX=${session.accelX.length} accelY=${session.accelY.length} accelZ=${session.accelZ.length} '
+        'shots=${session.shots.length}');
+    debugPrint('[REPLAY] merged samples: ${samples.length}');
     if (samples.isEmpty) {
       return ReplayTrace(
         frames: [],
@@ -35,6 +40,16 @@ class ReplayEngine {
         sampleRateHz: 100,
         targetDistanceM: targetDistanceM,
       );
+    }
+    // Log gyro stats for first few samples
+    if (samples.length > 5) {
+      double maxGx = 0, maxGy = 0, maxGz = 0;
+      for (int i = 0; i < samples.length; i++) {
+        if (samples[i].gx.abs() > maxGx) maxGx = samples[i].gx.abs();
+        if (samples[i].gy.abs() > maxGy) maxGy = samples[i].gy.abs();
+        if (samples[i].gz.abs() > maxGz) maxGz = samples[i].gz.abs();
+      }
+      debugPrint('[REPLAY] max abs gyro: gx=$maxGx gy=$maxGy gz=$maxGz');
     }
 
     // Calibrate: mean of first 50 samples (or all if fewer)
@@ -186,6 +201,7 @@ class ReplayEngine {
       ));
     }
 
+    debugPrint('[REPLAY] finished: frames=${frames.length} shots=${replayShots.length}');
     return ReplayTrace(
       frames: frames,
       shots: replayShots,
@@ -286,42 +302,29 @@ class ReplayEngine {
   }
 
   static List<_MergedSample> _mergeAccelGyro(SessionLog session) {
-    final gyroMap = <int, List<double>>{};
-    for (final p in session.gyroX) {
-      final b = (p.x / dt).round();
-      gyroMap.putIfAbsent(b, () => [0, 0, 0])[0] = p.y;
+    // BUG FIX: timestamps are epoch ms (e.g. 1770000000000), NOT time-since-start.
+    // Using (p.x / dt).round() as bucket produces bucket ~1.77e14 per sample,
+    // all unique, so gyro and accel never match.
+    //
+    // Fix: pair by LIST INDEX. In the isolate, gyroX[i], gyroY[i], gyroZ[i],
+    // accelX[i], accelY[i], accelZ[i] are ALL created at the same timestamp
+    // in the same loop iteration (lines 963-968 of sensor_data_isolate.dart).
+    // So index i is the correct sync point.
+    final len = session.gyroX.length;
+    if (len == 0) return [];
+    final result = <_MergedSample>[];
+    for (int i = 0; i < len; i++) {
+      result.add(_MergedSample(
+        bucket: i,
+        gx: session.gyroX[i].y,
+        gy: session.gyroY[i].y,
+        gz: session.gyroZ[i].y,
+        ax: session.accelX[i].y,
+        ay: session.accelY[i].y,
+        az: session.accelZ[i].y,
+      ));
     }
-    for (final p in session.gyroY) {
-      final b = (p.x / dt).round();
-      gyroMap.putIfAbsent(b, () => [0, 0, 0])[1] = p.y;
-    }
-    for (final p in session.gyroZ) {
-      final b = (p.x / dt).round();
-      gyroMap.putIfAbsent(b, () => [0, 0, 0])[2] = p.y;
-    }
-    final accelMap = <int, List<double>>{};
-    for (final p in session.accelX) {
-      final b = (p.x / dt).round();
-      accelMap.putIfAbsent(b, () => [0, 0, 0])[0] = p.y;
-    }
-    for (final p in session.accelY) {
-      final b = (p.x / dt).round();
-      accelMap.putIfAbsent(b, () => [0, 0, 0])[1] = p.y;
-    }
-    for (final p in session.accelZ) {
-      final b = (p.x / dt).round();
-      accelMap.putIfAbsent(b, () => [0, 0, 0])[2] = p.y;
-    }
-    final all = (gyroMap.keys.toSet()..addAll(accelMap.keys)).toList()..sort();
-    return [
-      for (final b in all)
-        if (gyroMap[b] != null && accelMap[b] != null)
-          _MergedSample(
-            bucket: b,
-            gx: gyroMap[b]![0], gy: gyroMap[b]![1], gz: gyroMap[b]![2],
-            ax: accelMap[b]![0], ay: accelMap[b]![1], az: accelMap[b]![2],
-          ),
-    ];
+    return result;
   }
 }
 

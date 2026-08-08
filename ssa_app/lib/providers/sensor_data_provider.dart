@@ -81,7 +81,7 @@ class SensorDataProvider extends ChangeNotifier {
   double _demoAccelX = 0;
   double _demoAccelY = 0;
   double _demoAccelZ = 9.81;
-  bool _demoInRecoil = false;
+  int _demoShotPhase = 0; // 0=idle, 1-9=recoil spike decay
   double _demoTime = 0;
   DateTime? _demoLastShotTime;
   int _demoShotCount = 0;
@@ -601,21 +601,36 @@ class SensorDataProvider extends ChangeNotifier {
     _demoTime += 0.033;
     final now = DateTime.now();
 
-    // Base noise: small random gyro drift
-    _demoGyroX += (_nextRand() * 0.05 - 0.025);
-    _demoGyroY += (_nextRand() * 0.05 - 0.025);
-    _demoGyroZ += (_nextRand() * 0.03 - 0.015);
-    _demoGyroX = _demoGyroX.clamp(-2.0, 2.0);
-    _demoGyroY = _demoGyroY.clamp(-2.0, 2.0);
-    _demoGyroZ = _demoGyroZ.clamp(-1.0, 1.0);
+    // Apply shot recoil spike if active
+    // Shot phases: arming(0) → trigger(1, gyro+accel spike) → recoil(2-9, decaying spike)
+    if (_demoShotPhase > 0 && _demoShotPhase < 10) {
+      _demoShotPhase++;
+      // Generate realistic shot spike: gyro magnitude 8-15 rad/s, accel magnitude 15-30 m/s²
+      final decay = 1.0 - (_demoShotPhase / 10.0);
+      final spikeScale = decay * 12.0; // peak ~12 rad/s
+      _demoGyroX = (_nextRand() - 0.5) * 2 * spikeScale;
+      _demoGyroY = (_nextRand() - 0.5) * 2 * spikeScale;
+      _demoGyroZ = (_nextRand() - 0.5) * 2 * spikeScale * 0.6;
+      _demoAccelX = (_nextRand() - 0.5) * 2 * 20.0 * decay;
+      _demoAccelY = (_nextRand() - 0.5) * 2 * 20.0 * decay;
+      _demoAccelZ = 9.81 + (_nextRand() - 0.5) * 2 * 15.0 * decay;
+    } else {
+      // Base noise: small random gyro drift
+      _demoGyroX += (_nextRand() * 0.05 - 0.025);
+      _demoGyroY += (_nextRand() * 0.05 - 0.025);
+      _demoGyroZ += (_nextRand() * 0.03 - 0.015);
+      _demoGyroX = _demoGyroX.clamp(-2.0, 2.0);
+      _demoGyroY = _demoGyroY.clamp(-2.0, 2.0);
+      _demoGyroZ = _demoGyroZ.clamp(-1.0, 1.0);
+
+      // Live dot: direct accelerometer (no integration)
+      _demoAccelX = 0.2 + (_nextRand() * 0.1);
+      _demoAccelY = 0.1 + (_nextRand() * 0.1);
+    }
 
     // Integrate gyro → trace path (MantisX style: -gz → X, -gx → Y)
     _demoTraceXPos += (-_demoGyroZ) * _demoDt;
     _demoTraceYPos += (-_demoGyroX) * _demoDt;
-
-    // Live dot: direct accelerometer (no integration)
-    _demoAccelX = 0.2 + (_nextRand() * 0.1);
-    _demoAccelY = 0.1 + (_nextRand() * 0.1);
     _demoLiveX = _demoAccelX * _demoSensitivity;
     _demoLiveY = _demoAccelY * _demoSensitivity;
 
@@ -631,7 +646,6 @@ class SensorDataProvider extends ChangeNotifier {
       _triggerDemoShot();
       _demoLastShotTime = now;
     }
-
     _gyroXData = [..._gyroXData, DataPoint(_demoTime, _demoGyroX)];
     _gyroYData = [..._gyroYData, DataPoint(_demoTime, _demoGyroY)];
     _gyroZData = [..._gyroZData, DataPoint(_demoTime, _demoGyroZ)];
@@ -675,6 +689,7 @@ class SensorDataProvider extends ChangeNotifier {
 
   void _triggerDemoShot() {
     _demoShotCount++;
+    _demoShotPhase = 1; // Start recoil spike (next tick will be phase 2-9)
 
     // Generate random score 60-95
     final score = 60.0 + _nextRand() * 35.0;

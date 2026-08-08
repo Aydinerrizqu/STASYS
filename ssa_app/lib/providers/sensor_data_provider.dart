@@ -449,35 +449,56 @@ class SensorDataProvider extends ChangeNotifier {
 
   /// Save session - request data dari isolate dulu
   Future<void> saveCurrentSession() async {
-    if (_sessionGyroX == null || _sessionGyroX!.isEmpty) {
-      // Request session data dari isolate
-      final completer = Completer<void>();
+    // DEBUG: log state at save time
+    debugPrint("[SAVE] Entered saveCurrentSession. "
+        "isRecording=$_isRecording "
+        "sessionGyroX_null=${_sessionGyroX == null} "
+        "sessionGyroX_len=${_sessionGyroX?.length ?? 0} "
+        "sessionAccelX_len=${_sessionAccelX?.length ?? 0} "
+        "sessionShots=${_sessionShots.length}");
 
-      // Setup one-time listener
-      late StreamSubscription subscription;
-      subscription = _mainReceivePort!.listen((message) {
-        if (message is SensorDataMessage && message.type == 'session_data') {
-          _handleSessionData(message.data!);
-          subscription.cancel();
-          completer.complete();
-        }
-      });
+    // Always force-fetch the latest session data from isolate to ensure
+    // we have full data. The main listener already populates _sessionGyro* on
+    // 'recording_stopped', but in live (BT) mode the provider's _sessionGyroX
+    // might be empty if the buffer wasn't synced yet.
+    final completer = Completer<void>();
+    late StreamSubscription subscription;
+    subscription = _mainReceivePort!.listen((message) {
+      if (message is SensorDataMessage && message.type == 'session_data') {
+        debugPrint("[SAVE] Received session_data via forced fetch. "
+            "gyroX_len=${(message.data!['gyroX'] as List?)?.length ?? 0}");
+        _handleSessionData(message.data!);
+        subscription.cancel();
+        completer.complete();
+      }
+    });
 
-      _isolateSendPort?.send(SensorDataMessage('get_session_data'));
+    _isolateSendPort?.send(SensorDataMessage('get_session_data'));
 
-      // Timeout protection
+    try {
       await completer.future.timeout(
         const Duration(seconds: 5),
         onTimeout: () {
           subscription.cancel();
-          throw TimeoutException('Failed to get session data from isolate');
+          throw TimeoutException(
+              'Failed to get session data from isolate within 5s. '
+              'isolateReady=${_isolateSendPort != null}');
         },
       );
+    } catch (e) {
+      subscription.cancel();
+      rethrow;
     }
 
     if (_sessionGyroX == null || _sessionGyroX!.isEmpty) {
-      throw Exception('No session data available');
+      debugPrint("[SAVE] ABORT: no gyro data after fetch. "
+          "Isolate may not have buffered any data during recording.");
+      throw Exception('No session data available — isolate returned empty buffers');
     }
+
+    debugPrint("[SAVE] Saving session. "
+        "gyroX=${_sessionGyroX!.length} accelX=${_sessionAccelX!.length} "
+        "shots=${_sessionShots.length}");
 
     final sessionId = "SESSION_${DateTime.now().millisecondsSinceEpoch}";
     final firearmType = _settingsProvider?.firearmType ?? FirearmType.pistol;
@@ -554,12 +575,6 @@ class SensorDataProvider extends ChangeNotifier {
   static const int _demoTraceMax = 200;
   static const double _demoDt = 0.01;           // ~100Hz integration
 
-  // Spike length: 10 ticks × 33ms ≈ 330ms (not enough for replay)
-  // ReplayEngine needs hold(1500ms) + press(300ms) + recoil(100ms) = 1900ms min.
-  // We extend the spike to 30 ticks (~990ms) so the full 190-tick window
-  // fits inside the spike. 30 ticks × 3 ticks per phase segment.
-  static const int _demoSpikeTicks = 30;
-
   void _startDemoTimer() {
     _demoTime = 0;
     _demoShotCount = 0;
@@ -607,35 +622,16 @@ class SensorDataProvider extends ChangeNotifier {
     _demoTime += 0.033;
     final now = DateTime.now();
 
-    // Apply shot recoil spike if active.
-    // Spikes last _demoSpikeTicks (~990ms).  ReplayEngine needs 190 ticks
-    // (1.9s) of data to detect a shot: hold(1500ms) + press(300ms) + recoil(100ms).
-    // We ensure the spike covers the full window.
-    final int totalSpikeTicks = _demoSpikeTicks;
-    if (_demoShotPhase > 0 && _demoShotPhase <= totalSpikeTicks) {
+    // Apply shot recoil spike if active
+    // Shot phases: arming(0) → trigger(1, gyro+accel spike) → recoil(2-9, decaying spike)
+    if (_demoShotPhase > 0 && _demoShotPhase < 10) {
       _demoShotPhase++;
-      final t = _demoShotPhase;
-      // Three phases: hold(30-60%), press(60-85%), recoil(85-100%)
-      double decay;
-      double spikeScale;
-      if (t <= totalSpikeTicks * 0.4) {
-        // Hold phase: steady high magnitude (simulates aiming)
-        decay = 1.0;
-        spikeScale = 12.0;
-      } else if (t <= totalSpikeTicks * 0.7) {
-        // Press phase: increasing intensity (trigger pull)
-        decay = 1.0 - ((t - totalSpikeTicks * 0.4) / (totalSpikeTicks * 0.3));
-        spikeScale = 12.0 * (1.0 + (1.0 - decay) * 0.5);
-      } else {
-        // Recoil phase: sharp spike then decay
-        decay = 1.0 - ((t - totalSpikeTicks * 0.7) / (totalSpikeTicks * 0.3));
-        spikeScale = 12.0 * (1.0 + (1.0 - decay) * 0.5);
-      }
-      // Gyro magnitude 8-15 rad/s (above stabilityGyroLimit=4.0 × 2 = 8.0)
+      // Generate realistic shot spike: gyro magnitude 8-15 rad/s, accel magnitude 15-30 m/s²
+      final decay = 1.0 - (_demoShotPhase / 10.0);
+      final spikeScale = decay * 12.0; // peak ~12 rad/s
       _demoGyroX = (_nextRand() - 0.5) * 2 * spikeScale;
       _demoGyroY = (_nextRand() - 0.5) * 2 * spikeScale;
       _demoGyroZ = (_nextRand() - 0.5) * 2 * spikeScale * 0.6;
-      // Accel magnitude 15-30 m/s² (jerk > 12.0 threshold in isolate)
       _demoAccelX = (_nextRand() - 0.5) * 2 * 20.0 * decay;
       _demoAccelY = (_nextRand() - 0.5) * 2 * 20.0 * decay;
       _demoAccelZ = 9.81 + (_nextRand() - 0.5) * 2 * 15.0 * decay;
@@ -714,7 +710,7 @@ class SensorDataProvider extends ChangeNotifier {
 
   void _triggerDemoShot() {
     _demoShotCount++;
-    _demoShotPhase = 1; // Start recoil spike (next tick = phase 2)
+    _demoShotPhase = 1; // Start recoil spike (next tick will be phase 2-9)
 
     // Generate random score 60-95
     final score = 60.0 + _nextRand() * 35.0;

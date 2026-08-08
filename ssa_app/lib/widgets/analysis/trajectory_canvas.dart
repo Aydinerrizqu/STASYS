@@ -16,6 +16,7 @@ class TrajectoryCanvas extends StatelessWidget {
   final ReplayShot? selectedShot;
   final Color Function(double) getScoreColor;
   final ValueChanged<ReplayShot> onShotTapped;
+  final int? frameIndex;
 
   const TrajectoryCanvas({
     super.key,
@@ -23,6 +24,7 @@ class TrajectoryCanvas extends StatelessWidget {
     required this.selectedShot,
     required this.getScoreColor,
     required this.onShotTapped,
+    this.frameIndex,
   });
 
   @override
@@ -91,6 +93,7 @@ class TrajectoryCanvas extends StatelessWidget {
                             selectedShot: selectedShot,
                             getScoreColor: getScoreColor,
                             targetDistanceM: targetDistanceM,
+                            frameIndex: frameIndex,
                           ),
                           size: Size.infinite,
                         ),

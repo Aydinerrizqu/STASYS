@@ -18,12 +18,16 @@ class ReplayTracePainter extends CustomPainter {
   final Color Function(double) getScoreColor;
   /// Target distance in metres for SCATT ring overlay. Default 10.0.
   final double targetDistanceM;
+  /// Index of the frame to highlight (e.g. from the timeline scrubber).
+  /// If null, no playhead is drawn. Default null.
+  final int? frameIndex;
 
   ReplayTracePainter({
     required this.trace,
     required this.selectedShot,
     required this.getScoreColor,
     this.targetDistanceM = 10.0,
+    this.frameIndex,
   });
 
   // Pre-allocated paints (singleton-style)
@@ -144,6 +148,40 @@ class ReplayTracePainter extends CustomPainter {
     // Center hit dot
     canvas.drawCircle(Offset(cx, cy), 3, _centerFillPaint);
     canvas.drawCircle(Offset(cx, cy), 3, _markerStrokePaint);
+
+    // Playhead cursor from timeline scrubber
+    if (frameIndex != null && frameIndex! >= 0 && frameIndex! < n) {
+      final cursor = frames[frameIndex!];
+      final px = cx + cursor.barrelX * scaleX;
+      final py = cy + cursor.barrelY * scaleY;
+
+      final cursorPaint = Paint()
+        ..color = const Color(0xFF8BCEFF)
+        ..strokeWidth = 1.2
+        ..style = PaintingStyle.stroke;
+      canvas.drawLine(Offset(px, 0), Offset(px, size.height), cursorPaint);
+
+      final dotPaint = Paint()
+        ..color = const Color(0xFF8BCEFF)
+        ..style = PaintingStyle.fill;
+      canvas.drawCircle(Offset(px, py), 4, dotPaint);
+      canvas.drawCircle(
+        Offset(px, py),
+        4,
+        Paint()
+          ..color = Colors.black
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.0,
+      );
+
+      _drawScoreLabel(
+        canvas,
+        px,
+        py - 12,
+        (cursor.tSeconds * 1000).round(),
+        const Color(0xFF8BCEFF),
+      );
+    }
   }
 
   void _drawEmptyState(Canvas canvas, Size size) {
@@ -259,6 +297,7 @@ class ReplayTracePainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant ReplayTracePainter oldDelegate) {
     return oldDelegate.trace != trace ||
-        oldDelegate.selectedShot != selectedShot;
+        oldDelegate.selectedShot != selectedShot ||
+        oldDelegate.frameIndex != frameIndex;
   }
 }

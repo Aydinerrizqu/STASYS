@@ -389,6 +389,7 @@ class _ReplayScreenState extends State<ReplayScreen> {
                   selectedShot: _selectedShot,
                   getScoreColor: _scoreColor,
                   onShotTapped: _selectShot,
+                  frameIndex: _frameIndex,
                 ),
               ),
             ),

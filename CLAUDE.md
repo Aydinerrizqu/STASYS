@@ -136,12 +136,15 @@ d:\Aydiner\Projek Flutter SSA\
 └── Python Code (SSA)/          # OLD — all moved to _python_legacy/ (2026-06-13)
     └── (archived)
 
-### Trajectory Replay Pipeline (2026-06-21)
+### Trajectory Replay Pipeline (2026-06-21) — ✅ Working (2026-07-08)
 
-Offline replay engine converts saved `SessionLog` into visual trajectory:
+Offline replay engine converts saved `SessionLog` into visual trajectory.
+Critical fix (2026-07-08): `_mergeAccelGyro()` now pairs by **list index** instead of timestamp buckets
+(timestamps are epoch ms, not relative → unique buckets → 0 matches).
 - `services/trajectory/`: quaternion ops, barrel projection, replay engine
 - `widgets/analysis/`: barrel trace canvas, timeline scrubber, phase summary, factor breakdown
 - Access: `SessionDetailScreen` → ANALYSIS tab → renders `AnalysisTab` composite widget
+- Known: shot detection threshold (4.0 rad/s stability window) may not trigger for slow/dry-fire movements
 
 See `ssa_app/CLAUDE.md` for full details.
 

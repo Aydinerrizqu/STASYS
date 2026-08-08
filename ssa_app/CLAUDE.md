@@ -248,21 +248,29 @@ Per-shot scoring:
 - Delete session with confirmation
 - **POST SHOT | ANALYSIS toggle** — pill-shaped toggle in header. POST SHOT = 3-phase chart. ANALYSIS = offline trajectory replay (replay_engine.dart) rendering barrel trace + target overlay + timeline scrubber + factor breakdown cards.
 
-## Trajectory Replay Pipeline (2026-06-21)
+## Trajectory Replay Pipeline (2026-06-21) — Updated 2026-07-08
 
-Offline replay engine: `SessionLog` (SQLite) → `ReplayEngine.replay()` → `ReplayTrace` (frames + shots). Uses extracted modules.
+Offline replay engine: `SessionLog` (SQLite) ��� `ReplayEngine.replay()` → `ReplayTrace` (frames + shots). Uses extracted modules.
 
 ### Modules
 1. **quaternion.dart** — extracted from isolate: `Quaternion.identity()`, `normalize()`, `conjugate()`, `multiply()`, `integrate()`, `applyEulerAngle()`. Header-only, no dependency on isolate context.
 2. **barrel_projection.dart** — right-handed frame (X=right, Y=down, Z=back). Exports `project(barRel, targetXDeg, targetYDeg)` → `(float x, float y)`. Barrel vector: `(0, 0, -1)`.
 3. **replay_engine.dart** — full pipeline:
-   - `_mergeAccelGyro(session)` bins gyro/accel by timestamp bucket (dt=10ms)
+   - `_mergeAccelGyro(session)` **pairs by list index** (gyroX[i] ↔ accelX[i]). See "Critical Fix" below.
    - `replay(session)` → iterates merged samples:
      - Integrates gyro quaternion
      - Auto-tare when stable (threshold=0.02 rad, stationary=1.0 rad/s)
      - Applies barrel rotation + target offset
      - Detects shots via hold/press/recoil state machine (same params as isolate)
      - Produces `ReplayTrace` with `frames` (x,y,z=distance) and `shots` (scores per phase)
+
+### Critical Fix (2026-07-08): Index-Based Merge, NOT Timestamp Buckets
+
+`DataPoint.x` from the isolate is **epoch milliseconds** (`DateTime.now().millisecondsSinceEpoch.toDouble()`), NOT time-since-start. The original `_mergeAccelGyro` used `(p.x / dt).round()` with `dt=0.01`, which produced buckets of magnitude ~1.77e14 — every sample landed in a unique bucket, so gyro and accel never matched → 0 merged samples → 0 replay frames → "NO SHOTS RECORDED".
+
+**Fix**: pair by `List<DataPoint>` index. In the isolate loop (lines 963-968 of `sensor_data_isolate.dart`), `gyroX[i]`, `gyroY[i]`, `gyroZ[i]`, `accelX[i]`, `accelY[i]`, `accelZ[i]` are all built from the same `timestamp` in the same iteration. Index `i` is the correct sync point.
+
+If you ever switch to time-based bucketing, the timestamps need to be **relative** (e.g., seconds-since-session-start), not absolute.
 
 ### AnalysisTab Widget
 Composite widget that renders the replay output:
@@ -277,8 +285,9 @@ Composite widget that renders the replay output:
 - Formula: `radius_px = (distanceM / tan(degrees_to_radians(targetRadiusDegrees))) * scale`
 - Shot markers: numbered dots placed at projected target position per shot
 
-### Known Issue
-- `ReplayEngine._mergeAccelGyro()` accesses `session.gyroX/Y/Z` and `accelX/Y/Z` — these must be non-empty (BLOB decode from SQLite). Empty traces → "NO IMU DATA TO REPLAY" shown in AnalysisTab.
+### Known Issues
+- **`ReplayEngine._mergeAccelGyro()`** — empty `gyroX/Y/Z` or `accelX/Y/Z` → "NO IMU DATA TO REPLAY" shown in AnalysisTab. All 6 lists must be non-empty (BLOB decode from SQLite).
+- **Detected shot count may be 0 even with valid merged samples** — if `max abs gyro < 4.0 rad/s` (ARMING threshold in `ShotDetector`), no shots trigger. Live-fire and demo-mode trigger sharp gyro spikes; dry-fire without trigger pull may not.
 
 ---
 

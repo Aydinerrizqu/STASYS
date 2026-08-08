@@ -19,6 +19,8 @@ class SensorDataProvider extends ChangeNotifier {
   ReceivePort? _mainReceivePort;
   SendPort? _isolateSendPort;
   Completer<void>? _isolateReadyCompleter;
+  Completer<void>? _sessionFetchCompleter; // used by saveCurrentSession() when buffers are empty
+  bool _isSaving = false; // prevent double-save race condition
 
   // Queue messages sent before isolate SendPort was received
   final List<SensorDataMessage> _pendingMessages = [];
@@ -213,7 +215,11 @@ class SensorDataProvider extends ChangeNotifier {
           notifyListeners();
           break;
         case 'session_data':
+          debugPrint("[PROVIDER] Received session_data from isolate. "
+              "gyroX_len=${(message.data!['gyroX'] as List?)?.length ?? 0}");
           _handleSessionData(message.data!);
+          _sessionFetchCompleter?.complete();
+          _sessionFetchCompleter = null;
           notifyListeners();
           break;
         case 'shot_detected':
@@ -449,6 +455,13 @@ class SensorDataProvider extends ChangeNotifier {
 
   /// Save session - request data dari isolate dulu
   Future<void> saveCurrentSession() async {
+    // Guard against double-save race
+    if (_isSaving) {
+      debugPrint("[SAVE] ALREADY SAVING — skipping duplicate call");
+      return;
+    }
+    _isSaving = true;
+
     // DEBUG: log state at save time
     debugPrint("[SAVE] Entered saveCurrentSession. "
         "isRecording=$_isRecording "
@@ -457,37 +470,36 @@ class SensorDataProvider extends ChangeNotifier {
         "sessionAccelX_len=${_sessionAccelX?.length ?? 0} "
         "sessionShots=${_sessionShots.length}");
 
-    // Always force-fetch the latest session data from isolate to ensure
-    // we have full data. The main listener already populates _sessionGyro* on
-    // 'recording_stopped', but in live (BT) mode the provider's _sessionGyroX
-    // might be empty if the buffer wasn't synced yet.
-    final completer = Completer<void>();
-    late StreamSubscription subscription;
-    subscription = _mainReceivePort!.listen((message) {
-      if (message is SensorDataMessage && message.type == 'session_data') {
-        debugPrint("[SAVE] Received session_data via forced fetch. "
-            "gyroX_len=${(message.data!['gyroX'] as List?)?.length ?? 0}");
-        _handleSessionData(message.data!);
-        subscription.cancel();
-        completer.complete();
-      }
-    });
-
-    _isolateSendPort?.send(SensorDataMessage('get_session_data'));
-
     try {
-      await completer.future.timeout(
-        const Duration(seconds: 5),
-        onTimeout: () {
-          subscription.cancel();
-          throw TimeoutException(
-              'Failed to get session data from isolate within 5s. '
-              'isolateReady=${_isolateSendPort != null}');
-        },
-      );
-    } catch (e) {
-      subscription.cancel();
-      rethrow;
+      // If buffers are empty, wait for isolate to send fresh session_data.
+      // The main listener (line ~215) will call _handleSessionData and then
+      // complete _sessionFetchCompleter.  We do NOT add a second listener —
+      // that throws 'Bad state: Stream is already listened to'.
+      if (_sessionGyroX == null || _sessionGyroX!.isEmpty) {
+        debugPrint("[SAVE] Buffers empty — requesting fresh data from isolate");
+        _sessionFetchCompleter = Completer<void>();
+        _isolateSendPort?.send(SensorDataMessage('get_session_data'));
+
+        try {
+          await _sessionFetchCompleter!.future.timeout(
+            const Duration(seconds: 5),
+            onTimeout: () {
+              _sessionFetchCompleter = null;
+              throw TimeoutException(
+                  'Failed to get session data from isolate within 5s. '
+                  'isolateReady=${_isolateSendPort != null}');
+            },
+          );
+        } catch (e) {
+          _sessionFetchCompleter = null;
+          rethrow;
+        }
+
+        debugPrint("[SAVE] After fetch: gyroX_len=${_sessionGyroX?.length ?? 0} "
+            "sessionDataReady=${_sessionGyroX != null}");
+      }
+    } finally {
+      _isSaving = false;
     }
 
     if (_sessionGyroX == null || _sessionGyroX!.isEmpty) {

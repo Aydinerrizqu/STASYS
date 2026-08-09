@@ -1025,12 +1025,12 @@ class SensorDataIsolate {
     if (_newGyroX.isEmpty) return;
 
     _mainSendPort.send(SensorDataMessage('ui_update', {
-      'gyroX': List<DataPoint>.from(_newGyroX),
-      'gyroY': List<DataPoint>.from(_newGyroY),
-      'gyroZ': List<DataPoint>.from(_newGyroZ),
-      'accelX': List<DataPoint>.from(_newAccelX),
-      'accelY': List<DataPoint>.from(_newAccelY),
-      'accelZ': List<DataPoint>.from(_newAccelZ),
+      'gyroX': _fullGyroX.toList(),
+      'gyroY': _fullGyroY.toList(),
+      'gyroZ': _fullGyroZ.toList(),
+      'accelX': _fullAccelX.toList(),
+      'accelY': _fullAccelY.toList(),
+      'accelZ': _fullAccelZ.toList(),
       'traceX': _shotDetector.traceX,
       'traceY': _shotDetector.traceY,
       'liveX': _shotDetector.lastTraceX,

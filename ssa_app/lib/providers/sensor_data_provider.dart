@@ -264,26 +264,12 @@ class SensorDataProvider extends ChangeNotifier {
   }
   // --- FUNGSI BARU: Menangani diff_update ---
   void _handleDiffUpdate(Map<String, dynamic> data) {
-    final windowSecs = _settingsProvider?.maxSamples ?? 5;
-    final cutoffTimestamp = DateTime.now().subtract(Duration(seconds: windowSecs)).millisecondsSinceEpoch.toDouble();
-
-    _gyroXData.addAll(List<DataPoint>.from(data['gyroX']));
-    _gyroXData.removeWhere((p) => p.timestamp < cutoffTimestamp);
-
-    _gyroYData.addAll(List<DataPoint>.from(data['gyroY']));
-    _gyroYData.removeWhere((p) => p.timestamp < cutoffTimestamp);
-
-    _gyroZData.addAll(List<DataPoint>.from(data['gyroZ']));
-    _gyroZData.removeWhere((p) => p.timestamp < cutoffTimestamp);
-
-    _accelXData.addAll(List<DataPoint>.from(data['accelX']));
-    _accelXData.removeWhere((p) => p.timestamp < cutoffTimestamp);
-
-    _accelYData.addAll(List<DataPoint>.from(data['accelY']));
-    _accelYData.removeWhere((p) => p.timestamp < cutoffTimestamp);
-
-    _accelZData.addAll(List<DataPoint>.from(data['accelZ']));
-    _accelZData.removeWhere((p) => p.timestamp < cutoffTimestamp);
+    _gyroXData = List<DataPoint>.from(data['gyroX']);
+    _gyroYData = List<DataPoint>.from(data['gyroY']);
+    _gyroZData = List<DataPoint>.from(data['gyroZ']);
+    _accelXData = List<DataPoint>.from(data['accelX']);
+    _accelYData = List<DataPoint>.from(data['accelY']);
+    _accelZData = List<DataPoint>.from(data['accelZ']);
 
     // Update trace coordinates from isolate
     if (data.containsKey('traceX') && data['traceX'] != null) {

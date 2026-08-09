@@ -308,7 +308,7 @@ class BluetoothProvider extends ChangeNotifier {
   Future<void> getBondedDevices() async {
     try {
       List<BluetoothDevice> bonded = await FlutterBluetoothSerial.instance.getBondedDevices();
-      _devicesList = bonded;
+      _devicesList = bonded.where((d) => (d.name ?? '').toLowerCase().contains('stasys')).toList();
       notifyListeners();
     } catch (e) {
       debugPrint('Error getting bonded devices: $e');
@@ -325,6 +325,7 @@ class BluetoothProvider extends ChangeNotifier {
 
     try {
       FlutterBluetoothSerial.instance.startDiscovery().listen((r) {
+        if (!(r.device.name ?? '').toLowerCase().contains('stasys')) return;
         final existingIndex = _devicesList.indexWhere((d) => d.address == r.device.address);
         if (existingIndex >= 0) {
           _devicesList[existingIndex] = r.device;

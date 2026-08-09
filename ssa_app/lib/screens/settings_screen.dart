@@ -41,7 +41,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     try {
       final bondedDevices = await bt.getBondedDevices();
       if (mounted) {
-        setState(() => _devices.addAll(bondedDevices));
+        setState(() => _devices.addAll(bondedDevices.where((d) => (d.name ?? '').toLowerCase().contains('stasys'))));
       }
     } catch (_) {}
 
@@ -49,7 +49,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
       (result) {
         if (mounted) {
           setState(() {
-            if (_devices.indexWhere((d) => d.address == result.device.address) < 0) {
+            if (_devices.indexWhere((d) => d.address == result.device.address) < 0 &&
+              (result.device.name ?? '').toLowerCase().contains('stasys')) {
               _devices.add(result.device);
             }
           });

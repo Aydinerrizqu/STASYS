@@ -44,7 +44,7 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
       final bondedDevices = await bt.getBondedDevices();
       if (mounted) {
         setState(() {
-          _devices.addAll(bondedDevices);
+          _devices.addAll(bondedDevices.where((d) => (d.name ?? '').toLowerCase().contains('stasys')));
         });
       }
     } catch (_) {}
@@ -57,7 +57,8 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
             final existingIndex = _devices.indexWhere(
               (d) => d.address == result.device.address,
             );
-            if (existingIndex < 0) {
+            if (existingIndex < 0 &&
+                (result.device.name ?? '').toLowerCase().contains('stasys')) {
               _devices.add(result.device);
             }
           });

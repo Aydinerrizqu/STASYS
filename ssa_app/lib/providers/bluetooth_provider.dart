@@ -348,57 +348,72 @@ class BluetoothProvider extends ChangeNotifier {
       await disconnect();
     }
 
-    try {
-      _selectedDevice = device;
-      _connectionPhase = _ConnectionPhase.waitingForReady;
-      _binaryBuffer.clear();
-      _textBuffer = '';
-      _isAuthenticated = false;
-      _totalPacketsReceived = 0;
-      _checksumErrorsCount = 0;
-      _deviceName = device.name ?? 'STASYS';
-      notifyListeners();
+    _selectedDevice = device;
+    _connectionPhase = _ConnectionPhase.waitingForReady;
+    _binaryBuffer.clear();
+    _textBuffer = '';
+    _isAuthenticated = false;
+    _totalPacketsReceived = 0;
+    _checksumErrorsCount = 0;
+    _deviceName = device.name ?? 'STASYS';
+    notifyListeners();
 
-      BluetoothConnection conn = await BluetoothConnection.toAddress(device.address);
-      _connection = conn;
-      _isConnected = true;
-      notifyListeners();
+    const maxRetries = 2;
+    const delayBetweenRetries = Duration(seconds: 1);
 
-      _dataSubscription = _connection!.input!.listen(
-        _onDataReceived,
-        onError: (error) {
-          debugPrint('Stream error: $error');
-          disconnect();
-        },
-        onDone: () {
-          debugPrint('Connection closed by remote device');
-          _handleDisconnection();
-        },
-        cancelOnError: false,
-      );
-
-      // Wait up to 10s for auth to complete
-      int waited = 0;
-      while (!_isAuthenticated && waited < 10000) {
-        await Future.delayed(const Duration(milliseconds: 200));
-        waited += 200;
+    for (int attempt = 0; attempt <= maxRetries; attempt++) {
+      if (attempt > 0) {
+        debugPrint('[BT] Retry $attempt/${maxRetries} for ${device.address}');
+        await Future.delayed(delayBetweenRetries);
       }
 
-      if (_isAuthenticated) {
-        debugPrint('[BT] Connection and auth successful');
-        return true;
-      } else {
-        debugPrint('[BT] Auth timeout');
-        await disconnect();
+      try {
+        BluetoothConnection conn = await BluetoothConnection.toAddress(device.address);
+        _connection = conn;
+        _isConnected = true;
+        notifyListeners();
+
+        _dataSubscription = _connection!.input!.listen(
+          _onDataReceived,
+          onError: (error) {
+            debugPrint('Stream error: $error');
+            disconnect();
+          },
+          onDone: () {
+            debugPrint('Connection closed by remote device');
+            _handleDisconnection();
+          },
+          cancelOnError: false,
+        );
+
+        // Wait up to 10s for auth to complete
+        int waited = 0;
+        while (!_isAuthenticated && waited < 10000) {
+          await Future.delayed(const Duration(milliseconds: 200));
+          waited += 200;
+        }
+
+        if (_isAuthenticated) {
+          debugPrint('[BT] Connection and auth successful');
+          return true;
+        } else {
+          debugPrint('[BT] Auth timeout');
+          await disconnect();
+          if (attempt < maxRetries) continue;
+          return false;
+        }
+      } catch (e) {
+        debugPrint('[BT] Connection attempt $attempt failed: $e');
+        if (attempt < maxRetries) continue;
+
+        _isConnected = false;
+        _isAuthenticated = false;
+        notifyListeners();
         return false;
       }
-    } catch (e) {
-      debugPrint('Connection error: $e');
-      _isConnected = false;
-      _isAuthenticated = false;
-      notifyListeners();
-      return false;
     }
+
+    return false;
   }
 
   void _handleDisconnection() {

@@ -199,32 +199,27 @@ class _GyroChartPainter extends CustomPainter {
     final h = size.height;
     if (w == 0 || h == 0) return;
 
+    // Fixed scale — prevents coordinate jumps when data spikes
+    const minVal = -5.0;
+    const maxVal = 5.0;
+    const fixedYRange = maxVal - minVal; // 10.0
+
     // Find time range
     double minTs = double.infinity;
     double maxTs = -double.infinity;
-    double minVal = 5.0;
-    double maxVal = -5.0;
 
     for (final p in xData) {
       if (p.x < minTs) minTs = p.x;
       if (p.x > maxTs) maxTs = p.x;
-      if (p.y < minVal) minVal = p.y;
-      if (p.y > maxVal) maxVal = p.y;
     }
     for (final p in yData) {
-      if (p.y < minVal) minVal = p.y;
-      if (p.y > maxVal) maxVal = p.y;
+      if (p.x < minTs) minTs = p.x;
+      if (p.x > maxTs) maxTs = p.x;
     }
     for (final p in zData) {
-      if (p.y < minVal) minVal = p.y;
-      if (p.y > maxVal) maxVal = p.y;
+      if (p.x < minTs) minTs = p.x;
+      if (p.x > maxTs) maxTs = p.x;
     }
-
-    // Auto-scale Y with padding
-    final yRange = (maxVal - minVal).clamp(1.0, 10.0);
-    final yCenter = (maxVal + minVal) / 2.0;
-    minVal = yCenter - yRange / 2;
-    maxVal = yCenter + yRange / 2;
 
     final timeRange = (maxTs - minTs).clamp(0.01, double.infinity);
 

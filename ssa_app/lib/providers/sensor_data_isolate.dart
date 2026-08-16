@@ -325,7 +325,7 @@ class ShotDetector {
   // Auto-tare parameters (same as Python stasysz.py)
   bool isCalibrated = false;
   double driftThreshold = 0.02;     // ~1.1° trigger re-tare (was 0.05)
-  double stationaryThreshold = 1.0;  // rad/s MPU6050 noise floor at rest (was 0.3)
+  double stationaryThreshold = 0.15; // rad/s — MPU6050 noise floor at true rest (~8.6 deg/s)
   double autoTareInterval = 3.0;     // seconds between auto-tares (was 5s)
   double lastAutoTare = 0.0;
   int stationaryCount = 0;
@@ -521,18 +521,16 @@ class ShotDetector {
 
     // Check if drift is significant
     final aimOffset = math.sqrt(lastTraceX * lastTraceX + lastTraceY * lastTraceY);
-    // Debug: log when auto-tare triggers or is blocked
     if (aimOffset >= driftThreshold) {
+      print('[AUTO-TARE] TRIGGERED! mag=$mag stationaryCount=$stationaryCount aimOffset=$aimOffset lastTrace=($_traceX.last, $_traceY.last)');
       // CRITICAL: Reset qTare to stop drift accumulation (same as Python _apply_tare)
       _qTare = _q.copy();
       _traceX.clear();
       _traceY.clear();
-      for (int i = 0; i < _bufferSize; i++) {
-        _traceX.add(0.0);
-        _traceY.add(0.0);
-      }
       lastAutoTare = now;
       stationaryCount = 0;
+    } else if (aimOffset < 0.001 && stationaryCount > 0) {
+      print('[AUTO-TARE] Blocked: aimOffset=$aimOffset < driftThreshold, mag=$mag');
     }
   }
 

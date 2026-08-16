@@ -344,9 +344,8 @@ class BluetoothProvider extends ChangeNotifier {
   }
 
   Future<bool> connectToDevice(BluetoothDevice device) async {
-    if (_isConnected) {
-      await disconnect();
-    }
+    // Force disconnect any existing connection first
+    await _forceDisconnect();
 
     _selectedDevice = device;
     _connectionPhase = _ConnectionPhase.waitingForReady;
@@ -358,16 +357,19 @@ class BluetoothProvider extends ChangeNotifier {
     _deviceName = device.name ?? 'STASYS';
     notifyListeners();
 
-    const maxRetries = 2;
-    const delayBetweenRetries = Duration(seconds: 1);
+    const maxRetries = 3;
+    const delayBetweenRetries = Duration(seconds: 2);
 
     for (int attempt = 0; attempt <= maxRetries; attempt++) {
       if (attempt > 0) {
         debugPrint('[BT] Retry $attempt/${maxRetries} for ${device.address}');
+        // Force disconnect before retry
+        await _forceDisconnect();
         await Future.delayed(delayBetweenRetries);
       }
 
       try {
+        debugPrint('[BT] Connecting to ${device.address} (attempt ${attempt + 1})');
         BluetoothConnection conn = await BluetoothConnection.toAddress(device.address);
         _connection = conn;
         _isConnected = true;
@@ -386,27 +388,29 @@ class BluetoothProvider extends ChangeNotifier {
           cancelOnError: false,
         );
 
-        // Wait up to 10s for auth to complete
+        // Wait up to 15s for auth to complete
         int waited = 0;
-        while (!_isAuthenticated && waited < 10000) {
-          await Future.delayed(const Duration(milliseconds: 200));
-          waited += 200;
+        while (!_isAuthenticated && waited < 15000) {
+          await Future.delayed(const Duration(milliseconds: 300));
+          waited += 300;
         }
 
         if (_isAuthenticated) {
           debugPrint('[BT] Connection and auth successful');
           return true;
         } else {
-          debugPrint('[BT] Auth timeout');
+          debugPrint('[BT] Auth timeout after ${waited}ms');
           await disconnect();
           if (attempt < maxRetries) continue;
           return false;
         }
       } catch (e) {
-        debugPrint('[BT] Connection attempt $attempt failed: $e');
-        if (attempt < maxRetries) continue;
-
+        debugPrint('[BT] Connection attempt ${attempt + 1} failed: $e');
         _isConnected = false;
+        if (attempt < maxRetries) {
+          continue;
+        }
+
         _isAuthenticated = false;
         notifyListeners();
         return false;
@@ -414,6 +418,28 @@ class BluetoothProvider extends ChangeNotifier {
     }
 
     return false;
+  }
+
+  /// Forcefully close any existing connection and clear state
+  Future<void> _forceDisconnect() async {
+    try {
+      if (_dataSubscription != null) {
+        await _dataSubscription!.cancel();
+        _dataSubscription = null;
+      }
+      if (_connection != null) {
+        await _connection!.close();
+        _connection = null;
+      }
+      _isConnected = false;
+      _isAuthenticated = false;
+      _connectionPhase = _ConnectionPhase.waitingForReady;
+      _textBuffer = '';
+      _binaryBuffer.clear();
+      debugPrint('[BT] Force disconnect completed');
+    } catch (e) {
+      debugPrint('[BT] Force disconnect error: $e');
+    }
   }
 
   void _handleDisconnection() {

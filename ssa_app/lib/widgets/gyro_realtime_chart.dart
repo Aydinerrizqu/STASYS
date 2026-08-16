@@ -113,7 +113,6 @@ class _GyroRealtimeChartState extends State<GyroRealtimeChart>
                                 yData: yData,
                                 zData: zData,
                                 lastTap: _lastTap,
-                                windowSecs: provider.gyroWindowSeconds,
                               ),
                             ),
                           ),
@@ -180,42 +179,16 @@ class _GyroChartPainter extends CustomPainter {
   final List<DataPoint> yData;
   final List<DataPoint> zData;
   final Offset? lastTap;
-  final int windowSecs;
 
   static const Color _colorX = Color(0xFF2196F3);
   static const Color _colorY = Color(0xFFE53935);
   static const Color _colorZ = Color(0xFF4CAF50);
-
-  // Pre-allocated Paint objects — ZERO allocation per frame
-  static final Paint _xPaint = Paint()
-    ..style = PaintingStyle.stroke
-    ..strokeCap = StrokeCap.round;
-  static final Paint _yPaint = Paint()
-    ..style = PaintingStyle.stroke
-    ..strokeCap = StrokeCap.round;
-  static final Paint _zPaint = Paint()
-    ..style = PaintingStyle.stroke
-    ..strokeCap = StrokeCap.round;
-
-  static final Paint _xDotPaint = Paint()..style = PaintingStyle.fill;
-  static final Paint _xGlowPaint = Paint()
-    ..style = PaintingStyle.fill
-    ..maskFilter = const ui.MaskFilter.blur(BlurStyle.normal, 4);
-  static final Paint _yDotPaint = Paint()..style = PaintingStyle.fill;
-  static final Paint _yGlowPaint = Paint()
-    ..style = PaintingStyle.fill
-    ..maskFilter = const ui.MaskFilter.blur(BlurStyle.normal, 4);
-  static final Paint _zDotPaint = Paint()..style = PaintingStyle.fill;
-  static final Paint _zGlowPaint = Paint()
-    ..style = PaintingStyle.fill
-    ..maskFilter = const ui.MaskFilter.blur(BlurStyle.normal, 4);
 
   _GyroChartPainter({
     required this.xData,
     required this.yData,
     required this.zData,
     this.lastTap,
-    required this.windowSecs,
   });
 
   @override
@@ -229,22 +202,26 @@ class _GyroChartPainter extends CustomPainter {
     // Fixed scale — prevents coordinate jumps when data spikes
     const minVal = -5.0;
     const maxVal = 5.0;
+    const fixedYRange = maxVal - minVal; // 10.0
 
-    // Fixed time window — uses windowSecs from provider
-    // X-axis is always anchored at maxTs, scrolling left as time progresses
+    // Find time range
+    double minTs = double.infinity;
     double maxTs = -double.infinity;
+
     for (final p in xData) {
+      if (p.x < minTs) minTs = p.x;
       if (p.x > maxTs) maxTs = p.x;
     }
     for (final p in yData) {
+      if (p.x < minTs) minTs = p.x;
       if (p.x > maxTs) maxTs = p.x;
     }
     for (final p in zData) {
+      if (p.x < minTs) minTs = p.x;
       if (p.x > maxTs) maxTs = p.x;
     }
 
-    final minTs = maxTs - (windowSecs * 1000.0); // 5s window in ms
-    final timeRange = windowSecs * 1000.0;
+    final timeRange = (maxTs - minTs).clamp(0.01, double.infinity);
 
     // Grid lines
     final gridPaint = Paint()
@@ -265,13 +242,8 @@ class _GyroChartPainter extends CustomPainter {
       canvas.drawLine(Offset(x, 0), Offset(x, h), gridPaint);
     }
 
-    // Pre-allocate Paint objects (static) to avoid per-segment allocations
-    final xPaint = _xPaint;
-    final yPaint = _yPaint;
-    final zPaint = _zPaint;
-
     // Draw lines with fading tail
-    void drawLine(List<DataPoint> points, Paint paint) {
+    void drawLine(List<DataPoint> points, Color color) {
       if (points.length < 2) return;
 
       final segCount = points.length - 1;
@@ -287,48 +259,45 @@ class _GyroChartPainter extends CustomPainter {
 
         // Fade: old points transparent, new points opaque
         final progress = i / segCount; // 0 = oldest, 1 = newest
-        final alpha = (progress * progress).clamp(0.0, 1.0);
+        final alpha = (progress * progress).clamp(0.0, 1.0); // ease-in curve
 
-        paint.color = paint.color.withValues(alpha: alpha * 0.9);
-        paint.strokeWidth = 1.5 + progress * 1.0;
+        final paint = Paint()
+          ..color = color.withValues(alpha: alpha * 0.9)
+          ..strokeWidth = 1.5 + progress * 1.0
+          ..style = PaintingStyle.stroke
+          ..strokeCap = StrokeCap.round;
 
         canvas.drawLine(Offset(x0, y0), Offset(x1, y1), paint);
       }
     }
 
-    _zPaint.color = _colorZ;
-    _yPaint.color = _colorY;
-    _xPaint.color = _colorX;
-
-    drawLine(zData, _zPaint);
-    drawLine(yData, _yPaint);
-    drawLine(xData, _xPaint);
-
-    // Pre-allocate dot/glow paints (static)
-    final xDotPaint = _xDotPaint;
-    final xGlowPaint = _xGlowPaint;
-    final yDotPaint = _yDotPaint;
-    final yGlowPaint = _yGlowPaint;
-    final zDotPaint = _zDotPaint;
-    final zGlowPaint = _zGlowPaint;
+    drawLine(zData, _colorZ);
+    drawLine(yData, _colorY);
+    drawLine(xData, _colorX);
 
     // Draw current value dots
-    void drawDot(List<DataPoint> points, Paint dotPaint, Paint glowPaint) {
+    void drawDot(List<DataPoint> points, Color color) {
       if (points.isEmpty) return;
       final last = points.last;
       final x = w; // right edge
       final y = _mapY(last.y, minVal, maxVal, h);
 
-      dotPaint.color = dotPaint.color.withValues(alpha: 1.0);
+      final dotPaint = Paint()
+        ..color = color
+        ..style = PaintingStyle.fill;
       canvas.drawCircle(Offset(x, y), 3, dotPaint);
 
-      glowPaint.color = glowPaint.color.withValues(alpha: 0.3);
+      // Glow
+      final glowPaint = Paint()
+        ..color = color.withValues(alpha: 0.3)
+        ..style = PaintingStyle.fill
+        ..maskFilter = const ui.MaskFilter.blur(BlurStyle.normal, 4);
       canvas.drawCircle(Offset(x, y), 6, glowPaint);
     }
 
-    drawDot(xData, _xDotPaint, _xGlowPaint);
-    drawDot(yData, _yDotPaint, _yGlowPaint);
-    drawDot(zData, _zDotPaint, _zGlowPaint);
+    drawDot(xData, _colorX);
+    drawDot(yData, _colorY);
+    drawDot(zData, _colorZ);
 
     // Y-axis labels
     final labelStyle = const TextStyle(color: Colors.white54, fontSize: 9);

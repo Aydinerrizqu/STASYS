@@ -68,9 +68,6 @@ class _MuzzleTraceWidgetState extends State<MuzzleTraceWidget>
   ShotResult? _lastShot;
   int _shotCount = 0;
 
-  // --- Debug logging ---
-  int _debugLogCount = 0;
-
   // --- Timer-based phase transitions ---
   Timer? _phaseResetTimer;
 
@@ -168,14 +165,6 @@ class _MuzzleTraceWidgetState extends State<MuzzleTraceWidget>
     if (provider.traceXData.isEmpty && provider.accelXData.isEmpty) return;
 
     final nowMs = DateTime.now().millisecondsSinceEpoch;
-
-    // Debug: log first few trace updates to see data quality
-    if (_debugLogCount < 5) {
-      _debugLogCount++;
-      final head = provider.traceXData.isNotEmpty ? provider.traceXData[0] : 0.0;
-      final tail = provider.traceXData.isNotEmpty ? provider.traceXData.last : 0.0;
-      debugPrint('[TRACE] update #$_debugLogCount: len=${provider.traceXData.length} live=(${provider.liveTraceX.toStringAsFixed(4)}, ${provider.liveTraceY.toStringAsFixed(4)}) head=($head, ${provider.traceYData.isNotEmpty ? provider.traceYData[0].toStringAsFixed(4) : 'N/A'}) tail=($tail, ${provider.traceYData.isNotEmpty ? provider.traceYData.last.toStringAsFixed(4) : 'N/A'})');
-    }
 
     // --- LIVE DOT: Quaternion projection from isolate (same as Python) ---
     if (provider.traceXData.isNotEmpty) {
@@ -565,7 +554,6 @@ class _MuzzleTracePainter extends CustomPainter {
         final dx = (curr.x - prev.x).abs();
         final dy = (curr.y - prev.y).abs();
         if (dx > zoom * 2.0 || dy > zoom * 2.0) {
-          debugPrint('[TRACE] JUMP SKIPPED: dx=$dx dy=$dy zoom=$zoom prev=(${prev.x.toStringAsFixed(4)}, ${prev.y.toStringAsFixed(4)}) curr=(${curr.x.toStringAsFixed(4)}, ${curr.y.toStringAsFixed(4)})');
           continue;
         }
         final ageFraction = i / traceLen;

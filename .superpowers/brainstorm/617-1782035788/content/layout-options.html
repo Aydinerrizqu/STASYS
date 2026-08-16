@@ -1,0 +1,115 @@
+<h2>Two layout strategies for the Analysis tab</h2>
+<p class="subtitle">Both fit a portrait phone. The choice affects how the scrubber interacts with the panels and how dense the screen feels.</p>
+
+<div class="cards">
+  <div class="card" data-choice="a" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mockup">
+        <div class="mockup-header">A · Vertical Stack (3 panels + scrubber at bottom)</div>
+        <div class="mockup-body" style="display:flex;flex-direction:column;gap:8px;padding:8px;">
+          <div style="background:#1a1a1a;border-radius:8px;padding:8px;">
+            <div style="font-size:10px;color:#FFB693;letter-spacing:1px;">AIMING</div>
+            <div style="display:flex;align-items:center;gap:8px;margin-top:4px;">
+              <div style="width:60px;height:60px;border-radius:50%;background:#0a2a0a;position:relative;flex-shrink:0;">
+                <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:20px;height:20px;border:1px solid #00ff66;transform:translate(-50%,-50%) rotate(45deg);"></div>
+                <div style="position:absolute;top:30%;left:40%;width:4px;height:4px;background:#ff4444;border-radius:50%;"></div>
+              </div>
+              <div style="flex:1;font-size:9px;">
+                <div>Stability <span style="color:#FFB693">2.7mm</span></div>
+                <div>Accuracy <span style="color:#FFB693">0.2mm</span></div>
+                <div>Hold time <span style="color:#FFB693">1.4s</span></div>
+              </div>
+            </div>
+          </div>
+          <div style="background:#1a1a1a;border-radius:8px;padding:8px;">
+            <div style="font-size:10px;color:#FFB693;letter-spacing:1px;">COORDINATION</div>
+            <div style="height:50px;background:#0a0a0a;border-radius:4px;margin-top:4px;position:relative;">
+              <div style="position:absolute;bottom:0;left:5%;width:2px;height:35px;background:#00ff66;"></div>
+              <div style="position:absolute;bottom:0;left:8%;width:2px;height:42px;background:#00ff66;"></div>
+              <div style="position:absolute;bottom:0;left:11%;width:2px;height:28px;background:#00ff66;"></div>
+              <div style="position:absolute;top:0;bottom:0;left:50%;border-left:1px dashed #FFB693;"></div>
+            </div>
+            <div style="display:flex;justify-content:space-between;font-size:8px;color:#888;margin-top:2px;">
+              <span>-2.0s</span><span>SHOT</span><span>+1.0s</span>
+            </div>
+          </div>
+          <div style="background:#1a1a1a;border-radius:8px;padding:8px;">
+            <div style="font-size:10px;color:#FFB693;letter-spacing:1px;">SPEED</div>
+            <div style="display:flex;gap:2px;align-items:flex-end;height:30px;margin-top:4px;">
+              <div style="flex:1;background:#FFB693;height:20%;"></div>
+              <div style="flex:1;background:#FFB693;height:40%;"></div>
+              <div style="flex:1;background:#FFB693;height:30%;"></div>
+              <div style="flex:1;background:#FFB693;height:80%;"></div>
+              <div style="flex:1;background:#FFB693;height:60%;"></div>
+              <div style="flex:1;background:#FFB693;height:50%;"></div>
+            </div>
+          </div>
+          <div style="background:#222;border-radius:8px;padding:8px;">
+            <div style="font-size:9px;color:#888;">SCRUBBER</div>
+            <div style="height:6px;background:#444;border-radius:3px;margin-top:4px;position:relative;">
+              <div style="position:absolute;left:50%;top:-3px;width:12px;height:12px;background:#FFB693;border-radius:50%;transform:translateX(-50%);"></div>
+            </div>
+            <div style="font-size:8px;color:#888;margin-top:2px;">t = -0.2s · pre-release</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>Vertical stack + scrubber</h3>
+      <p>Each panel takes full width. Scrubber lives at the bottom of the screen, anchored. Aiming panel gets more breathing room. Best for readability on small phones.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="b" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mockup">
+        <div class="mockup-header">B · Aiming on top, two charts side-by-side, scrubber middle</div>
+        <div class="mockup-body" style="display:flex;flex-direction:column;gap:6px;padding:8px;">
+          <div style="background:#1a1a1a;border-radius:8px;padding:8px;">
+            <div style="font-size:10px;color:#FFB693;letter-spacing:1px;">AIMING</div>
+            <div style="display:flex;align-items:center;gap:8px;margin-top:4px;">
+              <div style="width:50px;height:50px;border-radius:50%;background:#0a2a0a;position:relative;flex-shrink:0;">
+                <div style="position:absolute;top:50%;left:50%;width:18px;height:18px;border:1px solid #00ff66;transform:translate(-50%,-50%) rotate(45deg);"></div>
+              </div>
+              <div style="flex:1;font-size:9px;">
+                <div>Stability <span style="color:#FFB693">2.7mm</span></div>
+                <div>Accuracy <span style="color:#FFB693">0.2mm</span></div>
+              </div>
+            </div>
+          </div>
+          <div style="background:#222;border-radius:8px;padding:6px;">
+            <div style="height:5px;background:#444;border-radius:3px;position:relative;">
+              <div style="position:absolute;left:60%;top:-3px;width:11px;height:11px;background:#FFB693;border-radius:50%;transform:translateX(-50%);"></div>
+            </div>
+          </div>
+          <div style="display:flex;gap:6px;">
+            <div style="flex:1;background:#1a1a1a;border-radius:8px;padding:8px;">
+              <div style="font-size:9px;color:#FFB693;">COORDINATION</div>
+              <div style="height:55px;background:#0a0a0a;border-radius:4px;margin-top:4px;position:relative;">
+                <div style="position:absolute;bottom:0;left:5%;width:2px;height:30px;background:#00ff66;"></div>
+                <div style="position:absolute;bottom:0;left:12%;width:2px;height:42px;background:#00ff66;"></div>
+                <div style="position:absolute;top:0;bottom:0;left:50%;border-left:1px dashed #FFB693;"></div>
+              </div>
+            </div>
+            <div style="flex:1;background:#1a1a1a;border-radius:8px;padding:8px;">
+              <div style="font-size:9px;color:#FFB693;">SPEED</div>
+              <div style="display:flex;gap:2px;align-items:flex-end;height:40px;margin-top:4px;">
+                <div style="flex:1;background:#FFB693;height:20%;"></div>
+                <div style="flex:1;background:#FFB693;height:50%;"></div>
+                <div style="flex:1;background:#FFB693;height:30%;"></div>
+                <div style="flex:1;background:#FFB693;height:90%;"></div>
+                <div style="flex:1;background:#FFB693;height:60%;"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>Aiming + scrubber + charts row</h3>
+      <p>Aiming owns the top, scrubber sits between Aiming and charts, Coordination and Speed sit side-by-side. More information density, scrubber feels like a timeline. Best for power users.</p>
+    </div>
+  </div>
+</div>
+
+<p class="subtitle" style="margin-top:16px;">Click one, then answer in the terminal.</p>

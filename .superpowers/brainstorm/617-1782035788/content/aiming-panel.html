@@ -1,0 +1,82 @@
+<h2>How should the AIMING panel look?</h2>
+<p class="subtitle">This panel shows the trajectory path + current cursor position. Three approaches with different tradeoffs.</p>
+
+<div class="cards">
+  <div class="card" data-choice="a" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mockup">
+        <div class="mockup-header">A · Target bullseye + trajectory overlay</div>
+        <div class="mockup-body" style="padding:12px;background:#0a0a0a;">
+          <div style="position:relative;width:100%;aspect-ratio:1;max-width:240px;margin:0 auto;">
+            <div style="position:absolute;inset:0;border-radius:50%;background:radial-gradient(circle,#1a3a1a 0%,#0a2a0a 30%,#000 60%);"></div>
+            <div style="position:absolute;inset:15%;border-radius:50%;border:1px solid #2a4a2a;"></div>
+            <div style="position:absolute;inset:30%;border-radius:50%;border:1px solid #2a4a2a;"></div>
+            <div style="position:absolute;inset:45%;border-radius:50%;border:1px solid #2a4a2a;"></div>
+            <div style="position:absolute;inset:48%;width:4%;height:4%;background:#ff6b3d;border-radius:50%;"></div>
+            <svg style="position:absolute;inset:0;width:100%;height:100%;" viewBox="0 0 100 100">
+              <polyline points="50,50 52,48 55,49 58,47 60,45 62,46 65,44 67,43 68,42" fill="none" stroke="#ff6b3d" stroke-width="0.8" opacity="0.7"/>
+              <circle cx="68" cy="42" r="2.5" fill="#FFB693" stroke="#fff" stroke-width="0.5"/>
+            </svg>
+            <div style="position:absolute;bottom:-18px;left:0;right:0;text-align:center;font-size:9px;color:#FFB693;">t = -0.2s · pre-release</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>Target bullseye + trajectory overlay</h3>
+      <p>A photo-realistic target (paper target style) with the trajectory drawn as a path. Crosshair cursor shows current scrubber position. Looks like SCATT/MantisX.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="b" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mockup">
+        <div class="mockup-header">B · Concentric rings + trajectory (current style, enriched)</div>
+        <div class="mockup-body" style="padding:12px;background:#0a0a0a;">
+          <div style="position:relative;width:100%;aspect-ratio:1;max-width:240px;margin:0 auto;">
+            <div style="position:absolute;inset:0;border-radius:50%;background:#1a1a1a;"></div>
+            <div style="position:absolute;inset:10%;border-radius:50%;background:#222;border:1px solid #333;"></div>
+            <div style="position:absolute;inset:20%;border-radius:50%;background:#2a2a2a;border:1px solid #444;"></div>
+            <div style="position:absolute;inset:35%;border-radius:50%;background:#333;border:1px solid #555;"></div>
+            <div style="position:absolute;inset:47%;width:6%;height:6%;background:#444;border-radius:50%;"></div>
+            <svg style="position:absolute;inset:0;width:100%;height:100%;" viewBox="0 0 100 100">
+              <polyline points="50,50 53,47 56,49 60,45 63,44 65,42 67,41" fill="none" stroke="#FFB693" stroke-width="1" opacity="0.6"/>
+              <circle cx="67" cy="41" r="2.5" fill="#FFB693" stroke="#fff" stroke-width="0.5"/>
+            </svg>
+            <div style="position:absolute;top:8px;right:8px;font-size:7px;color:#888;">10 · 9 · 8 · 7 · 6</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>Concentric rings + trajectory</h3>
+      <p>Current style extended: the existing scoring rings become the "target", with the trajectory overlaid as a path. Cleaner, less file size than a target image, matches existing app aesthetic.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="c" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mockup">
+        <div class="mockup-header">C · Tactical HUD: crosshair polygon (matches the video)</div>
+        <div class="mockup-body" style="padding:12px;background:#0a0a0a;">
+          <div style="position:relative;width:100%;aspect-ratio:1;max-width:240px;margin:0 auto;">
+            <div style="position:absolute;inset:0;border-radius:50%;background:#0a1a0a;border:1px solid #1a3a1a;"></div>
+            <div style="position:absolute;inset:35%;border-radius:50%;border:1px dashed #00ff66;opacity:0.4;"></div>
+            <svg style="position:absolute;inset:0;width:100%;height:100%;" viewBox="0 0 100 100">
+              <polygon points="50,42 58,50 50,58 42,50" fill="none" stroke="#00ff66" stroke-width="0.8"/>
+              <polyline points="50,42 52,40 55,41 58,40 60,42 58,45 60,48 58,50" fill="none" stroke="#ff6b3d" stroke-width="1"/>
+              <circle cx="58" cy="50" r="2.5" fill="#FFB693" stroke="#fff" stroke-width="0.5"/>
+            </svg>
+            <div style="position:absolute;top:50%;left:0;right:0;text-align:center;font-size:8px;color:#00ff66;transform:translateY(-50%);margin-top:-30px;">AIM POINT</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>Tactical HUD: crosshair polygon</h3>
+      <p>Matches the video exactly: green diamond/polygon showing the aim point + red trajectory path through it. Most SCATT-faithful. Reads as tactical/military.</p>
+    </div>
+  </div>
+</div>
+
+<p class="subtitle" style="margin-top:16px;">Which visual style for the Aiming panel? Click one, then answer.</p>

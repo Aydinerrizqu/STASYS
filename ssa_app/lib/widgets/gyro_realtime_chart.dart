@@ -326,9 +326,9 @@ class _GyroChartPainter extends CustomPainter {
       canvas.drawCircle(Offset(x, y), 6, glowPaint);
     }
 
-    drawDot(xData, _colorX);
-    drawDot(yData, _colorY);
-    drawDot(zData, _colorZ);
+    drawDot(xData, _xDotPaint, _xGlowPaint);
+    drawDot(yData, _yDotPaint, _yGlowPaint);
+    drawDot(zData, _zDotPaint, _zGlowPaint);
 
     // Y-axis labels
     final labelStyle = const TextStyle(color: Colors.white54, fontSize: 9);

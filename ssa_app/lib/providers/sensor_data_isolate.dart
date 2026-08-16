@@ -522,15 +522,12 @@ class ShotDetector {
     // Check if drift is significant
     final aimOffset = math.sqrt(lastTraceX * lastTraceX + lastTraceY * lastTraceY);
     if (aimOffset >= driftThreshold) {
-      print('[AUTO-TARE] TRIGGERED! mag=$mag stationaryCount=$stationaryCount aimOffset=$aimOffset lastTrace=($_traceX.last, $_traceY.last)');
       // CRITICAL: Reset qTare to stop drift accumulation (same as Python _apply_tare)
       _qTare = _q.copy();
       _traceX.clear();
       _traceY.clear();
       lastAutoTare = now;
       stationaryCount = 0;
-    } else if (aimOffset < 0.001 && stationaryCount > 0) {
-      print('[AUTO-TARE] Blocked: aimOffset=$aimOffset < driftThreshold, mag=$mag');
     }
   }
 

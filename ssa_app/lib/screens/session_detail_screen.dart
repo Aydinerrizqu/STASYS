@@ -6,6 +6,8 @@ import '../services/trajectory/replay_engine.dart';
 import '../services/trajectory/replay_models.dart';
 import '../theme/app_theme.dart';
 import '../widgets/analysis_tab.dart';
+import '../widgets/replay_shot_widget.dart';
+import '../widgets/shot_trace_geometry.dart';
 
 enum _DetailTab { postShot, analysis }
 
@@ -61,7 +63,11 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.trending_flat, size: 48, color: StsysTheme.onSurface.withValues(alpha: 0.15)),
+            Icon(
+              Icons.trending_flat,
+              size: 48,
+              color: StsysTheme.onSurface.withValues(alpha: 0.15),
+            ),
             const SizedBox(height: 12),
             Text(
               'NO IMU DATA AVAILABLE',
@@ -159,7 +165,9 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          DateFormat('EEEE, dd MMMM').format(session.date).toUpperCase(),
+                          DateFormat(
+                            'EEEE, dd MMMM',
+                          ).format(session.date).toUpperCase(),
                           style: TextStyle(
                             fontFamily: 'Inter',
                             fontSize: 9,
@@ -207,32 +215,44 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
             if (_tab == _DetailTab.analysis)
               Expanded(child: _buildAnalysisBody())
             else ...[
-              // Selected shot 3-phase chart
               if (_selectedShot != null && _selectedShotIndex != null)
-              Expanded(
-                flex: 3,
-                child: _ShotDetailPanel(
-                  shot: _selectedShot!,
-                  shotIndex: _selectedShotIndex!,
-                  getScoreColor: _getScoreColor,
-                ),
-              )
-            else
-              Expanded(
-                flex: 3,
-                child: Center(
-                  child: Text(
-                    'NO SHOTS IN SESSION',
-                    style: TextStyle(
-                      fontFamily: 'Manrope',
-                      fontSize: 14,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 2,
-                      color: StsysTheme.onSurface.withValues(alpha: 0.2),
+                Expanded(
+                  flex: 2,
+                  child: SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _ShotDetailPanel(
+                          shot: _selectedShot!,
+                          shotIndex: _selectedShotIndex!,
+                          getScoreColor: _getScoreColor,
+                        ),
+                        ReplayShotWidget(
+                          shot: _selectedShot!,
+                          shotIndex: _selectedShotIndex!,
+                          getScoreColor: _getScoreColor,
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+              else
+                Expanded(
+                  flex: 3,
+                  child: Center(
+                    child: Text(
+                      'NO SHOTS IN SESSION',
+                      style: TextStyle(
+                        fontFamily: 'Manrope',
+                        fontSize: 14,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 2,
+                        color: StsysTheme.onSurface.withValues(alpha: 0.2),
+                      ),
                     ),
                   ),
                 ),
-              ),
+            ],
 
             // Shot list
             if (session.shots.isNotEmpty)
@@ -258,7 +278,10 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                           ),
                           const Spacer(),
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 2,
+                            ),
                             decoration: BoxDecoration(
                               color: StsysTheme.primary.withValues(alpha: 0.15),
                               borderRadius: BorderRadius.circular(20),
@@ -300,7 +323,9 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                                   border: Border.all(
                                     color: isSelected
                                         ? scoreColor
-                                        : StsysTheme.outlineVariant.withValues(alpha: 0.2),
+                                        : StsysTheme.outlineVariant.withValues(
+                                            alpha: 0.2,
+                                          ),
                                     width: isSelected ? 2 : 1,
                                   ),
                                 ),
@@ -314,7 +339,9 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                                         fontSize: 8,
                                         fontWeight: FontWeight.w700,
                                         letterSpacing: 1,
-                                        color: StsysTheme.onSurface.withValues(alpha: 0.4),
+                                        color: StsysTheme.onSurface.withValues(
+                                          alpha: 0.4,
+                                        ),
                                       ),
                                     ),
                                     const SizedBox(height: 4),
@@ -329,11 +356,15 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                                     ),
                                     const SizedBox(height: 2),
                                     Text(
-                                      DateFormat('HH:mm').format(shot.timestamp),
+                                      DateFormat(
+                                        'HH:mm',
+                                      ).format(shot.timestamp),
                                       style: TextStyle(
                                         fontFamily: 'Inter',
                                         fontSize: 8,
-                                        color: StsysTheme.onSurface.withValues(alpha: 0.4),
+                                        color: StsysTheme.onSurface.withValues(
+                                          alpha: 0.4,
+                                        ),
                                       ),
                                     ),
                                   ],
@@ -347,7 +378,6 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                   ),
                 ),
               ),
-            ],
           ],
         ),
       ),
@@ -388,9 +418,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                 : Colors.transparent,
             borderRadius: BorderRadius.circular(6),
             border: Border.all(
-              color: selected
-                  ? StsysTheme.secondary
-                  : Colors.transparent,
+              color: selected ? StsysTheme.secondary : Colors.transparent,
             ),
           ),
           alignment: Alignment.center,
@@ -420,10 +448,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
           'DELETE SESSION?',
           style: StsysText.labelBold.copyWith(color: StsysTheme.error),
         ),
-        content: Text(
-          'This action cannot be undone.',
-          style: StsysText.body,
-        ),
+        content: Text('This action cannot be undone.', style: StsysText.body),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
@@ -535,11 +560,23 @@ class _ShotDetailPanel extends StatelessWidget {
                       const SizedBox(height: 6),
                       Row(
                         children: [
-                          _phaseBadge('H', shot.holdScore.toInt(), const Color(0xFFFF4444)),
+                          _phaseBadge(
+                            'H',
+                            shot.holdScore.toInt(),
+                            const Color(0xFFFF4444),
+                          ),
                           const SizedBox(width: 6),
-                          _phaseBadge('P', shot.pressScore.toInt(), const Color(0xFFFFFF44)),
+                          _phaseBadge(
+                            'P',
+                            shot.pressScore.toInt(),
+                            const Color(0xFFFFFF44),
+                          ),
                           const SizedBox(width: 6),
-                          _phaseBadge('R', shot.recoilScore.toInt(), const Color(0xFF44FFFF)),
+                          _phaseBadge(
+                            'R',
+                            shot.recoilScore.toInt(),
+                            const Color(0xFF44FFFF),
+                          ),
                         ],
                       ),
                     ],
@@ -550,7 +587,8 @@ class _ShotDetailPanel extends StatelessWidget {
           ),
 
           // 3-Phase chart
-          Expanded(
+          SizedBox(
+            height: 180,
             child: Container(
               margin: const EdgeInsets.fromLTRB(12, 0, 12, 8),
               decoration: BoxDecoration(
@@ -657,8 +695,10 @@ class _ShotDetailPanel extends StatelessWidget {
 // ============================================
 class _ThreePhasePainter extends CustomPainter {
   final ShotResult shot;
+  final ShotTracePath trace;
 
-  _ThreePhasePainter({required this.shot});
+  _ThreePhasePainter({required this.shot})
+    : trace = ShotTraceGeometry.fromShot(shot);
 
   static const Color _holdColor = Color(0xFFFF4444);
   static const Color _pressColor = Color(0xFFFFFF44);
@@ -692,16 +732,7 @@ class _ThreePhasePainter extends CustomPainter {
     final cx = size.width / 2;
     final cy = size.height / 2;
 
-    double maxDev = 0.005;
-    if (shot.holdX != null) { for (final v in shot.holdX!) { if (v.abs() > maxDev) maxDev = v.abs(); } }
-    if (shot.holdY != null) { for (final v in shot.holdY!) { if (v.abs() > maxDev) maxDev = v.abs(); } }
-    if (shot.pressX != null) { for (final v in shot.pressX!) { if (v.abs() > maxDev) maxDev = v.abs(); } }
-    if (shot.pressY != null) { for (final v in shot.pressY!) { if (v.abs() > maxDev) maxDev = v.abs(); } }
-    if (shot.recoilX != null) { for (final v in shot.recoilX!) { if (v.abs() > maxDev) maxDev = v.abs(); } }
-    if (shot.recoilY != null) { for (final v in shot.recoilY!) { if (v.abs() > maxDev) maxDev = v.abs(); } }
-    maxDev *= 1.3;
-
-    if (maxDev < 0.001) maxDev = 0.01;
+    final maxDev = trace.maxDeviation;
 
     final scaleX = size.width / 2 / maxDev;
     final scaleY = size.height / 2 / maxDev;
@@ -721,21 +752,62 @@ class _ThreePhasePainter extends CustomPainter {
       );
     }
 
-    _drawCurve(canvas, shot.holdX, shot.holdY, cx, cy, scaleX, scaleY, _holdColor);
-    _drawCurve(canvas, shot.pressX, shot.pressY, cx, cy, scaleX, scaleY, _pressColor);
-    _drawCurve(canvas, shot.recoilX, shot.recoilY, cx, cy, scaleX, scaleY, _recoilColor);
+    _drawCurve(
+      canvas,
+      trace,
+      0,
+      trace.holdEnd,
+      cx,
+      cy,
+      scaleX,
+      scaleY,
+      _holdColor,
+    );
+    _drawCurve(
+      canvas,
+      trace,
+      trace.holdEnd,
+      trace.pressEnd,
+      cx,
+      cy,
+      scaleX,
+      scaleY,
+      _pressColor,
+    );
+    _drawCurve(
+      canvas,
+      trace,
+      trace.pressEnd,
+      trace.points.length - 1,
+      cx,
+      cy,
+      scaleX,
+      scaleY,
+      _recoilColor,
+    );
 
     canvas.drawCircle(Offset(cx, cy), 3, _hitFill);
     canvas.drawCircle(Offset(cx, cy), 3, _hitStroke);
   }
 
-  void _drawCurve(Canvas canvas, List<double>? xList, List<double>? yList,
-      double cx, double cy, double sx, double sy, Color color) {
-    if (xList == null || yList == null || xList.length < 2) return;
+  void _drawCurve(
+    Canvas canvas,
+    ShotTracePath trace,
+    int start,
+    int end,
+    double cx,
+    double cy,
+    double sx,
+    double sy,
+    Color color,
+  ) {
+    if (trace.points.length < 2 || end <= start) return;
 
-    final path = Path()..moveTo(cx + xList[0] * sx, cy + yList[0] * sy);
-    for (int i = 1; i < xList.length; i++) {
-      path.lineTo(cx + xList[i] * sx, cy + yList[i] * sy);
+    final first = trace.points[start.clamp(0, trace.points.length - 1)];
+    final path = Path()..moveTo(cx + first.x * sx, cy + first.y * sy);
+    for (var i = start + 1; i <= end && i < trace.points.length; i++) {
+      final point = trace.points[i];
+      path.lineTo(cx + point.x * sx, cy + point.y * sy);
     }
 
     _curvePaint.color = color.withValues(alpha: 0.8);

@@ -57,7 +57,6 @@ class _MuzzleTraceWidgetState extends State<MuzzleTraceWidget>
   static const double _liveDotSensitivity = 0.08;
 
   // --- Phase coloring ---
-  bool _isHold = true;
   bool _isPress = false;
   bool _isRecoil = false;
 
@@ -215,7 +214,6 @@ class _MuzzleTraceWidgetState extends State<MuzzleTraceWidget>
 
     // Phase detection from shot state
     if (_lastShot != null) {
-      _isHold = false;
       _isPress = false;
       _isRecoil = true;
       _phaseResetTimer?.cancel();
@@ -223,7 +221,6 @@ class _MuzzleTraceWidgetState extends State<MuzzleTraceWidget>
         if (mounted) {
           setState(() {
             _isRecoil = false;
-            _isHold = true;
           });
         }
       });
@@ -233,7 +230,6 @@ class _MuzzleTraceWidgetState extends State<MuzzleTraceWidget>
     if (provider.latestShot != null && provider.latestShot != _lastShot) {
       _lastShot = provider.latestShot;
       _shotCount++;
-      _isHold = false;
       _isPress = false;
       _isRecoil = true;
       _phaseResetTimer?.cancel();
@@ -241,7 +237,6 @@ class _MuzzleTraceWidgetState extends State<MuzzleTraceWidget>
         if (mounted) {
           setState(() {
             _isRecoil = false;
-            _isHold = true;
           });
         }
       });
@@ -271,9 +266,6 @@ class _MuzzleTraceWidgetState extends State<MuzzleTraceWidget>
             children: [
               Row(
                 children: [
-                  _PhaseDot('H', _holdColor, _isHold),
-                  _PhaseDot('P', _pressColor, _isPress),
-                  _PhaseDot('R', _recoilColor, _isRecoil),
                   const Spacer(),
                   Container(
                     padding: const EdgeInsets.symmetric(
@@ -328,109 +320,10 @@ class _MuzzleTraceWidgetState extends State<MuzzleTraceWidget>
                 ),
               ),
               const SizedBox(height: 8),
-              if (_lastShot != null) _buildScoreRow(_lastShot!),
             ],
           ),
         );
       },
-    );
-  }
-
-  Widget _buildScoreRow(ShotResult shot) {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
-      decoration: BoxDecoration(
-        color: StsysTheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(
-          color: StsysTheme.outlineVariant.withValues(alpha: 0.15),
-        ),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
-        children: [
-          _scoreChip('HOLD', shot.holdScore, _holdColor),
-          Container(
-            width: 1,
-            height: 28,
-            color: StsysTheme.outlineVariant.withValues(alpha: 0.2),
-          ),
-          _scoreChip('PRESS', shot.pressScore, _pressColor),
-          Container(
-            width: 1,
-            height: 28,
-            color: StsysTheme.outlineVariant.withValues(alpha: 0.2),
-          ),
-          _scoreChip('RECOIL', shot.recoilScore, _recoilColor),
-        ],
-      ),
-    );
-  }
-
-  Widget _scoreChip(String label, double score, Color color) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(
-          label,
-          style: TextStyle(
-            fontFamily: 'Inter',
-            fontSize: 8,
-            letterSpacing: 1,
-            color: color.withValues(alpha: 0.7),
-          ),
-        ),
-        Text(
-          score.toInt().toString(),
-          style: TextStyle(
-            fontFamily: 'Manrope',
-            fontSize: 14,
-            fontWeight: FontWeight.w800,
-            color: color,
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-// ============================================
-// PHASE DOT INDICATOR
-// ============================================
-class _PhaseDot extends StatelessWidget {
-  final String label;
-  final Color color;
-  final bool active;
-
-  const _PhaseDot(this.label, this.color, this.active);
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 4),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 8,
-            height: 8,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: active ? color : color.withValues(alpha: 0.3),
-            ),
-          ),
-          const SizedBox(width: 2),
-          Text(
-            label,
-            style: TextStyle(
-              fontFamily: 'Manrope',
-              fontSize: 9,
-              fontWeight: active ? FontWeight.w800 : FontWeight.w400,
-              color: active ? color : StsysTheme.onSurfaceVariant,
-            ),
-          ),
-        ],
-      ),
     );
   }
 }

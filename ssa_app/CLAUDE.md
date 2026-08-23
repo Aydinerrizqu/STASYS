@@ -496,7 +496,7 @@ OtaState.idle → loading → sending → verifying → rebooting → completed
 
 | Branch | Status | Description |
 |--------|---------|-------------|
-| `PreProduction_0` | **Active** | TDD + STASYS_FW: CRC-16 checksum, 31-byte packets, OTA working, unit tests (27 passing), lifecycle-aware ticker |
+| `PreProduction3` | **Active** | STASYS_FW + live tracking + trajectory replay; synchronized post-shot/replay trace playback (commit `d303935`) |
 | `trajectory_refactor` | **In Progress** | Offline trajectory replay pipeline: quaternion extraction, barrel projection, replay engine, analysis tab |
 | `migrasi_firmware_awal_v1` | Backup | Previous version with XOR checksum (30-byte packets) |
 | `migrasi_firmware_awal` | Backup | Snapshot of earlier version |
@@ -513,6 +513,9 @@ OtaState.idle → loading → sending → verifying → rebooting → completed
 - [ ] **Trace window sync with Python** — Flutter 2s window vs Python 0.5s cursor-normalized.
 - [ ] **MantisX feature parity** — drill modes, trend analysis, split time, session notes, etc.
 - [ ] **Frame freeze / gralloc4 GPU failure** — GPU/driver incompatibility with Impeller rendering engine. **Not app code issue**. Test on different device.
+
+### Completed (2026-08-23) ✅
+- [x] **Post-shot/replay trace synchronization** — `ShotTraceGeometry` provides one ordered HOLD → PRESS → RECOIL path, shared by the static `_ThreePhasePainter` and `ReplayShotWidget` playback. Playback draws the same colored segments progressively under the moving dot. Added geometry and Session Detail layout regression tests. Commit: `d303935`.
 
 ### Completed (2026-06-21) ✅
 - [x] **Trajectory Refactor Phase 1: Module Extraction** — `quaternion.dart` (isolated from isolate), `barrel_projection.dart` (right-handed frame, exported to tests). Both header-only, no isolate dependency.

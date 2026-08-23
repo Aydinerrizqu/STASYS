@@ -23,6 +23,8 @@ ReplayShot _shot(int idx, double score) {
   return ReplayShot(
     breakIndex: idx,
     breakTSeconds: idx / 100.0,
+    shotRangeStart: 0,
+    shotRangeEnd: 200,
     holdX: const [],
     holdY: const [],
     pressX: const [],

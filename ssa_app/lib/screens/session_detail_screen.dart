@@ -228,6 +228,9 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                           getScoreColor: _getScoreColor,
                         ),
                         ReplayShotWidget(
+                          key: ValueKey(
+                            'replay-shot-${_selectedShotIndex!}-${_selectedShot!.timestamp.microsecondsSinceEpoch}',
+                          ),
                           shot: _selectedShot!,
                           shotIndex: _selectedShotIndex!,
                           getScoreColor: _getScoreColor,

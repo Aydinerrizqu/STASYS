@@ -16,6 +16,7 @@ void main() {
   test('ReplayShot holds 6 segment lists and a total score', () {
     final s = ReplayShot(
       breakIndex: 170, breakTSeconds: 1.7,
+      shotRangeStart: 0, shotRangeEnd: 270,
       holdX: const [0.0], holdY: const [0.0],
       pressX: const [0.0], pressY: const [0.0],
       recoilX: const [0.0], recoilY: const [0.0],
@@ -43,6 +44,7 @@ void main() {
       shots: [
         ReplayShot(
           breakIndex: 0, breakTSeconds: 0,
+          shotRangeStart: 0, shotRangeEnd: 100,
           holdX: const [], holdY: const [], pressX: const [], pressY: const [], recoilX: const [], recoilY: const [],
           holdScore: 0, pressScore: 0, recoilScore: 0,
           elevationScore: 0, windageScore: 0, totalScore: 0,

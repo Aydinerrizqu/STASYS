@@ -33,7 +33,7 @@ class ReplayShotWidget extends StatefulWidget {
 
 class _ReplayShotWidgetState extends State<ReplayShotWidget>
     with TickerProviderStateMixin {
-  late final ShotTracePath _trace;
+  late ShotTracePath _trace;
   late final AnimationController _animCtrl;
   Timer? _timer;
   int _currentSegIdx = 0; // 0=hold, 1=press, 2=recoil
@@ -46,6 +46,23 @@ class _ReplayShotWidgetState extends State<ReplayShotWidget>
     super.initState();
     _trace = ShotTraceGeometry.fromShot(widget.shot);
     _animCtrl = AnimationController(vsync: this, duration: _totalDuration);
+  }
+
+  @override
+  void didUpdateWidget(covariant ReplayShotWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.shot != widget.shot ||
+        oldWidget.shotIndex != widget.shotIndex) {
+      _timer?.cancel();
+      _trace = ShotTraceGeometry.fromShot(widget.shot);
+      _animCtrl.reset();
+      _isPlaying = false;
+      _currentSegIdx = 0;
+      _segProgress = 0.0;
+      _dotX = 0.0;
+      _dotY = 0.0;
+      setState(() {});
+    }
   }
 
   @override
@@ -73,7 +90,7 @@ class _ReplayShotWidgetState extends State<ReplayShotWidget>
 
   void _stop() {
     _timer?.cancel();
-    _animCtrl.stop();
+    _animCtrl.reset();
     setState(() {
       _isPlaying = false;
       _segProgress = 0.0;

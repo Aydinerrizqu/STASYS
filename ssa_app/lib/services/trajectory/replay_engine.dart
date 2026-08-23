@@ -3,7 +3,6 @@
 // Re-runs the ShotDetector trace pipeline offline on a saved SessionLog.
 // ============================================
 import 'dart:math' as math;
-import 'package:flutter/foundation.dart';
 import '../../providers/session_logger.dart' show SessionLog;
 import 'projection.dart';
 import 'replay_models.dart';
@@ -28,10 +27,6 @@ class ReplayEngine {
 
   ReplayTrace replay(SessionLog session, {double targetDistanceM = 10.0}) {
     final samples = _mergeAccelGyro(session);
-    debugPrint('[REPLAY] gyroX=${session.gyroX.length} gyroY=${session.gyroY.length} gyroZ=${session.gyroZ.length} '
-        'accelX=${session.accelX.length} accelY=${session.accelY.length} accelZ=${session.accelZ.length} '
-        'shots=${session.shots.length}');
-    debugPrint('[REPLAY] merged samples: ${samples.length}');
     if (samples.isEmpty) {
       return ReplayTrace(
         frames: [],
@@ -40,16 +35,6 @@ class ReplayEngine {
         sampleRateHz: 100,
         targetDistanceM: targetDistanceM,
       );
-    }
-    // Log gyro stats for first few samples
-    if (samples.length > 5) {
-      double maxGx = 0, maxGy = 0, maxGz = 0;
-      for (int i = 0; i < samples.length; i++) {
-        if (samples[i].gx.abs() > maxGx) maxGx = samples[i].gx.abs();
-        if (samples[i].gy.abs() > maxGy) maxGy = samples[i].gy.abs();
-        if (samples[i].gz.abs() > maxGz) maxGz = samples[i].gz.abs();
-      }
-      debugPrint('[REPLAY] max abs gyro: gx=$maxGx gy=$maxGy gz=$maxGz');
     }
 
     // Calibrate: mean of first 50 samples (or all if fewer)
@@ -148,9 +133,13 @@ class ReplayEngine {
 
     final replayShots = <ReplayShot>[];
     for (final c in shots) {
+      final rangeStart = c.breakIndex - holdDurationIdx;
+      final rangeEnd = c.breakIndex + recoilDurationIdx;
       replayShots.add(ReplayShot(
         breakIndex: c.breakIndex,
         breakTSeconds: c.breakIndex * dt,
+        shotRangeStart: rangeStart,
+        shotRangeEnd: rangeEnd,
         holdX: c.holdX, holdY: c.holdY,
         pressX: c.pressX, pressY: c.pressY,
         recoilX: c.recoilX, recoilY: c.recoilY,
@@ -201,7 +190,6 @@ class ReplayEngine {
       ));
     }
 
-    debugPrint('[REPLAY] finished: frames=${frames.length} shots=${replayShots.length}');
     return ReplayTrace(
       frames: frames,
       shots: replayShots,

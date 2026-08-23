@@ -14,21 +14,38 @@ import '../services/trajectory/replay_models.dart';
 
 class ReplayTracePainter extends CustomPainter {
   final ReplayTrace trace;
+
+  /// Pre-filtered frames for the visible window (all if null).
+  final List<ReplayFrame>? visibleFrames;
   final ReplayShot? selectedShot;
   final Color Function(double) getScoreColor;
+
   /// Target distance in metres for SCATT ring overlay. Default 10.0.
   final double targetDistanceM;
+
   /// Index of the frame to highlight (e.g. from the timeline scrubber).
   /// If null, no playhead is drawn. Default null.
   final int? frameIndex;
 
   ReplayTracePainter({
     required this.trace,
+    this.visibleFrames,
     required this.selectedShot,
     required this.getScoreColor,
     this.targetDistanceM = 10.0,
     this.frameIndex,
   });
+
+  List<ReplayFrame> get _frames => visibleFrames ?? trace.frames;
+
+  List<ReplayFrame> _selectedFrames() {
+    if (selectedShot == null) return _frames;
+    final start = selectedShot!.shotRangeStart.clamp(0, _frames.length - 1);
+    final end = selectedShot!.shotRangeEnd.clamp(start, _frames.length - 1);
+    return _frames
+        .where((frame) => frame.tIndex >= start && frame.tIndex <= end)
+        .toList(growable: false);
+  }
 
   // Pre-allocated paints (singleton-style)
   static final Paint _gridPaint = Paint()
@@ -68,7 +85,8 @@ class ReplayTracePainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    if (trace.frames.isEmpty) {
+    final frames = _selectedFrames();
+    if (frames.isEmpty) {
       _drawEmptyState(canvas, size);
       return;
     }
@@ -78,7 +96,7 @@ class ReplayTracePainter extends CustomPainter {
 
     // Determine bounds from frames
     double maxDev = 0.005;
-    for (final f in trace.frames) {
+    for (final f in frames) {
       if (f.barrelX.abs() > maxDev) maxDev = f.barrelX.abs();
       if (f.barrelY.abs() > maxDev) maxDev = f.barrelY.abs();
     }
@@ -93,7 +111,6 @@ class ReplayTracePainter extends CustomPainter {
     _drawTargetOverlay(canvas, size, cx, cy, scaleX, scaleY);
 
     // Draw trace polyline with recency-based opacity
-    final frames = trace.frames;
     final n = frames.length;
     _tracePaint.shader = LinearGradient(
       begin: Alignment.centerLeft,
@@ -117,27 +134,20 @@ class ReplayTracePainter extends CustomPainter {
     }
     canvas.drawPath(tracePath, _tracePaint);
 
-    // Draw shot markers
-    for (final frame in frames) {
-      final marker = frame.shotMarker;
-      if (marker == null) continue;
-
+    // Shot markers — show all shots on canvas, highlight selected
+    for (final frame in trace.frames.where((f) => f.shotMarker != null)) {
+      final marker = frame.shotMarker!;
       final x = cx + frame.barrelX * scaleX;
       final y = cy + frame.barrelY * scaleY;
       final isSelected = marker == selectedShot;
       final color = getScoreColor(marker.totalScore);
 
-      // Vertical line through hit point
-      _hitMarkerPaint.color = color.withValues(alpha: isSelected ? 0.9 : 0.45);
+      _hitMarkerPaint.color = color.withValues(alpha: isSelected ? 0.9 : 0.35);
       canvas.drawLine(Offset(x, 0), Offset(x, size.height), _hitMarkerPaint);
-
-      // Marker dot
       final dotR = isSelected ? 6.0 : 4.0;
       _markerFillPaint.color = color;
       canvas.drawCircle(Offset(x, y), dotR, _markerFillPaint);
       canvas.drawCircle(Offset(x, y), dotR, _markerStrokePaint);
-
-      // Score number above the marker
       _drawScoreLabel(canvas, x, y - 12, marker.totalScore.toInt(), color);
     }
 
@@ -149,9 +159,16 @@ class ReplayTracePainter extends CustomPainter {
     canvas.drawCircle(Offset(cx, cy), 3, _centerFillPaint);
     canvas.drawCircle(Offset(cx, cy), 3, _markerStrokePaint);
 
-    // Playhead cursor from timeline scrubber
-    if (frameIndex != null && frameIndex! >= 0 && frameIndex! < n) {
-      final cursor = frames[frameIndex!];
+    // Playhead cursor for the selected shot or full-session timeline.
+    if (frameIndex != null &&
+        frameIndex! >= 0 &&
+        frameIndex! < trace.frames.length) {
+      final cursor = trace.frames[frameIndex!];
+      final inSelectedRange =
+          selectedShot == null ||
+          (cursor.tIndex >= selectedShot!.shotRangeStart &&
+              cursor.tIndex <= selectedShot!.shotRangeEnd);
+      if (!inSelectedRange) return;
       final px = cx + cursor.barrelX * scaleX;
       final py = cy + cursor.barrelY * scaleY;
 
@@ -210,8 +227,13 @@ class ReplayTracePainter extends CustomPainter {
     canvas.drawLine(Offset(0, cy), Offset(size.width, cy), _gridPaint);
   }
 
-  void _drawRings(Canvas canvas, double cx, double cy,
-      double maxRadiusX, double maxRadiusY) {
+  void _drawRings(
+    Canvas canvas,
+    double cx,
+    double cy,
+    double maxRadiusX,
+    double maxRadiusY,
+  ) {
     _ringPaint.color = const Color(0xFF6B7280).withValues(alpha: 0.15);
     for (final r in [0.25, 0.5, 0.75, 1.0]) {
       canvas.drawOval(
@@ -225,8 +247,14 @@ class ReplayTracePainter extends CustomPainter {
     }
   }
 
-  void _drawTargetOverlay(Canvas canvas, Size size, double cx, double cy,
-      double scaleX, double scaleY) {
+  void _drawTargetOverlay(
+    Canvas canvas,
+    Size size,
+    double cx,
+    double cy,
+    double scaleX,
+    double scaleY,
+  ) {
     // SCATT target rings: 5° circle at targetDistanceM.
     // Radius on target plane: r = distance * tan(5°)
     const targetAngleDeg = 5.0;
@@ -278,7 +306,13 @@ class ReplayTracePainter extends CustomPainter {
     }
   }
 
-  void _drawScoreLabel(Canvas canvas, double x, double y, int score, Color color) {
+  void _drawScoreLabel(
+    Canvas canvas,
+    double x,
+    double y,
+    int score,
+    Color color,
+  ) {
     final tp = TextPainter(
       text: TextSpan(
         text: score.toString(),

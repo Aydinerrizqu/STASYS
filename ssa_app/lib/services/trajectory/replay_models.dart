@@ -32,6 +32,10 @@ class ReplayFrame {
 class ReplayShot {
   final int breakIndex;
   final double breakTSeconds;
+  /// Start frame index of this shot's range (hold start).
+  final int shotRangeStart;
+  /// End frame index of this shot's range (recoil end, inclusive).
+  final int shotRangeEnd;
   final List<double> holdX, holdY, pressX, pressY, recoilX, recoilY;
   final double holdScore, pressScore, recoilScore;
   final double elevationScore, windageScore, totalScore;
@@ -42,6 +46,8 @@ class ReplayShot {
   const ReplayShot({
     required this.breakIndex,
     required this.breakTSeconds,
+    required this.shotRangeStart,
+    required this.shotRangeEnd,
     required this.holdX, required this.holdY,
     required this.pressX, required this.pressY,
     required this.recoilX, required this.recoilY,

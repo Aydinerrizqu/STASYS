@@ -33,8 +33,9 @@ class _AnalysisTabState extends State<AnalysisTab> {
     super.initState();
     if (widget.trace.hasShots) {
       _selectedShot = widget.trace.shots.first;
+      _frameIndex = _selectedShot!.shotRangeStart;
     }
-    if (widget.trace.frames.isNotEmpty) {
+    if (_selectedShot == null && widget.trace.frames.isNotEmpty) {
       _frameIndex = widget.trace.frames.length - 1;
     }
   }
@@ -92,8 +93,7 @@ class _AnalysisTabState extends State<AnalysisTab> {
       );
     }
 
-    final selectedShot =
-        _selectedShot ?? trace.shots.first;
+    final selectedShot = _selectedShot ?? trace.shots.first;
     final shotIndex = trace.shots.indexOf(selectedShot);
 
     return Column(
@@ -106,12 +106,14 @@ class _AnalysisTabState extends State<AnalysisTab> {
             selectedShot: _selectedShot,
             getScoreColor: _scoreColor,
             onShotTapped: _selectShot,
+            frameIndex: _frameIndex,
           ),
         ),
         // Scrubber
         TrajectoryScrubber(
           trace: trace,
           frameIndex: _frameIndex,
+          selectedShot: _selectedShot,
           onFrameChanged: _onFrameChanged,
         ),
         // Per-shot summary + breakdown (flex 3)

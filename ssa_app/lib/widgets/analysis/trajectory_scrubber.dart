@@ -11,21 +11,27 @@ import '../../theme/app_theme.dart';
 class TrajectoryScrubber extends StatelessWidget {
   final ReplayTrace trace;
   final int frameIndex;
+  final ReplayShot? selectedShot;
   final ValueChanged<int> onFrameChanged;
 
   const TrajectoryScrubber({
     super.key,
     required this.trace,
     required this.frameIndex,
+    this.selectedShot,
     required this.onFrameChanged,
   });
+
+  int get _rangeStart => selectedShot?.shotRangeStart ?? 0;
+  int get _rangeEnd => selectedShot?.shotRangeEnd ?? (trace.frames.isEmpty ? 0 : trace.frames.last.tIndex);
 
   @override
   Widget build(BuildContext context) {
     if (trace.isEmpty) return const SizedBox.shrink();
 
-    final maxFrame = trace.frames.length - 1;
-    final clampedIndex = frameIndex.clamp(0, maxFrame);
+    final maxFrame = _rangeEnd;
+    final minFrame = _rangeStart;
+    final clampedIndex = frameIndex.clamp(minFrame, maxFrame);
     final currentFrame = trace.frames[clampedIndex];
 
     return Container(
@@ -69,7 +75,7 @@ class TrajectoryScrubber extends StatelessWidget {
               trackHeight: 2,
             ),
             child: Slider(
-              min: 0,
+              min: minFrame.toDouble(),
               max: maxFrame.toDouble(),
               value: clampedIndex.toDouble(),
               onChanged: (v) => onFrameChanged(v.round()),
@@ -89,7 +95,8 @@ class TrajectoryScrubber extends StatelessWidget {
                       _buildShotTick(
                         frame.tIndex,
                         frame.shotMarker!.totalScore,
-                        maxFrame,
+                        _rangeStart,
+                        _rangeEnd,
                         constraints.maxWidth,
                       ),
                   ],
@@ -102,8 +109,8 @@ class TrajectoryScrubber extends StatelessWidget {
     );
   }
 
-  Widget _buildShotTick(int tIndex, double score, int maxFrame, double width) {
-    final pct = maxFrame == 0 ? 0.0 : tIndex / maxFrame;
+  Widget _buildShotTick(int tIndex, double score, int minFrame, int maxFrame, double width) {
+    final pct = (maxFrame == minFrame) ? 0.0 : (tIndex - minFrame) / (maxFrame - minFrame);
     final dx = pct * width;
     return Positioned(
       left: dx - 3,

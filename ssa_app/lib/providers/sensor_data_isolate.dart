@@ -12,9 +12,9 @@ import 'dart:math' as math;
 // MPU6050 AXIS CONFIGURATION (from stasysz.py)
 // ============================================
 // Gyro axis remapping for MPU6050 orientation
-const int kGyroAxisX = 2;   // gz in raw data
-const int kGyroAxisY = 1;   // gy in raw data
-const int kGyroAxisZ = 0;   // gx in raw data
+const int kGyroAxisX = 2; // gz in raw data
+const int kGyroAxisY = 1; // gy in raw data
+const int kGyroAxisZ = 0; // gx in raw data
 
 // Gyro sign correction
 const double kGyroSignX = -1.0;
@@ -68,7 +68,13 @@ List<double> _quatRotateVector(_Quaternion q, List<double> v) {
   return [rotated.x, rotated.y, rotated.z];
 }
 
-_Quaternion _quatIntegrate(_Quaternion q, double wx, double wy, double wz, double dt) {
+_Quaternion _quatIntegrate(
+  _Quaternion q,
+  double wx,
+  double wy,
+  double wz,
+  double dt,
+) {
   // omega_pure = [0, wx, wy, wz]
   final qDot = _Quaternion(
     -0.5 * (q.x * wx + q.y * wy + q.z * wz),
@@ -76,12 +82,14 @@ _Quaternion _quatIntegrate(_Quaternion q, double wx, double wy, double wz, doubl
     0.5 * (q.w * wy - q.x * wz + q.z * wx),
     0.5 * (q.w * wz + q.x * wy - q.y * wx),
   );
-  return _quatNormalize(_Quaternion(
-    q.w + qDot.w * dt,
-    q.x + qDot.x * dt,
-    q.y + qDot.y * dt,
-    q.z + qDot.z * dt,
-  ));
+  return _quatNormalize(
+    _Quaternion(
+      q.w + qDot.w * dt,
+      q.x + qDot.x * dt,
+      q.y + qDot.y * dt,
+      q.z + qDot.z * dt,
+    ),
+  );
 }
 
 _Quaternion _quatFromAccel(double ax, double ay, double az) {
@@ -107,8 +115,14 @@ _Quaternion _quatFromAccel(double ax, double ay, double az) {
     }
     final len = cross.abs();
     if (len > 1e-6) {
-      axis = [axis[1] * az - axis[2] * ay, axis[2] * ax - axis[0] * az, axis[0] * ay - axis[1] * ax];
-      norm = math.sqrt(axis[0] * axis[0] + axis[1] * axis[1] + axis[2] * axis[2]);
+      axis = [
+        axis[1] * az - axis[2] * ay,
+        axis[2] * ax - axis[0] * az,
+        axis[0] * ay - axis[1] * ax,
+      ];
+      norm = math.sqrt(
+        axis[0] * axis[0] + axis[1] * axis[1] + axis[2] * axis[2],
+      );
       if (norm > 1e-6) {
         axis = [axis[0] / norm, axis[1] / norm, axis[2] / norm];
       }
@@ -118,8 +132,8 @@ _Quaternion _quatFromAccel(double ax, double ay, double az) {
 
   // Cross product for rotation axis
   var axisX = 0.0 - ay * 1.0 - az * 0.0; // cross([ax,ay,az], [0,0,1])[0]
-  var axisY = ax * 1.0 - 0.0 - az * 0.0;  // cross([ax,ay,az], [0,0,1])[1]
-  var axisZ = ax * 0.0 - ay * 0.0 - 0.0;  // cross([ax,ay,az], [0,0,1])[2]
+  var axisY = ax * 1.0 - 0.0 - az * 0.0; // cross([ax,ay,az], [0,0,1])[1]
+  var axisZ = ax * 0.0 - ay * 0.0 - 0.0; // cross([ax,ay,az], [0,0,1])[2]
 
   norm = math.sqrt(axisX * axisX + axisY * axisY + axisZ * axisZ);
   if (norm > 1e-6) {
@@ -134,12 +148,7 @@ _Quaternion _quatFromAccel(double ax, double ay, double az) {
 
   final angle = math.acos(dot.clamp(-1.0, 1.0));
   final s = math.sin(angle / 2.0);
-  return _Quaternion(
-    math.cos(angle / 2.0),
-    axisX * s,
-    axisY * s,
-    axisZ * s,
-  );
+  return _Quaternion(math.cos(angle / 2.0), axisX * s, axisY * s, axisZ * s);
 }
 
 /// Message untuk komunikasi dengan isolate
@@ -173,10 +182,11 @@ class ScoringConfig {
   static const double stabilityGyroLimit = 4.0; // rad/s threshold
 
   // Phase durations (in samples @ 100Hz)
-  static const int holdDurationIdx = 150;  // 1.5s hold
+  static const int holdDurationIdx = 150; // 1.5s hold
   static const int pressDurationIdx = 30; // 0.3s press
   static const int recoilDurationIdx = 10; // 0.1s recoil
-  static const int totalHistoryNeeded = holdDurationIdx + recoilDurationIdx + 10;
+  static const int totalHistoryNeeded =
+      holdDurationIdx + recoilDurationIdx + 10;
 
   // Trigger thresholds
   static const double defaultPiezoMin = 100.0;
@@ -190,13 +200,13 @@ class ScoringConfig {
   static double getDifficultyMultiplier(FirearmType type) {
     switch (type) {
       case FirearmType.pistol:
-        return 1.0;    // Baseline
+        return 1.0; // Baseline
       case FirearmType.rifle:
-        return 0.7;    // More stable platform, stricter
+        return 0.7; // More stable platform, stricter
       case FirearmType.archery:
-        return 1.3;    // High precision needed
+        return 1.3; // High precision needed
       case FirearmType.shotgun:
-        return 0.9;    // Follow-through focus
+        return 0.9; // Follow-through focus
     }
   }
 
@@ -204,9 +214,9 @@ class ScoringConfig {
   static double getModeMultiplier(TrainingMode mode) {
     switch (mode) {
       case TrainingMode.dryFire:
-        return 1.0;  // Baseline
+        return 1.0; // Baseline
       case TrainingMode.liveFire:
-        return 0.8;  // More forgiving due to recoil
+        return 0.8; // More forgiving due to recoil
     }
   }
 
@@ -253,7 +263,8 @@ class ScoringConfig {
     }
 
     if (recoilDeltas.isNotEmpty) {
-      final avgRecoil = recoilDeltas.reduce((a, b) => a + b) / recoilDeltas.length;
+      final avgRecoil =
+          recoilDeltas.reduce((a, b) => a + b) / recoilDeltas.length;
       recoilPenalty = math.sqrt(avgRecoil) * 5.0 * baseMultiplier;
     }
 
@@ -263,9 +274,13 @@ class ScoringConfig {
 
     // Combined score
     final totalPenalty =
-        travelPenalty + jerkPenalty +
-        holdPenalty + pressPenalty + recoilPenalty +
-        elevPenalty + windPenalty;
+        travelPenalty +
+        jerkPenalty +
+        holdPenalty +
+        pressPenalty +
+        recoilPenalty +
+        elevPenalty +
+        windPenalty;
 
     final rawScore = 100.0 - totalPenalty;
     final score = math.max(0.0, math.min(100.0, rawScore));
@@ -324,20 +339,24 @@ class ShotDetector {
 
   // Auto-tare parameters (same as Python stasysz.py)
   bool isCalibrated = false;
-  double driftThreshold = 0.02;     // ~1.1° trigger re-tare (was 0.05)
-  double stationaryThreshold = 0.15; // rad/s — MPU6050 noise floor at true rest (~8.6 deg/s)
-  double autoTareInterval = 3.0;     // seconds between auto-tares (was 5s)
+  double driftThreshold = 0.02; // ~1.1° trigger re-tare (was 0.05)
+  double stationaryThreshold =
+      0.15; // rad/s — MPU6050 noise floor at true rest (~8.6 deg/s)
+  double autoTareInterval = 3.0; // seconds between auto-tares (was 5s)
   double lastAutoTare = 0.0;
   int stationaryCount = 0;
-  int stationaryNeeded = 50;         // ~0.5s of stillness at 100Hz
-  double gxRaw = 0.0, gyRaw = 0.0, gzRaw = 0.0;  // raw gyro for stationary detection
+  int stationaryNeeded = 50; // ~0.5s of stillness at 100Hz
+  double gxRaw = 0.0,
+      gyRaw = 0.0,
+      gzRaw = 0.0; // raw gyro for stationary detection
 
   // Previous accelerometer for jerk calculation
   double _prevAx = 0, _prevAy = 0, _prevAz = 0;
 
   // Buffer size for trace history
-  int get _bufferSize => (ScoringConfig.holdDurationIdx +
-                         ScoringConfig.recoilDurationIdx + 10) * 2;
+  int get _bufferSize =>
+      (ScoringConfig.holdDurationIdx + ScoringConfig.recoilDurationIdx + 10) *
+      2;
 
   static const double dt = 0.01; // 100Hz = 10ms
 
@@ -400,8 +419,7 @@ class ShotDetector {
     _q = _quatIntegrate(_q, wx, wy, wz, dt);
 
     // 4. Relative (tared) quaternion
-    final qRel = _quatNormalize(
-      _quatMultiply(_quatConjugate(_qTare), _q));
+    final qRel = _quatNormalize(_quatMultiply(_quatConjugate(_qTare), _q));
 
     // 5. Project barrel direction to 2D screen coordinates
     //    Using atan2 projection (from stasysz.py)
@@ -485,10 +503,9 @@ class ShotDetector {
         break;
     }
 
-    // Silent auto-tare if drift accumulated (same as Python stasysz.py)
-    // Auto-tare triggers when: stationary for ~0.5s AND drift > 1.1°
-    autoTare();
-
+    // Keep the live trace in one continuous reference frame for the session.
+    // Re-taring here would move the current point to (0, 0) and break the
+    // stability history. Tare is performed during calibration or reset_axis.
     return result;
   }
 
@@ -520,7 +537,9 @@ class ShotDetector {
     if (stationaryCount < stationaryNeeded) return;
 
     // Check if drift is significant
-    final aimOffset = math.sqrt(lastTraceX * lastTraceX + lastTraceY * lastTraceY);
+    final aimOffset = math.sqrt(
+      lastTraceX * lastTraceX + lastTraceY * lastTraceY,
+    );
     if (aimOffset >= driftThreshold) {
       // CRITICAL: Reset qTare to stop drift accumulation (same as Python _apply_tare)
       _qTare = _q.copy();
@@ -565,12 +584,30 @@ class ShotDetector {
     final breakY = fullY[idxBreak];
 
     // Normalized segments
-    final holdX = fullX.sublist(idxHoldStart, idxPressStart).map((v) => v - breakX).toList();
-    final holdY = fullY.sublist(idxHoldStart, idxPressStart).map((v) => v - breakY).toList();
-    final pressX = fullX.sublist(idxPressStart, idxBreak + 1).map((v) => v - breakX).toList();
-    final pressY = fullY.sublist(idxPressStart, idxBreak + 1).map((v) => v - breakY).toList();
-    final recoilX = fullX.sublist(idxBreak, idxRecoilEnd).map((v) => v - breakX).toList();
-    final recoilY = fullY.sublist(idxBreak, idxRecoilEnd).map((v) => v - breakY).toList();
+    final holdX = fullX
+        .sublist(idxHoldStart, idxPressStart)
+        .map((v) => v - breakX)
+        .toList();
+    final holdY = fullY
+        .sublist(idxHoldStart, idxPressStart)
+        .map((v) => v - breakY)
+        .toList();
+    final pressX = fullX
+        .sublist(idxPressStart, idxBreak + 1)
+        .map((v) => v - breakX)
+        .toList();
+    final pressY = fullY
+        .sublist(idxPressStart, idxBreak + 1)
+        .map((v) => v - breakY)
+        .toList();
+    final recoilX = fullX
+        .sublist(idxBreak, idxRecoilEnd)
+        .map((v) => v - breakX)
+        .toList();
+    final recoilY = fullY
+        .sublist(idxBreak, idxRecoilEnd)
+        .map((v) => v - breakY)
+        .toList();
 
     // Calculate total travel for press phase
     double totalTravel = 0;
@@ -605,7 +642,8 @@ class ShotDetector {
     final recoilDeltas = _getDeltas(recoilX, recoilY);
 
     // Calculate all scores
-    final multiplier = ScoringConfig.getDifficultyMultiplier(firearmType) *
+    final multiplier =
+        ScoringConfig.getDifficultyMultiplier(firearmType) *
         ScoringConfig.getModeMultiplier(trainingMode);
 
     final totalScore = ScoringConfig.calculateScore(
@@ -622,7 +660,10 @@ class ShotDetector {
 
     final holdScore = ScoringConfig.calculatePhaseScore(holdDeltas, multiplier);
     final pressScore = ScoringConfig.calculatePhaseScore(allDeltas, multiplier);
-    final recoilScore = ScoringConfig.calculatePhaseScore(recoilDeltas, multiplier);
+    final recoilScore = ScoringConfig.calculatePhaseScore(
+      recoilDeltas,
+      multiplier,
+    );
     final elevScore = ScoringConfig.calculateAxisScore(elevTravel);
     final windScore = ScoringConfig.calculateAxisScore(windTravel);
 
@@ -710,7 +751,8 @@ class SensorDataIsolate {
 
   // Auto-calibration: runs on first 50 samples automatically
   bool _autoCalibrating = true;
-  final List<List<double>> _autoCalSamples = [];  // [ax, ay, az, gx, gy, gz] per sample
+  final List<List<double>> _autoCalSamples =
+      []; // [ax, ay, az, gx, gy, gz] per sample
 
   double _offsetGyroX = 0.0;
   double _offsetGyroY = 0.0;
@@ -864,8 +906,12 @@ class SensorDataIsolate {
         double sumGx = 0, sumGy = 0, sumGz = 0;
         double sumAx = 0, sumAy = 0, sumAz = 0;
         for (final s in _autoCalSamples) {
-          sumAx += s[0]; sumAy += s[1]; sumAz += s[2];
-          sumGx += s[3]; sumGy += s[4]; sumGz += s[5];
+          sumAx += s[0];
+          sumAy += s[1];
+          sumAz += s[2];
+          sumGx += s[3];
+          sumGy += s[4];
+          sumGz += s[5];
         }
         final n = _autoCalSamples.length.toDouble();
         _offsetGyroX = sumGx / n;
@@ -885,7 +931,9 @@ class SensorDataIsolate {
         // Process ALL calibration samples through detector to build initial trace
         for (final s in _autoCalSamples) {
           _shotDetector.process(
-            ax: s[0], ay: s[1], az: s[2],
+            ax: s[0],
+            ay: s[1],
+            az: s[2],
             gx: s[3] - _offsetGyroX,
             gy: s[4] - _offsetGyroY,
             gz: s[5] - _offsetGyroZ,
@@ -897,11 +945,13 @@ class SensorDataIsolate {
         _autoCalibrating = false;
         _isCalibrated = true;
         _shotDetector.isCalibrated = true;
-        _mainSendPort.send(SensorDataMessage('calibration_complete', {
-          'offsetGyroX': _offsetGyroX,
-          'offsetGyroY': _offsetGyroY,
-          'offsetGyroZ': _offsetGyroZ,
-        }));
+        _mainSendPort.send(
+          SensorDataMessage('calibration_complete', {
+            'offsetGyroX': _offsetGyroX,
+            'offsetGyroY': _offsetGyroY,
+            'offsetGyroZ': _offsetGyroZ,
+          }),
+        );
       }
       return; // Skip throttled update during calibration accumulation
     }
@@ -915,10 +965,12 @@ class SensorDataIsolate {
 
       // Send progress update every 10 samples
       if (_calibrationSamplesCount % 10 == 0) {
-        _mainSendPort.send(SensorDataMessage('calibration_progress', {
-          'count': _calibrationSamplesCount,
-          'total': _samplesToCollect,
-        }));
+        _mainSendPort.send(
+          SensorDataMessage('calibration_progress', {
+            'count': _calibrationSamplesCount,
+            'total': _samplesToCollect,
+          }),
+        );
       }
 
       if (_calibrationSamplesCount >= _samplesToCollect) {
@@ -938,11 +990,13 @@ class SensorDataIsolate {
         _isCalibrating = false;
         _isCalibrated = true;
 
-        _mainSendPort.send(SensorDataMessage('calibration_complete', {
-          'offsetGyroX': _offsetGyroX,
-          'offsetGyroY': _offsetGyroY,
-          'offsetGyroZ': _offsetGyroZ,
-        }));
+        _mainSendPort.send(
+          SensorDataMessage('calibration_complete', {
+            'offsetGyroX': _offsetGyroX,
+            'offsetGyroY': _offsetGyroY,
+            'offsetGyroZ': _offsetGyroZ,
+          }),
+        );
       }
       return;
     }
@@ -988,16 +1042,20 @@ class SensorDataIsolate {
 
     // Shot detection — pass RAW gyro, let process() bias-correct once internally
     final shotResult = _shotDetector.process(
-      ax: ax, ay: ay, az: az,
-      gx: gx, gy: gy, gz: gz,  // raw sensor values (NOT fixedGx/fixedGy/fixedGz)
+      ax: ax,
+      ay: ay,
+      az: az,
+      gx: gx,
+      gy: gy,
+      gz: gz, // raw sensor values (NOT fixedGx/fixedGy/fixedGz)
       piezo: piezo,
     );
 
     if (shotResult != null) {
       _sessionShots.add(shotResult);
-      _mainSendPort.send(SensorDataMessage('shot_detected', {
-        'shot': shotResult.toMap(),
-      }));
+      _mainSendPort.send(
+        SensorDataMessage('shot_detected', {'shot': shotResult.toMap()}),
+      );
     }
 
     _dataPointsReceived++;
@@ -1019,18 +1077,20 @@ class SensorDataIsolate {
   void _sendThrottledUpdate() {
     if (_newGyroX.isEmpty) return;
 
-    _mainSendPort.send(SensorDataMessage('ui_update', {
-      'gyroX': _fullGyroX.toList(),
-      'gyroY': _fullGyroY.toList(),
-      'gyroZ': _fullGyroZ.toList(),
-      'accelX': _fullAccelX.toList(),
-      'accelY': _fullAccelY.toList(),
-      'accelZ': _fullAccelZ.toList(),
-      'traceX': _shotDetector.traceX,
-      'traceY': _shotDetector.traceY,
-      'liveX': _shotDetector.lastTraceX,
-      'liveY': _shotDetector.lastTraceY,
-    }));
+    _mainSendPort.send(
+      SensorDataMessage('ui_update', {
+        'gyroX': _fullGyroX.toList(),
+        'gyroY': _fullGyroY.toList(),
+        'gyroZ': _fullGyroZ.toList(),
+        'accelX': _fullAccelX.toList(),
+        'accelY': _fullAccelY.toList(),
+        'accelZ': _fullAccelZ.toList(),
+        'traceX': _shotDetector.traceX,
+        'traceY': _shotDetector.traceY,
+        'liveX': _shotDetector.lastTraceX,
+        'liveY': _shotDetector.lastTraceY,
+      }),
+    );
 
     _newGyroX.clear();
     _newGyroY.clear();
@@ -1041,18 +1101,20 @@ class SensorDataIsolate {
   }
 
   void _sendFullSync() {
-    _mainSendPort.send(SensorDataMessage('ui_update', {
-      'gyroX': _fullGyroX.toList(),
-      'gyroY': _fullGyroY.toList(),
-      'gyroZ': _fullGyroZ.toList(),
-      'accelX': _fullAccelX.toList(),
-      'accelY': _fullAccelY.toList(),
-      'accelZ': _fullAccelZ.toList(),
-      'traceX': _shotDetector.traceX,
-      'traceY': _shotDetector.traceY,
-      'liveX': _shotDetector.lastTraceX,
-      'liveY': _shotDetector.lastTraceY,
-    }));
+    _mainSendPort.send(
+      SensorDataMessage('ui_update', {
+        'gyroX': _fullGyroX.toList(),
+        'gyroY': _fullGyroY.toList(),
+        'gyroZ': _fullGyroZ.toList(),
+        'accelX': _fullAccelX.toList(),
+        'accelY': _fullAccelY.toList(),
+        'accelZ': _fullAccelZ.toList(),
+        'traceX': _shotDetector.traceX,
+        'traceY': _shotDetector.traceY,
+        'liveX': _shotDetector.lastTraceX,
+        'liveY': _shotDetector.lastTraceY,
+      }),
+    );
   }
 
   void _startCalibration() {
@@ -1105,15 +1167,17 @@ class SensorDataIsolate {
   }
 
   void _sendSessionData() {
-    _mainSendPort.send(SensorDataMessage('session_data', {
-      'gyroX': List<DataPoint>.from(_sessionGyroX),
-      'gyroY': List<DataPoint>.from(_sessionGyroY),
-      'gyroZ': List<DataPoint>.from(_sessionGyroZ),
-      'accelX': List<DataPoint>.from(_sessionAccelX),
-      'accelY': List<DataPoint>.from(_sessionAccelY),
-      'accelZ': List<DataPoint>.from(_sessionAccelZ),
-      'shots': _sessionShots.map((s) => s.toMap()).toList(),
-    }));
+    _mainSendPort.send(
+      SensorDataMessage('session_data', {
+        'gyroX': List<DataPoint>.from(_sessionGyroX),
+        'gyroY': List<DataPoint>.from(_sessionGyroY),
+        'gyroZ': List<DataPoint>.from(_sessionGyroZ),
+        'accelX': List<DataPoint>.from(_sessionAccelX),
+        'accelY': List<DataPoint>.from(_sessionAccelY),
+        'accelZ': List<DataPoint>.from(_sessionAccelZ),
+        'shots': _sessionShots.map((s) => s.toMap()).toList(),
+      }),
+    );
   }
 
   void _clearSessionData() {

@@ -11,9 +11,9 @@ import '../models/data_models.dart';
 import '../theme/app_theme.dart';
 
 // Phase colors (MantisX style — STSYS palette)
-const Color _holdColor = Color(0xFFFFB693);    // STSYS primary — orange
-const Color _pressColor = Color(0xFF8BCEFF);   // STSYS secondary — blue
-const Color _recoilColor = Color(0xFFFFB4AB);  // STSYS error — coral
+const Color _holdColor = Color(0xFFFFB693); // STSYS primary — orange
+const Color _pressColor = Color(0xFF8BCEFF); // STSYS secondary — blue
+const Color _recoilColor = Color(0xFFFFB4AB); // STSYS error — coral
 
 // Scoring ring colors (MantisX zones)
 const Color _eliteColor = Color(0xFFFFD700);
@@ -26,11 +26,7 @@ class MuzzleTraceWidget extends StatefulWidget {
   final double zoom;
   final bool showGrid;
 
-  const MuzzleTraceWidget({
-    super.key,
-    this.zoom = 0.05,
-    this.showGrid = true,
-  });
+  const MuzzleTraceWidget({super.key, this.zoom = 0.05, this.showGrid = true});
 
   @override
   State<MuzzleTraceWidget> createState() => _MuzzleTraceWidgetState();
@@ -39,12 +35,13 @@ class MuzzleTraceWidget extends StatefulWidget {
 class _MuzzleTraceWidgetState extends State<MuzzleTraceWidget>
     with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   // --- 60fps lerp: dot animates toward target ---
-  double _dotX = 0.0, _dotY = 0.0;    // current rendered position
+  double _dotX = 0.0, _dotY = 0.0; // current rendered position
   double _targetX = 0.0, _targetY = 0.0; // EMA-smoothed target
 
   // --- Camera-follow: center lerps toward dot with 500ms delay ---
   double _cameraX = 0.0, _cameraY = 0.0; // current camera center (world offset)
-  static const double _cameraLerp = 0.03;  // ~500ms delay (lower=slower=more delay)
+  static const double _cameraLerp =
+      0.03; // ~500ms delay (lower=slower=more delay)
 
   // --- Speed tracking for dot sizing ---
   double _liveSpeed = 0.0;
@@ -76,8 +73,8 @@ class _MuzzleTraceWidgetState extends State<MuzzleTraceWidget>
   double _lastTickTime = 0;
 
   // --- Auto-zoom: keep movement visible on canvas ---
-  static const double _minZoom = 0.015;  // max zoom-in (tight)
-  static const double _maxZoom = 0.12;  // max zoom-out (wide view)
+  static const double _minZoom = 0.015; // max zoom-in (tight)
+  static const double _maxZoom = 0.12; // max zoom-out (wide view)
   double _currentZoom = 0.05;
   double _autoZoomLerp = 0.02;
 
@@ -152,7 +149,9 @@ class _MuzzleTraceWidgetState extends State<MuzzleTraceWidget>
       }
       // Target: dot at edge of canvas at 80% fill
       final targetZoom = (maxExtent > 0.01) ? (maxExtent * 1.25) : _currentZoom;
-      _currentZoom = _currentZoom + (targetZoom.clamp(_minZoom, _maxZoom) - _currentZoom) * _autoZoomLerp;
+      _currentZoom =
+          _currentZoom +
+          (targetZoom.clamp(_minZoom, _maxZoom) - _currentZoom) * _autoZoomLerp;
     }
 
     if (mounted) setState(() {});
@@ -196,7 +195,9 @@ class _MuzzleTraceWidgetState extends State<MuzzleTraceWidget>
     _recentTrace.clear();
     final traceXs = provider.traceXData;
     final traceYs = provider.traceYData;
-    final traceLen = traceXs.length < traceYs.length ? traceXs.length : traceYs.length;
+    final traceLen = traceXs.length < traceYs.length
+        ? traceXs.length
+        : traceYs.length;
 
     for (int i = 0; i < traceLen; i++) {
       final phase = _isRecoil
@@ -241,11 +242,6 @@ class _MuzzleTraceWidgetState extends State<MuzzleTraceWidget>
           setState(() {
             _isRecoil = false;
             _isHold = true;
-            _recentTrace.clear();
-            _dotX = 0.0;
-            _dotY = 0.0;
-            _targetX = 0.0;
-            _targetY = 0.0;
           });
         }
       });
@@ -280,7 +276,10 @@ class _MuzzleTraceWidgetState extends State<MuzzleTraceWidget>
                   _PhaseDot('R', _recoilColor, _isRecoil),
                   const Spacer(),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 4,
+                    ),
                     decoration: BoxDecoration(
                       color: StsysTheme.surfaceContainerHighest,
                       borderRadius: BorderRadius.circular(20),
@@ -351,9 +350,17 @@ class _MuzzleTraceWidgetState extends State<MuzzleTraceWidget>
         mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [
           _scoreChip('HOLD', shot.holdScore, _holdColor),
-          Container(width: 1, height: 28, color: StsysTheme.outlineVariant.withValues(alpha: 0.2)),
+          Container(
+            width: 1,
+            height: 28,
+            color: StsysTheme.outlineVariant.withValues(alpha: 0.2),
+          ),
           _scoreChip('PRESS', shot.pressScore, _pressColor),
-          Container(width: 1, height: 28, color: StsysTheme.outlineVariant.withValues(alpha: 0.2)),
+          Container(
+            width: 1,
+            height: 28,
+            color: StsysTheme.outlineVariant.withValues(alpha: 0.2),
+          ),
           _scoreChip('RECOIL', shot.recoilScore, _recoilColor),
         ],
       ),
@@ -482,11 +489,31 @@ class _MuzzleTracePainter extends CustomPainter {
   final Paint _currentDotPaint = Paint()..style = PaintingStyle.fill;
 
   static final List<(double, Color, Color)> _ringRenders = [
-    (0.2, _beginnerColor.withValues(alpha: 0.04), _beginnerColor.withValues(alpha: 0.2)),
-    (0.4, _intermediateColor.withValues(alpha: 0.04), _intermediateColor.withValues(alpha: 0.2)),
-    (0.6, _advancedColor.withValues(alpha: 0.04), _advancedColor.withValues(alpha: 0.2)),
-    (0.8, _expertColor.withValues(alpha: 0.04), _expertColor.withValues(alpha: 0.2)),
-    (1.0, _eliteColor.withValues(alpha: 0.04), _eliteColor.withValues(alpha: 0.2)),
+    (
+      0.2,
+      _beginnerColor.withValues(alpha: 0.04),
+      _beginnerColor.withValues(alpha: 0.2),
+    ),
+    (
+      0.4,
+      _intermediateColor.withValues(alpha: 0.04),
+      _intermediateColor.withValues(alpha: 0.2),
+    ),
+    (
+      0.6,
+      _advancedColor.withValues(alpha: 0.04),
+      _advancedColor.withValues(alpha: 0.2),
+    ),
+    (
+      0.8,
+      _expertColor.withValues(alpha: 0.04),
+      _expertColor.withValues(alpha: 0.2),
+    ),
+    (
+      1.0,
+      _eliteColor.withValues(alpha: 0.04),
+      _eliteColor.withValues(alpha: 0.2),
+    ),
   ];
 
   static final Paint _ringFillPaint = Paint()..style = PaintingStyle.fill;
@@ -546,8 +573,14 @@ class _MuzzleTracePainter extends CustomPainter {
         final prev = trace[i - 1];
         final curr = trace[i];
         // Skip invalid points (NaN/Infinity from corrupted sensor data)
-        if (prev.x.isNaN || prev.x.isInfinite || curr.x.isNaN || curr.x.isInfinite ||
-            prev.y.isNaN || prev.y.isInfinite || curr.y.isNaN || curr.y.isInfinite) {
+        if (prev.x.isNaN ||
+            prev.x.isInfinite ||
+            curr.x.isNaN ||
+            curr.x.isInfinite ||
+            prev.y.isNaN ||
+            prev.y.isInfinite ||
+            curr.y.isNaN ||
+            curr.y.isInfinite) {
           continue;
         }
         // Skip extreme jumps that indicate data corruption or tare artifacts
@@ -558,7 +591,9 @@ class _MuzzleTracePainter extends CustomPainter {
         }
         final ageFraction = i / traceLen;
         final opacity = fadeMin + (1.0 - fadeMin) * ageFraction;
-        _tracePaint.color = _getPhaseColor(curr.phase).withValues(alpha: opacity);
+        _tracePaint.color = _getPhaseColor(
+          curr.phase,
+        ).withValues(alpha: opacity);
         canvas.drawLine(
           Offset(offsetX + prev.x * scale, offsetY + prev.y * scale),
           Offset(offsetX + curr.x * scale, offsetY + curr.y * scale),
@@ -575,7 +610,9 @@ class _MuzzleTracePainter extends CustomPainter {
     for (int t = 3; t >= 1; t--) {
       final trailAlpha = (0.3 - t * 0.08);
       final trailRadius = 4.0 * (1.0 - t * 0.2);
-      _trailDotPaint.color = Colors.white.withValues(alpha: trailAlpha.clamp(0.0, 1.0));
+      _trailDotPaint.color = Colors.white.withValues(
+        alpha: trailAlpha.clamp(0.0, 1.0),
+      );
       canvas.drawCircle(
         Offset(dotPx - t * 2.0, dotPy),
         trailRadius,
@@ -592,7 +629,13 @@ class _MuzzleTracePainter extends CustomPainter {
     canvas.drawLine(Offset(cx, cy - 20), Offset(cx, cy + 20), crosshairPaint);
   }
 
-  void _drawScoringRings(Canvas canvas, double cx, double cy, double scale, Size size) {
+  void _drawScoringRings(
+    Canvas canvas,
+    double cx,
+    double cy,
+    double scale,
+    Size size,
+  ) {
     for (final ring in _ringRenders) {
       final radius = ring.$1 * scale;
       if (radius > 0 && radius < size.width / 2) {
@@ -602,19 +645,32 @@ class _MuzzleTracePainter extends CustomPainter {
         canvas.drawCircle(Offset(cx, cy), radius, _ringStrokePaint);
       }
     }
-    _eliteLabel.paint(canvas, Offset(cx + scale * 0.7 * 0.7, cy - scale * 0.7 * 0.7));
-    _expertLabel.paint(canvas, Offset(cx + scale * 0.9 * 0.7 * 0.7, cy - scale * 0.9 * 0.7 * 0.7));
+    _eliteLabel.paint(
+      canvas,
+      Offset(cx + scale * 0.7 * 0.7, cy - scale * 0.7 * 0.7),
+    );
+    _expertLabel.paint(
+      canvas,
+      Offset(cx + scale * 0.9 * 0.7 * 0.7, cy - scale * 0.9 * 0.7 * 0.7),
+    );
   }
 
   Color _getPhaseColor(TracePhase phase) {
     switch (phase) {
-      case TracePhase.hold: return _holdColor;
-      case TracePhase.press: return _pressColor;
-      case TracePhase.recoil: return _recoilColor;
+      case TracePhase.hold:
+        return _holdColor;
+      case TracePhase.press:
+        return _pressColor;
+      case TracePhase.recoil:
+        return _recoilColor;
     }
   }
 
-  double _clamp(double v, double lo, double hi) => v < lo ? lo : v > hi ? hi : v;
+  double _clamp(double v, double lo, double hi) => v < lo
+      ? lo
+      : v > hi
+      ? hi
+      : v;
 
   @override
   bool shouldRepaint(covariant _MuzzleTracePainter oldDelegate) {
@@ -626,8 +682,10 @@ class _MuzzleTracePainter extends CustomPainter {
     if (trace.isNotEmpty && oldDelegate.trace.isNotEmpty) {
       final oldLast = oldDelegate.trace.last;
       final newLast = trace.last;
-      if (oldLast.x != newLast.x || oldLast.y != newLast.y ||
-          oldLast.phase != newLast.phase) return true;
+      if (oldLast.x != newLast.x ||
+          oldLast.y != newLast.y ||
+          oldLast.phase != newLast.phase)
+        return true;
     }
     if (oldDelegate.phaseColor != phaseColor) return true;
     if (oldDelegate.liveSpeed != liveSpeed) return true;

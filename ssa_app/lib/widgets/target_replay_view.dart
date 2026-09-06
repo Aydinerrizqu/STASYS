@@ -56,9 +56,7 @@ class _TargetReplayViewState extends State<TargetReplayView>
     _controller = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 2500),
-    )
-      ..addListener(_onProgress)
-      ..addStatusListener(_onAnimationStatus);
+    )..addListener(_onProgress);
   }
 
   void _onProgress() {
@@ -67,12 +65,6 @@ class _TargetReplayViewState extends State<TargetReplayView>
       setState(() => _isPlaying = false);
     } else {
       setState(() {});
-    }
-  }
-
-  void _onAnimationStatus(AnimationStatus status) {
-    if (status == AnimationStatus.completed && mounted && _isPlaying) {
-      setState(() => _isPlaying = false);
     }
   }
 

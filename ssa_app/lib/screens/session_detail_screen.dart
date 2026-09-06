@@ -8,8 +8,9 @@ import '../theme/app_theme.dart';
 import '../widgets/analysis_tab.dart';
 import '../widgets/replay_shot_widget.dart';
 import '../widgets/shot_trace_geometry.dart';
+import '../widgets/target_replay_view.dart';
 
-enum _DetailTab { postShot, analysis }
+enum _DetailTab { target, shotData, analysis }
 
 class SessionDetailScreen extends StatefulWidget {
   final SessionLog session;
@@ -23,7 +24,7 @@ class SessionDetailScreen extends StatefulWidget {
 class _SessionDetailScreenState extends State<SessionDetailScreen> {
   ShotResult? _selectedShot;
   int? _selectedShotIndex;
-  _DetailTab _tab = _DetailTab.postShot;
+  _DetailTab _tab = _DetailTab.target;
 
   // Built lazily on first switch to ANALYSIS so the post-shot view
   // (the default tab) stays snappy.
@@ -54,6 +55,56 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
         _analysisTrace = ReplayEngine().replay(widget.session);
       }
     });
+  }
+
+  Widget _buildTargetBody() {
+    if (_selectedShot == null || _selectedShotIndex == null) {
+      return const Center(child: Text('NO SHOTS IN SESSION'));
+    }
+    return SingleChildScrollView(
+      child: Column(
+        children: [
+          _TargetScoreRow(
+            shotScore: _selectedShot!.totalScore,
+            averageScore: widget.session.averageScore,
+            scoreColor: _getScoreColor(_selectedShot!.totalScore),
+          ),
+          TargetReplayView(
+            key: ValueKey(
+              'target-replay-${_selectedShotIndex!}-${_selectedShot!.timestamp.microsecondsSinceEpoch}',
+            ),
+            shot: _selectedShot!,
+            shotIndex: _selectedShotIndex!,
+            getScoreColor: _getScoreColor,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildShotDataBody() {
+    if (_selectedShot == null || _selectedShotIndex == null) {
+      return const Center(child: Text('NO SHOTS IN SESSION'));
+    }
+    return SingleChildScrollView(
+      child: Column(
+        children: [
+          _ShotDetailPanel(
+            shot: _selectedShot!,
+            shotIndex: _selectedShotIndex!,
+            getScoreColor: _getScoreColor,
+          ),
+          ReplayShotWidget(
+            key: ValueKey(
+              'replay-shot-${_selectedShotIndex!}-${_selectedShot!.timestamp.microsecondsSinceEpoch}',
+            ),
+            shot: _selectedShot!,
+            shotIndex: _selectedShotIndex!,
+            getScoreColor: _getScoreColor,
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _buildAnalysisBody() {
@@ -208,54 +259,17 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
               ),
             ),
 
-            // Tab toggle: POST SHOT | ANALYSIS
             _buildTabToggle(),
 
-            // ANALYSIS tab: barrel trace + scrubber + per-shot panel.
-            if (_tab == _DetailTab.analysis)
-              Expanded(child: _buildAnalysisBody())
-            else ...[
-              if (_selectedShot != null && _selectedShotIndex != null)
-                Expanded(
-                  flex: 2,
-                  child: SingleChildScrollView(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        _ShotDetailPanel(
-                          shot: _selectedShot!,
-                          shotIndex: _selectedShotIndex!,
-                          getScoreColor: _getScoreColor,
-                        ),
-                        ReplayShotWidget(
-                          key: ValueKey(
-                            'replay-shot-${_selectedShotIndex!}-${_selectedShot!.timestamp.microsecondsSinceEpoch}',
-                          ),
-                          shot: _selectedShot!,
-                          shotIndex: _selectedShotIndex!,
-                          getScoreColor: _getScoreColor,
-                        ),
-                      ],
-                    ),
-                  ),
-                )
-              else
-                Expanded(
-                  flex: 3,
-                  child: Center(
-                    child: Text(
-                      'NO SHOTS IN SESSION',
-                      style: TextStyle(
-                        fontFamily: 'Manrope',
-                        fontSize: 14,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 2,
-                        color: StsysTheme.onSurface.withValues(alpha: 0.2),
-                      ),
-                    ),
-                  ),
-                ),
-            ],
+            // Active detail body.
+            Expanded(
+              flex: 3,
+              child: _tab == _DetailTab.analysis
+                  ? _buildAnalysisBody()
+                  : _tab == _DetailTab.target
+                      ? _buildTargetBody()
+                      : _buildShotDataBody(),
+            ),
 
             // Shot list
             if (session.shots.isNotEmpty)
@@ -312,17 +326,18 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                             final scoreColor = _getScoreColor(shot.totalScore);
 
                             return GestureDetector(
+                              key: ValueKey('shot-chip-$index'),
                               onTap: () => _selectShot(shot),
                               child: AnimatedContainer(
                                 duration: const Duration(milliseconds: 200),
-                                width: 70,
+                                width: 56,
+                                height: 56,
                                 margin: const EdgeInsets.only(right: 8),
-                                padding: const EdgeInsets.all(10),
                                 decoration: BoxDecoration(
                                   color: isSelected
                                       ? scoreColor.withValues(alpha: 0.15)
-                                      : StsysTheme.surfaceContainerLow,
-                                  borderRadius: BorderRadius.circular(10),
+                                      : StsysTheme.surfaceContainerHighest,
+                                  shape: BoxShape.circle,
                                   border: Border.all(
                                     color: isSelected
                                         ? scoreColor
@@ -332,45 +347,20 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                                     width: isSelected ? 2 : 1,
                                   ),
                                 ),
-                                child: Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Text(
-                                      '#${index + 1}',
-                                      style: TextStyle(
-                                        fontFamily: 'Inter',
-                                        fontSize: 8,
-                                        fontWeight: FontWeight.w700,
-                                        letterSpacing: 1,
-                                        color: StsysTheme.onSurface.withValues(
-                                          alpha: 0.4,
-                                        ),
-                                      ),
+                                child: Center(
+                                  child: Text(
+                                    shot.totalScore.toInt().toString(),
+                                    style: TextStyle(
+                                      fontFamily: 'Manrope',
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w900,
+                                      color: isSelected
+                                          ? scoreColor
+                                          : StsysTheme.onSurface.withValues(
+                                              alpha: 0.6,
+                                            ),
                                     ),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      shot.totalScore.toInt().toString(),
-                                      style: TextStyle(
-                                        fontFamily: 'Manrope',
-                                        fontSize: 22,
-                                        fontWeight: FontWeight.w900,
-                                        color: scoreColor,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 2),
-                                    Text(
-                                      DateFormat(
-                                        'HH:mm',
-                                      ).format(shot.timestamp),
-                                      style: TextStyle(
-                                        fontFamily: 'Inter',
-                                        fontSize: 8,
-                                        color: StsysTheme.onSurface.withValues(
-                                          alpha: 0.4,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
+                                  ),
                                 ),
                               ),
                             );
@@ -399,7 +389,8 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
         padding: const EdgeInsets.all(3),
         child: Row(
           children: [
-            _tabPill(_DetailTab.postShot, 'POST SHOT'),
+            _tabPill(_DetailTab.target, 'TARGET'),
+            _tabPill(_DetailTab.shotData, 'SHOT DATA'),
             _tabPill(_DetailTab.analysis, 'ANALYSIS'),
           ],
         ),
@@ -480,6 +471,76 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _TargetScoreRow extends StatelessWidget {
+  final double shotScore;
+  final double averageScore;
+  final Color scoreColor;
+
+  const _TargetScoreRow({
+    required this.shotScore,
+    required this.averageScore,
+    required this.scoreColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 4),
+      child: Row(
+        children: [
+          Expanded(
+            child: _scoreValue('SCORE', shotScore, scoreColor, large: true),
+          ),
+          Container(
+            width: 1,
+            height: 42,
+            color: StsysTheme.outlineVariant.withValues(alpha: 0.25),
+          ),
+          Expanded(
+            child: _scoreValue(
+              'MATCH TOTAL',
+              averageScore,
+              StsysTheme.onSurface,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _scoreValue(
+    String label,
+    double score,
+    Color color, {
+    bool large = false,
+  }) {
+    return Column(
+      children: [
+        Text(
+          label,
+          style: TextStyle(
+            fontFamily: 'Inter',
+            fontSize: 9,
+            fontWeight: FontWeight.w800,
+            letterSpacing: 1.5,
+            color: StsysTheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          score.toStringAsFixed(large ? 0 : 1),
+          style: TextStyle(
+            fontFamily: 'Manrope',
+            fontSize: large ? 30 : 24,
+            fontWeight: FontWeight.w900,
+            color: color,
+          ),
+        ),
+      ],
     );
   }
 }

@@ -102,6 +102,30 @@ void main() {
       expect(find.byType(Slider), findsOneWidget);
     });
 
+    testWidgets('starts stopped at the end, then reset and play restart from start',
+        (tester) async {
+      await tester.pumpWidget(MaterialApp(
+        home: TargetReplayView(
+          shot: _shot(),
+          shotIndex: 0,
+          getScoreColor: (_) => Colors.orange,
+        ),
+      ));
+
+      expect(tester.widget<Slider>(find.byType(Slider)).value, 1.0);
+      expect(find.byTooltip('Play'), findsOneWidget);
+
+      await tester.tap(find.byTooltip('Reset'));
+      await tester.pump();
+      expect(tester.widget<Slider>(find.byType(Slider)).value, 0.0);
+
+      await tester.tap(find.byTooltip('Play'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(find.byTooltip('Pause'), findsOneWidget);
+      expect(tester.widget<Slider>(find.byType(Slider)).value, greaterThan(0));
+    });
+
     testWidgets('play returns to play after replay completes', (tester) async {
       await tester.pumpWidget(MaterialApp(
         home: TargetReplayView(
@@ -117,7 +141,6 @@ void main() {
       await tester.pump(const Duration(milliseconds: 2500));
       expect(find.byTooltip('Play'), findsOneWidget);
     });
-
     testWidgets('pause preserves slider progress', (tester) async {
       await tester.pumpWidget(MaterialApp(
         home: TargetReplayView(
@@ -135,6 +158,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 500));
       expect(tester.widget<Slider>(find.byType(Slider)).value, pausedValue);
     });
+
 
     testWidgets('reset returns slider to zero', (tester) async {
       await tester.pumpWidget(MaterialApp(

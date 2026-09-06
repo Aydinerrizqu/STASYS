@@ -56,6 +56,7 @@ class _TargetReplayViewState extends State<TargetReplayView>
     _controller = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 2500),
+      value: 1.0,
     )..addListener(_onProgress);
   }
 

@@ -71,10 +71,17 @@ void main() {
 
       await tester.tap(find.byKey(const ValueKey('shot-chip-0')));
       await tester.pump();
+      expect(
+        tester.widget<Text>(find.byKey(const ValueKey('target-score'))).data,
+        '80',
+      );
+
       await tester.tap(find.byKey(const ValueKey('shot-chip-1')));
       await tester.pump();
-
-      expect(find.text('92'), findsWidgets);
+      expect(
+        tester.widget<Text>(find.byKey(const ValueKey('target-score'))).data,
+        '92',
+      );
       expect(tester.takeException(), isNull);
     });
 
@@ -99,6 +106,61 @@ void main() {
       await tester.pump();
 
       expect(find.text('ANALYSIS'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('empty session shows NO SHOTS and no shot chips', (tester) async {
+      SessionLog emptySession() => SessionLog(
+        id: 'empty-test',
+        date: DateTime(2026, 8, 23),
+        duration: 5,
+        gyroX: const [],
+        gyroY: const [],
+        gyroZ: const [],
+        accelX: const [],
+        accelY: const [],
+        accelZ: const [],
+      );
+      await tester.pumpWidget(MaterialApp(
+        home: SessionDetailScreen(session: emptySession()),
+      ));
+      await tester.pump();
+
+      expect(find.text('NO SHOTS IN SESSION'), findsOneWidget);
+      expect(find.byKey(const ValueKey('shot-chip-0')), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('session swap via didUpdateWidget resets selection and trace',
+        (tester) async {
+      final first = _session();
+      final second = _session();
+      await tester.pumpWidget(MaterialApp(
+        home: SessionDetailScreen(session: first),
+      ));
+      await tester.pump();
+
+      await tester.tap(find.byKey(const ValueKey('shot-chip-0')));
+      await tester.pump();
+      expect(
+        tester.widget<Text>(find.byKey(const ValueKey('target-score'))).data,
+        '80',
+      );
+      await tester.tap(find.text('ANALYSIS'));
+      await tester.pump();
+
+      await tester.pumpWidget(MaterialApp(
+        home: SessionDetailScreen(session: second),
+      ));
+      await tester.pump();
+
+      // Selection resets to the new session's last shot (score 92).
+      await tester.tap(find.text('TARGET'));
+      await tester.pump();
+      expect(
+        tester.widget<Text>(find.byKey(const ValueKey('target-score'))).data,
+        '92',
+      );
       expect(tester.takeException(), isNull);
     });
   });

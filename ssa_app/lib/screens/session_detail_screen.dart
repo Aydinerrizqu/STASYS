@@ -39,6 +39,17 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
     }
   }
 
+  @override
+  void didUpdateWidget(covariant SessionDetailScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.session != widget.session) {
+      final shots = widget.session.shots;
+      _selectedShot = shots.isEmpty ? null : shots.last;
+      _selectedShotIndex = shots.isEmpty ? null : shots.length - 1;
+      _analysisTrace = null;
+    }
+  }
+
   void _selectShot(ShotResult shot) {
     final idx = widget.session.shots.indexOf(shot);
     setState(() {
@@ -533,6 +544,7 @@ class _TargetScoreRow extends StatelessWidget {
         const SizedBox(height: 2),
         Text(
           score.toStringAsFixed(large ? 0 : 1),
+          key: large ? const ValueKey('target-score') : null,
           style: TextStyle(
             fontFamily: 'Manrope',
             fontSize: large ? 30 : 24,

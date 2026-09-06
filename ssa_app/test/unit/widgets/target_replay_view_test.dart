@@ -56,6 +56,37 @@ void main() {
   });
 
   group('TargetReplayView', () {
+    testWidgets('renders partial trace when hold phase is absent', (tester) async {
+      await tester.pumpWidget(MaterialApp(
+        home: TargetReplayView(
+          shot: ShotResult(
+            timestamp: DateTime(2026, 1, 1),
+            totalScore: 80,
+            holdScore: 82,
+            pressScore: 78,
+            recoilScore: 80,
+            elevationScore: 81,
+            windageScore: 79,
+            travelDistance: 0.01,
+            peakJerk: 1.2,
+            firearmType: FirearmType.pistol,
+            trainingMode: TrainingMode.dryFire,
+            holdX: <double>[],
+            holdY: <double>[],
+            pressX: [0.001, 0.002],
+            pressY: [0.001, 0.002],
+            recoilX: [0.002, 0.003],
+            recoilY: [0.002, 0.003],
+          ),
+          shotIndex: 0,
+          getScoreColor: (_) => Colors.orange,
+        ),
+      ));
+
+      await tester.pump();
+      expect(find.text('SHOT 1'), findsOneWidget);
+    });
+
     testWidgets('shows shot summary and playback controls', (tester) async {
       await tester.pumpWidget(MaterialApp(
         home: TargetReplayView(
@@ -71,7 +102,98 @@ void main() {
       expect(find.byType(Slider), findsOneWidget);
     });
 
-    testWidgets('shows fallback and disables controls without trace',
+    testWidgets('play returns to play after replay completes', (tester) async {
+      await tester.pumpWidget(MaterialApp(
+        home: TargetReplayView(
+          shot: _shot(),
+          shotIndex: 0,
+          getScoreColor: (_) => Colors.orange,
+        ),
+      ));
+
+      await tester.tap(find.byTooltip('Play'));
+      await tester.pump();
+      expect(find.byTooltip('Pause'), findsOneWidget);
+      await tester.pump(const Duration(milliseconds: 2500));
+      expect(find.byTooltip('Play'), findsOneWidget);
+    });
+
+    testWidgets('pause preserves slider progress', (tester) async {
+      await tester.pumpWidget(MaterialApp(
+        home: TargetReplayView(
+          shot: _shot(),
+          shotIndex: 0,
+          getScoreColor: (_) => Colors.orange,
+        ),
+      ));
+
+      await tester.tap(find.byTooltip('Play'));
+      await tester.pump(const Duration(milliseconds: 700));
+      await tester.tap(find.byTooltip('Pause'));
+      await tester.pump();
+      final pausedValue = tester.widget<Slider>(find.byType(Slider)).value;
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(tester.widget<Slider>(find.byType(Slider)).value, pausedValue);
+    });
+
+    testWidgets('reset returns slider to zero', (tester) async {
+      await tester.pumpWidget(MaterialApp(
+        home: TargetReplayView(
+          shot: _shot(),
+          shotIndex: 0,
+          getScoreColor: (_) => Colors.orange,
+        ),
+      ));
+
+      final slider = tester.widget<Slider>(find.byType(Slider));
+      slider.onChanged!(0.6);
+      await tester.pump();
+      expect(tester.widget<Slider>(find.byType(Slider)).value, 0.6);
+      await tester.tap(find.byTooltip('Reset'));
+      await tester.pump();
+      expect(tester.widget<Slider>(find.byType(Slider)).value, 0.0);
+    });
+
+    testWidgets('seek clamps slider values and updates elapsed time',
+        (tester) async {
+      await tester.pumpWidget(MaterialApp(
+        home: TargetReplayView(
+          shot: _shot(),
+          shotIndex: 0,
+          getScoreColor: (_) => Colors.orange,
+        ),
+      ));
+
+      final slider = tester.widget<Slider>(find.byType(Slider));
+      slider.onChanged!(-1);
+      await tester.pump();
+      expect(tester.widget<Slider>(find.byType(Slider)).value, 0.0);
+      expect(find.text('0.0s'), findsOneWidget);
+      slider.onChanged!(1.5);
+      await tester.pump();
+      expect(tester.widget<Slider>(find.byType(Slider)).value, 1.0);
+      expect(find.text('2.5s'), findsOneWidget);
+    });
+
+    testWidgets('seek while playing keeps playback running', (tester) async {
+      await tester.pumpWidget(MaterialApp(
+        home: TargetReplayView(
+          shot: _shot(),
+          shotIndex: 0,
+          getScoreColor: (_) => Colors.orange,
+        ),
+      ));
+
+      await tester.tap(find.byTooltip('Play'));
+      await tester.pump(const Duration(milliseconds: 300));
+      tester.widget<Slider>(find.byType(Slider)).onChanged!(0.2);
+      await tester.pump();
+      expect(find.byTooltip('Pause'), findsOneWidget);
+      final value = tester.widget<Slider>(find.byType(Slider)).value;
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(tester.widget<Slider>(find.byType(Slider)).value, greaterThan(value));
+    });
+    testWidgets('shows fallback text while retaining target canvas',
         (tester) async {
       await tester.pumpWidget(MaterialApp(
         home: TargetReplayView(
@@ -82,6 +204,7 @@ void main() {
       ));
 
       expect(find.text('NO TRACE DATA FOR THIS SHOT'), findsOneWidget);
+      expect(find.byType(CustomPaint), findsWidgets);
       final play = tester.widget<IconButton>(find.ancestor(
         of: find.byTooltip('Play'),
         matching: find.byType(IconButton),

@@ -56,11 +56,24 @@ class _TargetReplayViewState extends State<TargetReplayView>
     _controller = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 2500),
-    )..addListener(_onProgress);
+    )
+      ..addListener(_onProgress)
+      ..addStatusListener(_onAnimationStatus);
   }
 
   void _onProgress() {
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    if (_controller.value >= 1.0 && _isPlaying) {
+      setState(() => _isPlaying = false);
+    } else {
+      setState(() {});
+    }
+  }
+
+  void _onAnimationStatus(AnimationStatus status) {
+    if (status == AnimationStatus.completed && mounted && _isPlaying) {
+      setState(() => _isPlaying = false);
+    }
   }
 
   bool get _hasTrace => _trace.points.isNotEmpty;
@@ -68,9 +81,7 @@ class _TargetReplayViewState extends State<TargetReplayView>
   void _play() {
     setState(() => _isPlaying = true);
     if (_controller.isCompleted) _controller.value = 0.0;
-    _controller.forward().whenComplete(() {
-      if (mounted) setState(() => _isPlaying = false);
-    });
+    _controller.forward();
   }
 
   void _pause() {
@@ -84,7 +95,9 @@ class _TargetReplayViewState extends State<TargetReplayView>
   }
 
   void _seek(double value) {
+    final wasPlaying = _isPlaying;
     _controller.value = TargetReplayMath.clampProgress(value);
+    if (wasPlaying) _controller.forward();
   }
 
   @override
@@ -132,29 +145,32 @@ class _TargetReplayViewState extends State<TargetReplayView>
                   child: SizedBox(
                     height: 250,
                     width: double.infinity,
-                    child: _hasTrace
-                        ? CustomPaint(
-                            painter: _TargetReplayPainter(
-                              trace: _trace,
-                              progress: progress,
-                              isPlaying: _isPlaying,
-                            ),
-                            size: Size.infinite,
-                          )
-                        : Center(
-                            child: Text(
-                              'NO TRACE DATA FOR THIS SHOT',
-                              style: TextStyle(
-                                fontFamily: 'Manrope',
-                                fontSize: 14,
-                                fontWeight: FontWeight.w800,
-                                letterSpacing: 2,
-                                color: StsysTheme.onSurface.withValues(
-                                  alpha: 0.4,
-                                ),
+                    child: Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        CustomPaint(
+                          painter: _TargetReplayPainter(
+                            trace: _trace,
+                            progress: progress,
+                            isPlaying: _isPlaying,
+                          ),
+                          size: Size.infinite,
+                        ),
+                        if (!_hasTrace)
+                          Text(
+                            'NO TRACE DATA FOR THIS SHOT',
+                            style: TextStyle(
+                              fontFamily: 'Manrope',
+                              fontSize: 14,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 2,
+                              color: StsysTheme.onSurface.withValues(
+                                alpha: 0.4,
                               ),
                             ),
                           ),
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -401,9 +417,11 @@ class _TargetReplayPainter extends CustomPainter {
     double scaleY,
     Color color,
   ) {
-    if (end <= start || start >= points.length) return;
-    final clampedEnd = end < points.length ? end : points.length - 1;
-    final drawTo = visibleEnd < clampedEnd ? visibleEnd : clampedEnd;
+    if (points.isEmpty) return;
+    start = start.clamp(0, points.length - 1);
+    end = end.clamp(0, points.length - 1);
+    if (end <= start) return;
+    final drawTo = visibleEnd < end ? visibleEnd : end;
     if (drawTo <= start) return;
     final first = points[start];
     final path = Path()..moveTo(cx + first.x * scaleX, cy + first.y * scaleY);

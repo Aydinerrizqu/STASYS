@@ -45,6 +45,9 @@ _python_legacy/
 # Claude Code
 .claude/
 
+# Local git worktrees
+.worktrees/
+
 # IDE / Editor
 .vscode/
 *.code-workspace

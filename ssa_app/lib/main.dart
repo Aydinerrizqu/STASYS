@@ -6,6 +6,7 @@ import 'providers/session_provider.dart';
 import 'providers/settings_provider.dart';
 import 'providers/session_logger.dart';
 import 'providers/ota_provider.dart';
+import 'providers/profile_provider.dart';
 import 'services/firmware_service.dart';
 import 'router/app_router.dart';
 import 'theme/app_theme.dart';
@@ -24,36 +25,53 @@ class MyApp extends StatelessWidget {
         Provider(create: (_) => SessionLogger()),
         Provider(create: (_) => FirmwareService()),
         ChangeNotifierProvider(create: (_) => SettingsProvider()),
+        ChangeNotifierProvider(create: (_) => ProfileProvider()..load()),
         ChangeNotifierProxyProvider<SessionLogger, SessionProvider>(
           create: (context) => SessionProvider(
             logger: Provider.of<SessionLogger>(context, listen: false),
           ),
-          update: (context, logger, previous) => SessionProvider(logger: logger),
+          update: (context, logger, previous) =>
+              SessionProvider(logger: logger),
         ),
-        ChangeNotifierProxyProvider2<SettingsProvider, SessionLogger, SensorDataProvider>(
+        ChangeNotifierProxyProvider2<
+          SettingsProvider,
+          SessionLogger,
+          SensorDataProvider
+        >(
           create: (context) => SensorDataProvider(
             settings: Provider.of<SettingsProvider>(context, listen: false),
             logger: Provider.of<SessionLogger>(context, listen: false),
           ),
           update: (context, settings, logger, previous) {
-            if (previous == null) return SensorDataProvider(settings: settings, logger: logger);
+            if (previous == null)
+              return SensorDataProvider(settings: settings, logger: logger);
             previous.updateDependencies(settings: settings, logger: logger);
             return previous;
           },
         ),
         ChangeNotifierProxyProvider<SensorDataProvider, BluetoothProvider>(
           create: (context) => BluetoothProvider(
-            sensorDataProvider: Provider.of<SensorDataProvider>(context, listen: false),
+            sensorDataProvider: Provider.of<SensorDataProvider>(
+              context,
+              listen: false,
+            ),
           )..initializeBluetooth(),
           update: (context, sensorData, previousBluetoothProvider) {
             previousBluetoothProvider!.sensorDataProvider = sensorData;
             return previousBluetoothProvider;
           },
         ),
-        ChangeNotifierProxyProvider2<BluetoothProvider, FirmwareService, OtaProvider>(
+        ChangeNotifierProxyProvider2<
+          BluetoothProvider,
+          FirmwareService,
+          OtaProvider
+        >(
           create: (context) => OtaProvider(
             btProvider: Provider.of<BluetoothProvider>(context, listen: false),
-            firmwareService: Provider.of<FirmwareService>(context, listen: false),
+            firmwareService: Provider.of<FirmwareService>(
+              context,
+              listen: false,
+            ),
           ),
           update: (context, btProvider, firmwareService, previous) {
             return previous ??

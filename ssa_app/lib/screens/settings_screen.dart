@@ -88,7 +88,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: StsysTheme.surfaceContainerLowest,
+      backgroundColor: StsysTheme.mobileBackground,
       body: SafeArea(
         child: Column(
           children: [

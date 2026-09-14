@@ -4,12 +4,14 @@ class OtaPromptDialog extends StatelessWidget {
   final String currentVersion;
   final String newVersion;
   final VoidCallback onUpdate;
+  final VoidCallback? onSkip;
 
   const OtaPromptDialog({
     super.key,
     required this.currentVersion,
     required this.newVersion,
     required this.onUpdate,
+    this.onSkip,
   });
 
   @override
@@ -82,7 +84,11 @@ class OtaPromptDialog extends StatelessWidget {
             ),
             child: const Row(
               children: [
-                Icon(Icons.warning_amber_rounded, color: Color(0xFFFF6B3D), size: 18),
+                Icon(
+                  Icons.warning_amber_rounded,
+                  color: Color(0xFFFF6B3D),
+                  size: 18,
+                ),
                 SizedBox(width: 8),
                 Expanded(
                   child: Text(
@@ -96,6 +102,15 @@ class OtaPromptDialog extends StatelessWidget {
         ],
       ),
       actions: [
+        if (onSkip != null)
+          TextButton(
+            onPressed: onSkip,
+            style: TextButton.styleFrom(
+              foregroundColor: const Color(0xFF666666),
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+            ),
+            child: const Text('Skip'),
+          ),
         ElevatedButton(
           onPressed: onUpdate,
           style: ElevatedButton.styleFrom(
@@ -125,7 +140,10 @@ class OtaPromptDialog extends StatelessWidget {
           children: [
             Text(
               'v',
-              style: TextStyle(color: color.withValues(alpha: 0.6), fontSize: 13),
+              style: TextStyle(
+                color: color.withValues(alpha: 0.6),
+                fontSize: 13,
+              ),
             ),
             Text(
               version,

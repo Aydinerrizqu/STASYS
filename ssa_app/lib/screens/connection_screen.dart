@@ -9,6 +9,7 @@ import '../providers/sensor_data_provider.dart';
 import '../services/firmware_service.dart';
 import '../screens/ota_prompt_dialog.dart';
 import '../theme/app_theme.dart';
+import '../widgets/calibration_flow.dart';
 
 class ConnectionScreen extends StatefulWidget {
   const ConnectionScreen({super.key});
@@ -44,7 +45,11 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
       final bondedDevices = await bt.getBondedDevices();
       if (mounted) {
         setState(() {
-          _devices.addAll(bondedDevices.where((d) => (d.name ?? '').toLowerCase().contains('stasys')));
+          _devices.addAll(
+            bondedDevices.where(
+              (d) => (d.name ?? '').toLowerCase().contains('stasys'),
+            ),
+          );
         });
       }
     } catch (_) {}
@@ -120,7 +125,11 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
               style: StsysText.labelBold.copyWith(color: StsysTheme.primary),
             ),
             const SizedBox(height: 8),
-            Text(deviceName, style: StsysText.body, textAlign: TextAlign.center),
+            Text(
+              deviceName,
+              style: StsysText.body,
+              textAlign: TextAlign.center,
+            ),
           ],
         ),
       ),
@@ -132,7 +141,23 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
     final sensor = context.read<SensorDataProvider>();
     settings.setDemoMode(true);
     sensor.setDemoMode(true);
-    context.go('/tracking');
+    // Demo mode skips calibration — go directly to /train
+    context.go('/train');
+  }
+
+  /// Show mandatory calibration flow after successful BT connection.
+  void _showCalibrationFlow() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => ChangeNotifierProvider.value(
+        value: context.read<SensorDataProvider>(),
+        child: const CalibrationFlowDialog(),
+      ),
+    ).then((_) {
+      // After calibration dialog completes, navigate to /train
+      if (mounted) context.go('/train');
+    });
   }
 
   Future<void> _checkFirmwareUpdate(BuildContext context) async {
@@ -174,10 +199,16 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
               Navigator.of(ctx).pop();
               router.go('/ota-update');
             },
+            onSkip: () {
+              Navigator.of(ctx).pop();
+              // Firmware outdated but user skipped — still require calibration
+              _showCalibrationFlow();
+            },
           ),
         );
       } else {
-        router.go('/tracking');
+        // Firmware up-to-date — require calibration before tracking
+        _showCalibrationFlow();
       }
     } catch (e) {
       debugPrint('[BT] Firmware version check failed: $e');
@@ -208,7 +239,9 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
                     children: [
                       ShaderMask(
                         shaderCallback: (bounds) {
-                          return StsysTheme.tacticalGradient.createShader(bounds);
+                          return StsysTheme.tacticalGradient.createShader(
+                            bounds,
+                          );
                         },
                         child: const Text(
                           'STASYS',
@@ -265,7 +298,9 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
                             color: StsysTheme.surfaceContainerHigh,
                             borderRadius: BorderRadius.circular(12),
                             border: Border.all(
-                              color: StsysTheme.outlineVariant.withValues(alpha: 0.2),
+                              color: StsysTheme.outlineVariant.withValues(
+                                alpha: 0.2,
+                              ),
                             ),
                           ),
                           child: Row(
@@ -273,7 +308,9 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
                             children: [
                               Icon(
                                 Icons.explore,
-                                color: StsysTheme.primary.withValues(alpha: 0.7),
+                                color: StsysTheme.primary.withValues(
+                                  alpha: 0.7,
+                                ),
                                 size: 18,
                               ),
                               const SizedBox(width: 8),
@@ -284,7 +321,9 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
                                   fontSize: 11,
                                   fontWeight: FontWeight.w800,
                                   letterSpacing: 1.5,
-                                  color: StsysTheme.primary.withValues(alpha: 0.7),
+                                  color: StsysTheme.primary.withValues(
+                                    alpha: 0.7,
+                                  ),
                                 ),
                               ),
                             ],
@@ -390,7 +429,11 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
                 ),
               )
             else
-              const Icon(Icons.bluetooth_searching, color: StsysTheme.onPrimary, size: 20),
+              const Icon(
+                Icons.bluetooth_searching,
+                color: StsysTheme.onPrimary,
+                size: 20,
+              ),
             const SizedBox(width: 8),
             Text(
               _isScanning ? 'SCANNING...' : 'SCAN BLUETOOTH',
@@ -414,7 +457,10 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const CircularProgressIndicator(color: StsysTheme.primary, strokeWidth: 2),
+            const CircularProgressIndicator(
+              color: StsysTheme.primary,
+              strokeWidth: 2,
+            ),
             const SizedBox(height: 16),
             Text(
               'SEARCHING FOR DEVICES...',
@@ -435,7 +481,11 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.bluetooth_disabled, size: 48, color: StsysTheme.onSurface.withValues(alpha: 0.1)),
+            Icon(
+              Icons.bluetooth_disabled,
+              size: 48,
+              color: StsysTheme.onSurface.withValues(alpha: 0.1),
+            ),
             const SizedBox(height: 16),
             Text(
               'NO DEVICES FOUND',
@@ -466,10 +516,7 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
       itemCount: _devices.length,
       itemBuilder: (context, index) {
         final device = _devices[index];
-        return _DeviceCard(
-          device: device,
-          onTap: () => _connectDevice(device),
-        );
+        return _DeviceCard(device: device, onTap: () => _connectDevice(device));
       },
     );
   }

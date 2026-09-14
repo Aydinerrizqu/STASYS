@@ -20,12 +20,14 @@ ssa_app/linux/build/
 ssa_app/windows/build/
 ssa_app/web/build/
 
-# Test files (keep test/unit/)
-ssa_app/test/unit/
+# Test files (keep specific unit test subdirs)
+ssa_app/test/unit/*
 !ssa_app/test/unit/models/
 !ssa_app/test/unit/utils/
 !ssa_app/test/unit/services/
+!ssa_app/test/unit/providers/
 !ssa_app/test/unit/widgets/
+!ssa_app/test/unit/screens/
 
 # Backup files
 ssa_app/*.zip

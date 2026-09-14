@@ -71,16 +71,17 @@ enum MountPosition {
 // --- Shot Result Model (for scoring & analysis) ---
 class ShotResult {
   final DateTime timestamp;
-  final double totalScore;       // 0-100
-  final double holdScore;       // 0-100
-  final double pressScore;       // 0-100
-  final double recoilScore;      // 0-100
-  final double elevationScore;   // 0-100
-  final double windageScore;     // 0-100
-  final double travelDistance;   // radians
-  final double peakJerk;         // max single jump
+  final double totalScore; // 0-100
+  final double holdScore; // 0-100
+  final double pressScore; // 0-100
+  final double recoilScore; // 0-100
+  final double elevationScore; // 0-100
+  final double windageScore; // 0-100
+  final double travelDistance; // radians
+  final double peakJerk; // max single jump
   final FirearmType firearmType;
   final TrainingMode trainingMode;
+  final int seriesNumber;
 
   // Phase trace data — normalized to break point (m radians)
   final List<double>? holdX;
@@ -102,6 +103,7 @@ class ShotResult {
     required this.peakJerk,
     required this.firearmType,
     required this.trainingMode,
+    this.seriesNumber = 1,
     this.holdX,
     this.holdY,
     this.pressX,
@@ -123,6 +125,7 @@ class ShotResult {
       'peakJerk': peakJerk,
       'firearmType': firearmType.name,
       'trainingMode': trainingMode.name,
+      'seriesNumber': seriesNumber,
       'holdX': holdX,
       'holdY': holdY,
       'pressX': pressX,
@@ -145,6 +148,7 @@ class ShotResult {
       peakJerk: (map['peakJerk'] as num).toDouble(),
       firearmType: FirearmType.fromString(map['firearmType'] ?? 'pistol'),
       trainingMode: TrainingMode.fromString(map['trainingMode'] ?? 'dryFire'),
+      seriesNumber: (map['seriesNumber'] as num?)?.toInt() ?? 1,
       holdX: _listFromDynamic(map['holdX']),
       holdY: _listFromDynamic(map['holdY']),
       pressX: _listFromDynamic(map['pressX']),
@@ -169,8 +173,8 @@ class DataPoint {
   DataPoint(this.x, this.y);
 
   DataPoint.fromTimestamp({required double timestamp, required double value})
-      : x = timestamp,
-        y = value;
+    : x = timestamp,
+      y = value;
 
   double get timestamp => x;
   double get value => y;

@@ -19,7 +19,8 @@ class ExportService {
     buffer.writeln('# SESSIONS');
     buffer.writeln(
       'session_date,firearm_type,training_mode,duration_sec,'
-      'avg_score,best_score,worst_score,shot_count'
+      'avg_score,best_score,worst_score,shot_count,'
+      'profile_name,training_preset,series_count',
     );
 
     for (final session in sessions) {
@@ -31,7 +32,10 @@ class ExportService {
         '${session.averageScore.toStringAsFixed(2)},'
         '${session.bestScore.toStringAsFixed(2)},'
         '${session.worstScore.toStringAsFixed(2)},'
-        '${session.shots.length}'
+        '${session.shots.length},'
+        '${session.profileName},'
+        '${session.trainingPreset},'
+        '${session.seriesCount}',
       );
     }
 
@@ -42,7 +46,7 @@ class ExportService {
     buffer.writeln(
       'session_date,firearm_type,training_mode,shot_timestamp,'
       'total_score,hold_score,press_score,recoil_score,'
-      'elevation_score,windage_score,travel_distance,peak_jerk'
+      'elevation_score,windage_score,travel_distance,peak_jerk',
     );
 
     for (final session in sessions) {
@@ -59,7 +63,7 @@ class ExportService {
           '${shot.elevationScore.toStringAsFixed(2)},'
           '${shot.windageScore.toStringAsFixed(2)},'
           '${shot.travelDistance.toStringAsFixed(6)},'
-          '${shot.peakJerk.toStringAsFixed(6)}'
+          '${shot.peakJerk.toStringAsFixed(6)}',
         );
       }
     }

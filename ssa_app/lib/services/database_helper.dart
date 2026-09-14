@@ -11,6 +11,11 @@ class DatabaseHelper {
 
   factory DatabaseHelper() => _instance;
 
+  /// Reset singleton state for testing only.
+  static void resetForTesting() {
+    _database = null;
+  }
+
   DatabaseHelper._internal();
 
   Future<Database> get database async {
@@ -25,8 +30,9 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 1,
+      version: 2,
       onCreate: _onCreate,
+      onUpgrade: onUpgrade,
       onConfigure: _onConfigure,
     );
   }
@@ -44,6 +50,9 @@ class DatabaseHelper {
         duration REAL NOT NULL,
         firearm_type TEXT NOT NULL,
         training_mode TEXT NOT NULL,
+        profile_name TEXT NOT NULL DEFAULT '',
+        training_preset TEXT NOT NULL DEFAULT '',
+        series_count INTEGER NOT NULL DEFAULT 0,
         gyro_x BLOB,
         gyro_y BLOB,
         gyro_z BLOB,
@@ -69,6 +78,7 @@ class DatabaseHelper {
         peak_jerk REAL NOT NULL,
         firearm_type TEXT NOT NULL,
         training_mode TEXT NOT NULL,
+        series_number INTEGER NOT NULL DEFAULT 1,
         hold_x BLOB,
         hold_y BLOB,
         press_x BLOB,
@@ -80,18 +90,29 @@ class DatabaseHelper {
     ''');
 
     // Indexes
+    await db.execute('CREATE INDEX idx_sessions_date ON sessions(date DESC)');
     await db.execute(
-      'CREATE INDEX idx_sessions_date ON sessions(date DESC)'
+      'CREATE INDEX idx_sessions_firearm ON sessions(firearm_type)',
     );
-    await db.execute(
-      'CREATE INDEX idx_sessions_firearm ON sessions(firearm_type)'
-    );
-    await db.execute(
-      'CREATE INDEX idx_shots_session ON shots(session_id)'
-    );
-    await db.execute(
-      'CREATE INDEX idx_shots_score ON shots(total_score DESC)'
-    );
+    await db.execute('CREATE INDEX idx_shots_session ON shots(session_id)');
+    await db.execute('CREATE INDEX idx_shots_score ON shots(total_score DESC)');
+  }
+
+  Future<void> onUpgrade(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 2) {
+      await db.execute(
+        "ALTER TABLE sessions ADD COLUMN profile_name TEXT NOT NULL DEFAULT ''",
+      );
+      await db.execute(
+        "ALTER TABLE sessions ADD COLUMN training_preset TEXT NOT NULL DEFAULT ''",
+      );
+      await db.execute(
+        'ALTER TABLE sessions ADD COLUMN series_count INTEGER NOT NULL DEFAULT 0',
+      );
+      await db.execute(
+        'ALTER TABLE shots ADD COLUMN series_number INTEGER NOT NULL DEFAULT 1',
+      );
+    }
   }
 
   Future<void> close() async {

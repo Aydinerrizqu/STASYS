@@ -13,7 +13,7 @@ class DatabaseService {
   final DatabaseHelper _dbHelper;
 
   DatabaseService({DatabaseHelper? dbHelper})
-      : _dbHelper = dbHelper ?? DatabaseHelper();
+    : _dbHelper = dbHelper ?? DatabaseHelper();
 
   // ==========================================
   // Encoding helpers (time series)
@@ -83,51 +83,47 @@ class DatabaseService {
     final db = await _dbHelper.database;
     await db.transaction((txn) async {
       // Insert session
-      await txn.insert(
-        'sessions',
-        {
-          'id': session.id,
-          'date': session.date.millisecondsSinceEpoch,
-          'duration': session.duration,
-          'firearm_type': session.firearmType.name,
-          'training_mode': session.trainingMode.name,
-          'gyro_x': _encodeTimeSeries(session.gyroX),
-          'gyro_y': _encodeTimeSeries(session.gyroY),
-          'gyro_z': _encodeTimeSeries(session.gyroZ),
-          'accel_x': _encodeTimeSeries(session.accelX),
-          'accel_y': _encodeTimeSeries(session.accelY),
-          'accel_z': _encodeTimeSeries(session.accelZ),
-        },
-        conflictAlgorithm: ConflictAlgorithm.replace,
-      );
+      await txn.insert('sessions', {
+        'id': session.id,
+        'date': session.date.millisecondsSinceEpoch,
+        'duration': session.duration,
+        'firearm_type': session.firearmType.name,
+        'training_mode': session.trainingMode.name,
+        'profile_name': session.profileName,
+        'training_preset': session.trainingPreset,
+        'series_count': session.seriesCount,
+        'gyro_x': _encodeTimeSeries(session.gyroX),
+        'gyro_y': _encodeTimeSeries(session.gyroY),
+        'gyro_z': _encodeTimeSeries(session.gyroZ),
+        'accel_x': _encodeTimeSeries(session.accelX),
+        'accel_y': _encodeTimeSeries(session.accelY),
+        'accel_z': _encodeTimeSeries(session.accelZ),
+      }, conflictAlgorithm: ConflictAlgorithm.replace);
 
       // Insert shots (batch)
       final batch = txn.batch();
       for (final shot in session.shots) {
-        batch.insert(
-          'shots',
-          {
-            'session_id': session.id,
-            'timestamp': shot.timestamp.millisecondsSinceEpoch,
-            'total_score': shot.totalScore,
-            'hold_score': shot.holdScore,
-            'press_score': shot.pressScore,
-            'recoil_score': shot.recoilScore,
-            'elevation_score': shot.elevationScore,
-            'windage_score': shot.windageScore,
-            'travel_distance': shot.travelDistance,
-            'peak_jerk': shot.peakJerk,
-            'firearm_type': shot.firearmType.name,
-            'training_mode': shot.trainingMode.name,
-            'hold_x': _encodeDoubleList(shot.holdX),
-            'hold_y': _encodeDoubleList(shot.holdY),
-            'press_x': _encodeDoubleList(shot.pressX),
-            'press_y': _encodeDoubleList(shot.pressY),
-            'recoil_x': _encodeDoubleList(shot.recoilX),
-            'recoil_y': _encodeDoubleList(shot.recoilY),
-          },
-          conflictAlgorithm: ConflictAlgorithm.replace,
-        );
+        batch.insert('shots', {
+          'session_id': session.id,
+          'timestamp': shot.timestamp.millisecondsSinceEpoch,
+          'total_score': shot.totalScore,
+          'hold_score': shot.holdScore,
+          'press_score': shot.pressScore,
+          'recoil_score': shot.recoilScore,
+          'elevation_score': shot.elevationScore,
+          'windage_score': shot.windageScore,
+          'travel_distance': shot.travelDistance,
+          'peak_jerk': shot.peakJerk,
+          'firearm_type': shot.firearmType.name,
+          'training_mode': shot.trainingMode.name,
+          'series_number': shot.seriesNumber,
+          'hold_x': _encodeDoubleList(shot.holdX),
+          'hold_y': _encodeDoubleList(shot.holdY),
+          'press_x': _encodeDoubleList(shot.pressX),
+          'press_y': _encodeDoubleList(shot.pressY),
+          'recoil_x': _encodeDoubleList(shot.recoilX),
+          'recoil_y': _encodeDoubleList(shot.recoilY),
+        }, conflictAlgorithm: ConflictAlgorithm.replace);
       }
       await batch.commit(noResult: true);
     });
@@ -136,10 +132,7 @@ class DatabaseService {
   /// Load all sessions (sorted by date DESC) with shots.
   Future<List<SessionLog>> loadAllSessions() async {
     final db = await _dbHelper.database;
-    final sessionRows = await db.query(
-      'sessions',
-      orderBy: 'date DESC',
-    );
+    final sessionRows = await db.query('sessions', orderBy: 'date DESC');
 
     final result = <SessionLog>[];
     for (final row in sessionRows) {
@@ -154,11 +147,7 @@ class DatabaseService {
   /// Load a single session by ID with its shots.
   Future<SessionLog?> getSession(String id) async {
     final db = await _dbHelper.database;
-    final rows = await db.query(
-      'sessions',
-      where: 'id = ?',
-      whereArgs: [id],
-    );
+    final rows = await db.query('sessions', where: 'id = ?', whereArgs: [id]);
     if (rows.isEmpty) return null;
     return await _sessionFromRow(rows.first);
   }
@@ -166,18 +155,16 @@ class DatabaseService {
   /// Delete a session and all its shots (CASCADE).
   Future<void> deleteSession(String sessionId) async {
     final db = await _dbHelper.database;
-    await db.delete(
-      'sessions',
-      where: 'id = ?',
-      whereArgs: [sessionId],
-    );
+    await db.delete('sessions', where: 'id = ?', whereArgs: [sessionId]);
   }
 
   /// Decode the raw sensor time series for a session from the DB.
   /// Returns a map with keys 'gyroX/Y/Z' and 'accelX/Y/Z'.
   /// Each value is the decoded List<DataPoint>.
   /// Returns an empty map if the session doesn't exist.
-  Future<Map<String, List<DataPoint>>> decodeRawSession(String sessionId) async {
+  Future<Map<String, List<DataPoint>>> decodeRawSession(
+    String sessionId,
+  ) async {
     final db = await _dbHelper.database;
     final rows = await db.query(
       'sessions',
@@ -211,6 +198,9 @@ class DatabaseService {
         duration: (row['duration'] as num).toDouble(),
         firearmType: FirearmType.fromString(row['firearm_type'] as String),
         trainingMode: TrainingMode.fromString(row['training_mode'] as String),
+        profileName: (row['profile_name'] as String?) ?? '',
+        trainingPreset: (row['training_preset'] as String?) ?? '',
+        seriesCount: (row['series_count'] as num?)?.toInt() ?? 0,
         gyroX: _decodeBlob(row['gyro_x']),
         gyroY: _decodeBlob(row['gyro_y']),
         gyroZ: _decodeBlob(row['gyro_z']),
@@ -257,6 +247,7 @@ class DatabaseService {
         peakJerk: (row['peak_jerk'] as num).toDouble(),
         firearmType: FirearmType.fromString(row['firearm_type'] as String),
         trainingMode: TrainingMode.fromString(row['training_mode'] as String),
+        seriesNumber: (row['series_number'] as num?)?.toInt() ?? 1,
         holdX: _decodeDoubleBlob(row['hold_x']),
         holdY: _decodeDoubleBlob(row['hold_y']),
         pressX: _decodeDoubleBlob(row['press_x']),

@@ -19,6 +19,9 @@ class SessionLog {
   final FirearmType firearmType;
   final TrainingMode trainingMode;
   final List<ShotResult> shots;
+  final String profileName;
+  final String trainingPreset;
+  final int seriesCount;
 
   SessionLog({
     required this.id,
@@ -33,13 +36,28 @@ class SessionLog {
     this.firearmType = FirearmType.pistol,
     this.trainingMode = TrainingMode.dryFire,
     List<ShotResult>? shots,
+    this.profileName = '',
+    this.trainingPreset = '',
+    this.seriesCount = 0,
   }) : shots = shots ?? [];
 
-  bool get hasRawData => gyroX.isNotEmpty && gyroY.isNotEmpty && gyroZ.isNotEmpty && accelX.isNotEmpty && accelY.isNotEmpty && accelZ.isNotEmpty;
+  bool get hasRawData =>
+      gyroX.isNotEmpty &&
+      gyroY.isNotEmpty &&
+      gyroZ.isNotEmpty &&
+      accelX.isNotEmpty &&
+      accelY.isNotEmpty &&
+      accelZ.isNotEmpty;
 
   double get averageScore {
     if (shots.isEmpty) return 0;
-    return shots.map((s) => s.totalScore).reduce((a, b) => a + b) / shots.length;
+    return shots.map((s) => s.totalScore).reduce((a, b) => a + b) /
+        shots.length;
+  }
+
+  double get averageStability {
+    if (shots.isEmpty) return 0;
+    return shots.map((s) => s.holdScore).reduce((a, b) => a + b) / shots.length;
   }
 
   double get bestScore {
@@ -87,6 +105,9 @@ class SessionLog {
           .where((s) => s != null)
           .map((s) => ShotResult.fromMap(s as Map<String, dynamic>))
           .toList(),
+      profileName: map['profileName'] ?? '',
+      trainingPreset: map['trainingPreset'] ?? '',
+      seriesCount: (map['seriesCount'] as num?)?.toInt() ?? 0,
     );
   }
 
@@ -103,6 +124,9 @@ class SessionLog {
       'accelZ': accelZ.map((p) => p.toMap()).toList(),
       'firearmType': firearmType.name,
       'trainingMode': trainingMode.name,
+      'profileName': profileName,
+      'trainingPreset': trainingPreset,
+      'seriesCount': seriesCount,
       'shots': shots.map((s) => s.toMap()).toList(),
     };
   }
@@ -114,13 +138,38 @@ class SessionLogger {
 
   SessionLogger({DatabaseService? db}) : _db = db ?? DatabaseService();
 
-  Future<void> saveSession(SessionLog log) async {
+  Future<void> saveSession(
+    SessionLog log, {
+    String? profileName,
+    String? trainingPreset,
+    int? seriesCount,
+  }) async {
+    final session =
+        (profileName == null && trainingPreset == null && seriesCount == null)
+        ? log
+        : SessionLog(
+            id: log.id,
+            date: log.date,
+            duration: log.duration,
+            gyroX: log.gyroX,
+            gyroY: log.gyroY,
+            gyroZ: log.gyroZ,
+            accelX: log.accelX,
+            accelY: log.accelY,
+            accelZ: log.accelZ,
+            firearmType: log.firearmType,
+            trainingMode: log.trainingMode,
+            shots: log.shots,
+            profileName: profileName ?? log.profileName,
+            trainingPreset: trainingPreset ?? log.trainingPreset,
+            seriesCount: seriesCount ?? log.seriesCount,
+          );
     try {
-      await _db.saveSession(log);
-      developer.log('Session saved successfully: ${log.id}');
+      await _db.saveSession(session);
+      developer.log('Session saved successfully: ${session.id}');
     } catch (e, stack) {
       developer.log(
-        'Failed to save session: ${log.id}',
+        'Failed to save session: ${session.id}',
         name: 'SessionLogger',
         error: e,
         stackTrace: stack,

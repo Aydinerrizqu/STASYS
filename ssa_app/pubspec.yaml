@@ -37,6 +37,7 @@ dev_dependencies:
   # Testing
   mocktail: ^1.0.3
   coverage: ^1.7.2
+  sqflite_common_ffi: ^2.3.4+4
 
   # Crash reporting
   firebase_crashlytics: ^4.0.0

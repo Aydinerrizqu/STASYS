@@ -8,6 +8,15 @@ class StsysTheme {
   // --- Color Palette (from Figma) ---
   static const Color background = Color(0xFF131313);
   static const Color surfaceContainerLowest = Color(0xFF0E0E0E);
+
+  // Mobile shell tokens from the Figma train-flow redesign.
+  static const Color mobileBackground = Color(0xFF0C0E11);
+  static const Color mobileSurface = Color(0xFF111418);
+  static const Color mobileBorder = Color(0xFF1F242C);
+  static const Color cyan = Color(0xFF00E5FF);
+  static const Color liveRed = Color(0xFFFF4D5A);
+  static const Color successGreen = Color(0xFF39D98A);
+  static const Color mobileMutedText = Color(0xFF8B8B8B);
   static const Color surfaceContainerLow = Color(0xFF1C1B1B);
   static const Color surfaceContainer = Color(0xFF201F1F);
   static const Color surfaceContainerHigh = Color(0xFF2A2A2A);
@@ -125,9 +134,7 @@ class StsysTheme {
       cardTheme: CardThemeData(
         color: surfaceContainerLow,
         elevation: 0,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ),
       bottomNavigationBarTheme: const BottomNavigationBarThemeData(
         backgroundColor: background,
@@ -144,14 +151,9 @@ class StsysTheme {
         ),
       ),
       textButtonTheme: TextButtonThemeData(
-        style: TextButton.styleFrom(
-          foregroundColor: primary,
-        ),
+        style: TextButton.styleFrom(foregroundColor: primary),
       ),
-      iconTheme: const IconThemeData(
-        color: onSurface,
-        size: 24,
-      ),
+      iconTheme: const IconThemeData(color: onSurface, size: 24),
       dividerTheme: DividerThemeData(
         color: outlineVariant.withValues(alpha: 0.3),
         thickness: 1,
@@ -159,16 +161,12 @@ class StsysTheme {
       snackBarTheme: SnackBarThemeData(
         backgroundColor: surfaceContainerHighest,
         contentTextStyle: const TextStyle(color: onSurface),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(8),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         behavior: SnackBarBehavior.floating,
       ),
       dialogTheme: DialogThemeData(
         backgroundColor: surfaceContainerHigh,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       ),
       listTileTheme: const ListTileThemeData(
         contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 4),
@@ -277,10 +275,7 @@ class SurfaceCard extends StatelessWidget {
     );
 
     if (onTap != null) {
-      return GestureDetector(
-        onTap: onTap,
-        child: card,
-      );
+      return GestureDetector(onTap: onTap, child: card);
     }
     return card;
   }
@@ -310,7 +305,8 @@ class TacticalButton extends StatelessWidget {
     return GestureDetector(
       onTap: onPressed,
       child: Container(
-        padding: padding ?? const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        padding:
+            padding ?? const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         decoration: BoxDecoration(
           gradient: isActive ? StsysTheme.tacticalGradient : null,
           color: isActive ? null : StsysTheme.surfaceContainerHigh,
@@ -362,11 +358,7 @@ class StatusBadge extends StatelessWidget {
   final bool isConnected;
   final String? deviceName;
 
-  const StatusBadge({
-    super.key,
-    required this.isConnected,
-    this.deviceName,
-  });
+  const StatusBadge({super.key, required this.isConnected, this.deviceName});
 
   @override
   Widget build(BuildContext context) {

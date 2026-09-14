@@ -27,6 +27,15 @@ class ProfileProvider extends ChangeNotifier {
     return profile;
   }
 
+  Future<void> deleteProfile(String name) async {
+    await _service.deleteProfile(name);
+    _profiles = await _service.loadProfiles();
+    if (_activeProfile != null && _activeProfile!.trimmedName == name) {
+      _activeProfile = null;
+    }
+    notifyListeners();
+  }
+
   void selectProfile(Profile profile) {
     _activeProfile = profile;
     notifyListeners();

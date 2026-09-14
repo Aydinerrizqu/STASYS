@@ -7,6 +7,7 @@ import 'providers/settings_provider.dart';
 import 'providers/session_logger.dart';
 import 'providers/ota_provider.dart';
 import 'providers/profile_provider.dart';
+import 'providers/train_session_provider.dart';
 import 'services/firmware_service.dart';
 import 'router/app_router.dart';
 import 'theme/app_theme.dart';
@@ -26,6 +27,7 @@ class MyApp extends StatelessWidget {
         Provider(create: (_) => FirmwareService()),
         ChangeNotifierProvider(create: (_) => SettingsProvider()),
         ChangeNotifierProvider(create: (_) => ProfileProvider()..load()),
+        ChangeNotifierProvider(create: (_) => TrainSessionProvider()),
         ChangeNotifierProxyProvider<SessionLogger, SessionProvider>(
           create: (context) => SessionProvider(
             logger: Provider.of<SessionLogger>(context, listen: false),

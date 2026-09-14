@@ -8,6 +8,7 @@ import '../providers/train_session_provider.dart';
 import '../providers/sensor_data_provider.dart';
 import '../theme/app_theme.dart';
 import '../widgets/train_target_widget.dart';
+import '../widgets/shot_replay_panel.dart';
 
 class TrainScreen extends StatelessWidget {
   const TrainScreen({super.key});
@@ -526,6 +527,12 @@ class _SessionView extends StatelessWidget {
           if (trainProv.currentSeriesShots.isNotEmpty) ...[
             const SizedBox(height: 12),
             _ShotLogRow(shots: trainProv.currentSeriesShots),
+          ],
+
+          // Selected-shot replay panel
+          if (isActive && trainProv.currentSeriesShots.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            const ShotReplayPanel(),
           ],
 
           // End session button in ready state

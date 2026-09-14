@@ -19,10 +19,11 @@ ssa_app/
 │   ├── router/app_router.dart       # GoRouter configuration (ShellRoute)
 │   ├── theme/app_theme.dart         # Dark STSYS theme (#FFB693 primary, #131313 bg, Manrope/Inter fonts)
 │   ├── services/
-│   │   ├── database_helper.dart     # SQLite singleton, schema creation, migrations
+│   │   ├── database_helper.dart     # SQLite singleton, schema creation, migrations (v2)
 │   │   ├── database_service.dart    # CRUD operations, binary BLOB encoding
 │   │   ├── export_service.dart      # CSV export via Share Sheet
 │   │   ├── firmware_service.dart    # OTA firmware loading + chunking + SHA256
+│   │   ├── profile_service.dart     # Local name-only profile persistence (SharedPreferences)
 │   │   └── trajectory/
 │   │       ├── replay_engine.dart   # Offline replay: SessionLog → ReplayTrace
 │   │       ├── replay_models.dart   # ReplayFrame, ReplayShot, ReplayTrace
@@ -40,20 +41,22 @@ ssa_app/
 │   │   ├── settings_provider.dart      # Firearm type, training mode, demo mode, target distance (5–25m)
 │   │   │                              # + autoUpdateFirmware (bool, default false)
 │   │   ├── session_provider.dart       # Session list management
-│   │   ├── session_logger.dart         # Delegates to DatabaseService (SQLite)
-│   │   └── ota_provider.dart           # OTA state machine: idle→loading→sending→verifying→rebooting→completed/failed
+│   │   ├── session_logger.dart         # Delegates to DatabaseService (SQLite), profile/preset/series metadata
+│   │   ├── ota_provider.dart           # OTA state machine: idle→loading→sending→verifying→rebooting→completed/failed
+│   │   ├── profile_provider.dart       # Load/create/select/delete name-only profiles, connection-scoped selection
+│   │   └── train_session_provider.dart # Train state machine: choices→readySeries→activeSeries, series lifecycle, shot tracking
 │   ├── screens/
 │   │   ├── splash_screen.dart        # STSYS branding, 2s auto-navigate
-│   │   ├── connection_screen.dart     # BT scan/connect + Explore App demo mode + firmware version check
-│   │   ├── main_shell.dart           # Bottom 3-tab navigation shell
-│   │   ├── tracking_screen.dart      # Mode selection (4 firearm cards)
-│   │   ├── tracking_mode_view.dart   # Live graph with mode change dialog
-│   │   ├── history_screen.dart       # Session list + export CSV + clear all + refresh
-│   │   ├── settings_screen.dart      # BT scan overlay + settings + target distance slider
+│   │   ├── connection_screen.dart     # BT scan/connect + Explore App + mandatory calibration/mount flow
+│   │   ├── main_shell.dart           # Bottom 4-tab navigation shell (Train, History, Tracking, Settings)
+│   │   ├── train_screen.dart         # Train choices (profile+preset) → TRAIN-0 (ready) → TRAIN-1 (active)
+│   │   ├── tracking_screen.dart      # Dot-only live trace preview (simplified diagnostic view)
+│   │   ├── history_screen.dart       # Session list + export CSV + clear all + refresh + profile/metadata display
+│   │   ├── settings_screen.dart      # BT scan + weapon preference + mount/direction + target distance
 │   │   ├── session_detail_screen.dart # POST SHOT + ANALYSIS toggle + shot chips
 │   │   ├── replay_screen.dart        # Full-screen replay (legacy, logic moved to AnalysisTab)
 │   │   ├── ota_update_screen.dart    # Full-screen OTA progress UI (route /ota-update)
-│   │   └── ota_prompt_dialog.dart    # Modal dialog: version compare + Skip/Update buttons
+│   │   └── ota_prompt_dialog.dart    # Modal dialog: version compare + Skip/Update + calibration on skip
 │   ├── screens/tabs/
 │   │   ├── graph_tab.dart            # TRACE (muzzle trace) + POST SHOT (3-phase analysis)
 │   │   ├── home_tab.dart             # Dashboard (STSYSStyle)
@@ -64,6 +67,9 @@ ssa_app/
 │   │   ├── muzzle_trace_widget.dart  # MantisX-style live trace
 │   │   ├── shot_analysis_panel.dart  # 3-phase post-shot chart with ring overlay
 │   │   ├── shot_history_list.dart    # Session shot list with tappable cards
+│   │   ├── shot_replay_panel.dart    # Selected-shot replay panel for TRAIN-1 (wraps TargetReplayView)
+│   │   ├── train_target_widget.dart  # TRAIN-0/1 target: AnimatedSwitcher START ↔ active target
+│   │   ├── calibration_flow.dart     # Mandatory 2-phase calibration/mount dialog after BT connection
 │   │   ├── gyro_realtime_chart.dart  # Real-time gyro chart
 │   │   ├── interactive_chart.dart
 │   │   ├── control_panel.dart
@@ -77,8 +83,10 @@ ssa_app/
 │   │       ├── phase_summary_card.dart   # Per-shot 3-phase chart
 │   │       └── factor_breakdown_card.dart # Stability/smoothness/harmonics factor scores
 │   └── models/
-│       └── data_models.dart          # DataPoint, SessionLog, ShotResult
-│                                        FirearmType, TrainingMode, MountDirection, MountPosition
+│       ├── data_models.dart          # DataPoint, SessionLog, ShotResult
+│       │                               FirearmType, TrainingMode, MountDirection, MountPosition
+│       ├── train_preset.dart         # 4 fixed training presets (dry/live × weapon × distance)
+│       └── profile.dart              # Name-only local profile value object
 ```
 
 ---
@@ -89,17 +97,20 @@ ssa_app/
 App Launch
   └── SplashScreen (STSYS branding, 2s auto-navigate)
         └── ConnectionScreen
-              ├── Scan Bluetooth → connect → [firmware check] → /tracking or /ota-update
-              └── Explore App → demo mode → /tracking
+              ├── Scan Bluetooth → connect → [firmware check] → calibration/mount flow → /train
+              └── Explore App → demo mode → /train (skips calibration)
 
-MainShell (3-tab bottom nav):
-  ├── /tracking → TrackingScreen
-  │     ├── ModeSelectionView (4 firearm cards)
-  │     └── TrackingModeView (live graph + mode change dialog)
+MainShell (4-tab bottom nav):
+  ├── /train → TrainScreen
+  │     ├── Choices view: profile selector + 4 preset cards
+  │     ├── TRAIN-0 (readySeries): empty target + START button
+  │     └── TRAIN-1 (activeSeries): target + END SERIES/END SESSION + shot log + replay panel
   ├── /history → HistoryScreen
-  │     └── Session list + swipe delete + clear all + refresh
+  │     └── Session list + swipe delete + clear all + refresh + profile/metadata
+  ├── /tracking → TrackingScreen (dot-only diagnostic preview)
+  │     └── Live muzzle trace — no training controls
   └── /settings → SettingsScreen
-        └── BT scan overlay + firearm type + training mode
+        └── BT scan + weapon preference + mount/direction + target distance
 ```
 
 ---

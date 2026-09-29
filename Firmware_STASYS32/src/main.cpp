@@ -1,695 +1,422 @@
-#include <Arduino.h>
-#include "BluetoothSerial.h"
-#include <Wire.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/event_groups.h"
+#include "freertos/task.h"
+#include "freertos/semphr.h"
+#include "esp_log.h"
+#include "esp_system.h"
+#include "esp_random.h"
+#include "nvs_flash.h"
 #include "esp_bt.h"
 #include "esp_bt_main.h"
 #include "esp_gap_bt_api.h"
-#include "esp_task_wdt.h"
-#include "esp_pm.h"
+#include "esp_spp_api.h"
 #include "esp_bt_device.h"
-#include "mbedtls/sha256.h"
-#include "sensor/i2c_bus_recovery.h"
-#include "storage/storage.h"
-#include "storage/crc.h"
-#include "storage/status_led.h"
-#include "storage/ota.h"
-#include "ota/bt_ota.h"
-#include "sensor/quaternion.h"
-#include "sensor/madgwick.h"
-#include "sensor/calibration.h"
+#include "esp_mac.h"
+#include "esp_rom_sys.h"
+#include "esp_timer.h"
+#include "app_protocol.h"
+#include "sensor_hal.h"
+#include "driver/uart.h"
+#include "provisioning.h"
+#include <cmath>
+#include <cstdio>
+#include <cstring>
 
-// ================= CONFIGURATION =================
-#define BATTERY_PIN 39          // ADC1_CH3
-#define PIEZO_PIN   35          // ADC1_CH7 (D35)
-#define I2C_SDA 21
-#define I2C_SCL 22
-#define MPU_ADDR 0x68
+#define FIRMWARE_VERSION "2.0.0"
+#define ENROLLMENT_WINDOW_MS (5 * 60 * 1000)  // documented in docs/provisioning.md
 
-// Factory reset button: GPIO 0 (boot button)
-// Hold for 3 seconds during normal operation to trigger
-#define FACTORY_RESET_PIN 0
-#define FACTORY_RESET_HOLD_MS 3000
+static const char *TAG = "stasys";
+static EventGroupHandle_t app_events;
+static staysys_hal_t sensors;
+static volatile uint8_t battery_percentage;
+static portMUX_TYPE spp_lock = portMUX_INITIALIZER_UNLOCKED;
+static SemaphoreHandle_t spp_tx_mutex;
+static uint32_t spp_handle;
+static bool spp_congested;
+static uint32_t spp_generation;
+static uint8_t auth_nonce[STASYS_AUTH_NONCE_SIZE];
+static char auth_rx[STASYS_AUTH_MAX_LINE + 1];
+static size_t auth_rx_len;
+static uint8_t auth_attempts;
+static int64_t auth_deadline_us;
 
-// --- BATTERY THRESHOLDS ---
-#define BATTERY_MAX_VOLTAGE 4.2f
-#define BATTERY_MIN_VOLTAGE 3.0f
-#define BATTERY_LOW_VOLTAGE  3.5f  // ~20%
-#define BATTERY_CRITICAL_VOLTAGE 3.3f // ~5%
+enum class spp_auth_state : uint8_t { DISCONNECTED, WAITING_FOR_PROOF, AUTHENTICATED };
+static spp_auth_state auth_state = spp_auth_state::DISCONNECTED;
 
-// --- TIMING ---
-#define SEND_RATE_MS 10
-#define OVERSAMPLE_LOOPS 10
-#define CPU_FREQ_MAX_MHZ 240
-#define CPU_FREQ_MIN_MHZ 80
+#define BT_CONNECTED BIT0
+#define BT_AUTHENTICATED BIT1
 
-// --- AUTH ---
-#define AUTH_TIMEOUT_MS  5000
-#define AUTH_POLL_MS     10
-
-// --- WATCHDOG ---
-#define WDT_TIMEOUT_S    10
-
-// --- POWER MANAGER ---
-#define SAMPLE_RATE_NORMAL  100  // Hz
-#define SAMPLE_RATE_LOW     20  // Hz when battery low
-#define SESSION_TIMEOUT_MS  (5UL * 60UL * 1000UL)  // 5 minutes inactivity
-
-// --- BATTERY THRESHOLDS (percentage-based) ---
-#define BATTERY_LOW_PCT       20  // Reduce sample rate
-#define BATTERY_CRITICAL_PCT  5   // Enter deep sleep
-
-// --- AUTHENTICATION ---
-static const char* SECRET_KEY = DEFAULT_SECRET_KEY;
-
-// =================================================
-
-BluetoothSerial SerialBT;
-
-// --- SHARED STATE ---
-volatile bool isAuthenticated = false;
-static volatile bool sensorReady = false;
-static volatile uint8_t batteryPercentage = 0;
-static volatile uint8_t currentSampleRate = SAMPLE_RATE_NORMAL;
-static volatile bool lowPowerMode = false;
-
-// Battery state
-static volatile bool batteryLow = false;
-static volatile bool batteryCritical = false;
-
-// Mutex for batteryPercentage
-static SemaphoreHandle_t batteryMutex = NULL;
-
-// Task handles
-static TaskHandle_t sensorTaskHandle = NULL;
-static TaskHandle_t batteryTaskHandle = NULL;
-static TaskHandle_t resetButtonTaskHandle = NULL;
-
-// Power manager handles
-static esp_pm_lock_handle_t pmMaxLock = NULL;
-static bool pmInitialized = false;
-
-// --- AUTH STATE MACHINE ---
-typedef enum {
-    AUTH_STATE_IDLE,
-    AUTH_STATE_WAITING,
-    AUTH_STATE_DONE
-} AuthState_t;
-
-static AuthState_t authState = AUTH_STATE_IDLE;
-static uint32_t authStartTime = 0;
-static uint32_t lastAuthenticatedTick = 0;
-
-// --- DEVICE STATE ---
-static DeviceConfig g_config;
-static DeviceStats  g_stats;
-
-// --- IMU CALIBRATION STATE ---
-static MadgwickFilter g_ahrs;
-static float g_gyroRuntimeBias[3] = {0.0f, 0.0f, 0.0f};
-static bool g_ahrsReady = false;
-
-// --- BINARY PACKET STRUCTURE ---
-struct __attribute__((packed)) DataPacket {
-    uint8_t  header[2];  // 0xAA, 0xBB
-    float    ax;
-    float    ay;
-    float    az;
-    float    gx;
-    float    gy;
-    float    gz;
-    uint16_t piezo;
-    uint8_t  battery;
-    uint16_t crc16;      // CRC-16 CCITT over header+data
-};
-
-// =================================================
-// HELPER FUNCTIONS
-// =================================================
-
-static void writeMPURegister(uint8_t reg, uint8_t val) {
-    Wire.beginTransmission(MPU_ADDR);
-    Wire.write(reg);
-    Wire.write(val);
-    Wire.endTransmission();
+extern "C" int staysys_provisioned_key(const uint8_t **key, size_t *key_len)
+    __attribute__((weak));
+static int device_key_provider(const uint8_t **key, size_t *key_len, void *)
+{
+    /* Production must override this with protected per-device provisioning.
+     * The weak default deliberately fails closed and contains no credential. */
+    if (staysys_provisioned_key == nullptr) return -1;
+    return staysys_provisioned_key(key, key_len);
 }
 
-static bool checkMPU6050(void) {
-    Wire.beginTransmission(MPU_ADDR);
-    Wire.write(0x75);
-    if (Wire.endTransmission(false) != 0) return false;
-    Wire.requestFrom((int)MPU_ADDR, (int)1, (int)1);
-    if (Wire.available() < 1) return false;
-    uint8_t whoAmI = Wire.read();
-    Serial.printf("[MPU] WHO_AM_I: 0x%02X\n", whoAmI);
-    return (whoAmI == 0x68);
+static bool spp_write(uint32_t handle, const uint8_t *data, size_t length)
+{
+    if (handle == 0 || data == nullptr || length == 0 || spp_tx_mutex == nullptr) return false;
+    if (xSemaphoreTake(spp_tx_mutex, pdMS_TO_TICKS(100)) != pdTRUE) return false;
+    esp_err_t result = esp_spp_write(handle, (int)length, const_cast<uint8_t *>(data));
+    xSemaphoreGive(spp_tx_mutex);
+    return result == ESP_OK;
 }
 
-static void initMPU6050(void) {
-    writeMPURegister(0x6B, 0x00); // Wake
-    delay(50);
-    writeMPURegister(0x1C, 0x08); // Accel: 4G
-    writeMPURegister(0x1B, 0x08); // Gyro: 500dps
-    writeMPURegister(0x1A, 0x00);  // DLPF: 260Hz
-}
-
-static void initPowerManager(void) {
-    esp_pm_config_esp32_t pm_config = {
-        .max_freq_mhz = CPU_FREQ_MAX_MHZ,
-        .min_freq_mhz = CPU_FREQ_MIN_MHZ,
-        .light_sleep_enable = false
-    };
-
-    if (esp_pm_configure(&pm_config) == ESP_OK) {
-        pmInitialized = true;
-        Serial.println("[PM] Dynamic frequency scaling enabled");
-
-        if (esp_pm_lock_create(ESP_PM_CPU_FREQ_MAX, 0, "max_freq", &pmMaxLock) == ESP_OK) {
-            Serial.println("[PM] Max freq lock available");
-        } else {
-            Serial.println("[PM] WARNING: Failed to create max freq lock");
-        }
-    } else {
-        Serial.println("[PM] WARNING: PM configuration failed");
+static bool hex_decode(const char *input, size_t length, uint8_t *output, size_t output_len)
+{
+    if (input == nullptr || output == nullptr || length != output_len * 2u) return false;
+    for (size_t i = 0; i < output_len; ++i) {
+        auto nibble = [](char c) -> int {
+            if (c >= '0' && c <= '9') return c - '0';
+            if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+            if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+            return -1;
+        };
+        int high = nibble(input[i * 2]);
+        int low = nibble(input[i * 2 + 1]);
+        if (high < 0 || low < 0) return false;
+        output[i] = (uint8_t)((high << 4) | low);
     }
+    return true;
 }
 
-static void pmRequestMaxFreq(void) {
-    if (!pmInitialized || !pmMaxLock) return;
-    esp_pm_lock_acquire(pmMaxLock);
+static size_t build_auth_transcript(uint8_t *out, size_t capacity)
+{
+    uint8_t identity[6];
+    esp_read_mac(identity, ESP_MAC_BT);
+    const char domain[] = "STASYS-AUTH/v2\0";
+    if (capacity < sizeof(domain) - 1 + sizeof(identity) + sizeof(spp_generation) + sizeof(auth_nonce)) return 0;
+    size_t offset = 0;
+    memcpy(out + offset, domain, sizeof(domain) - 1); offset += sizeof(domain) - 1;
+    memcpy(out + offset, identity, sizeof(identity)); offset += sizeof(identity);
+    uint32_t generation = spp_generation;
+    memcpy(out + offset, &generation, sizeof(generation)); offset += sizeof(generation);
+    memcpy(out + offset, auth_nonce, sizeof(auth_nonce)); offset += sizeof(auth_nonce);
+    return offset;
 }
 
-static void pmReleaseMaxFreq(void) {
-    if (!pmInitialized || !pmMaxLock) return;
-    esp_pm_lock_release(pmMaxLock);
+static void reset_spp_state(bool clear_handle)
+{
+    portENTER_CRITICAL(&spp_lock);
+    auth_state = spp_auth_state::DISCONNECTED;
+    auth_rx_len = 0;
+    auth_attempts = 0;
+    auth_deadline_us = 0;
+    memset(auth_nonce, 0, sizeof(auth_nonce));
+    spp_congested = false;
+    if (clear_handle) spp_handle = 0;
+    portEXIT_CRITICAL(&spp_lock);
+    xEventGroupClearBits(app_events, BT_CONNECTED | BT_AUTHENTICATED);
 }
 
-static float readBatteryVoltage(void) {
-    long sum = 0;
-    for (int i = 0; i < 16; i++) sum += analogRead(BATTERY_PIN);
-    return ((sum / 16.0f) / 4095.0f) * 3.3f * VOLTAGE_DIVIDER_RATIO;
-}
-
-static int calculateBatteryPercentage(float voltage) {
-    if (voltage >= BATTERY_MAX_VOLTAGE) return 100;
-    if (voltage <= BATTERY_MIN_VOLTAGE) return 0;
-    float pct = ((voltage - BATTERY_MIN_VOLTAGE) / (BATTERY_MAX_VOLTAGE - BATTERY_MIN_VOLTAGE)) * 100.0f;
-    return constrain((int)pct, 0, 100);
-}
-
-static uint16_t computeCRC16(const DataPacket* pkt) {
-    // CRC over bytes 2-28 (27 bytes: 6 floats + piezo + battery).
-    // Excludes [0-1] sync header and [29-30] crc16 field itself.
-    return crc16_ccitt((const uint8_t*)pkt + 2, 27);
-}
-
-// --- AUTHENTICATION ---
-static bool updateAuthentication(void) {
-    switch (authState) {
-        case AUTH_STATE_IDLE: {
-            SerialBT.println("READY");
-            authState = AUTH_STATE_WAITING;
-            authStartTime = millis();
-            ledSetPattern(LED_CONNECTING);
+static void spp_callback(esp_spp_cb_event_t event, esp_spp_cb_param_t *param)
+{
+    switch (event) {
+    case ESP_SPP_INIT_EVT:
+        esp_spp_start_srv(ESP_SPP_SEC_AUTHENTICATE | ESP_SPP_SEC_ENCRYPT, ESP_SPP_ROLE_SLAVE, 0, "STASYS");
+        break;
+    case ESP_SPP_SRV_OPEN_EVT: {
+        if (xEventGroupGetBits(app_events) & BT_CONNECTED) {
+            esp_spp_disconnect(param->srv_open.handle);
             break;
         }
-
-        case AUTH_STATE_WAITING: {
-            if (millis() - authStartTime > AUTH_TIMEOUT_MS) {
-                SerialBT.disconnect();
-                authState = AUTH_STATE_IDLE;
-                ledSetPattern(LED_IDLE);
-                break;
-            }
-
-            if (SerialBT.available()) {
-                String challenge = SerialBT.readStringUntil('\n');
-                challenge.trim();
-
-                if (challenge.length() > 0 && challenge.length() < 128) {
-                    String toHash = challenge + String(SECRET_KEY);
-                    byte hashResult[32];
-                    mbedtls_sha256_context ctx;
-                    mbedtls_sha256_init(&ctx);
-                    mbedtls_sha256_starts(&ctx, 0);
-                    mbedtls_sha256_update(&ctx, (const unsigned char*)toHash.c_str(), toHash.length());
-                    mbedtls_sha256_finish(&ctx, hashResult);
-                    mbedtls_sha256_free(&ctx);
-
-                    char hexHash[65];
-                    for (int i = 0; i < 32; i++) sprintf(hexHash + (i * 2), "%02x", hashResult[i]);
-                    SerialBT.println(hexHash);
-
-                    authState = AUTH_STATE_DONE;
-                    isAuthenticated = true;
-                    lastAuthenticatedTick = xTaskGetTickCount();
-                    ledSetPattern(LED_STREAMING);
-                    return true;
+        portENTER_CRITICAL(&spp_lock);
+        ++spp_generation;
+        if (spp_generation == 0) ++spp_generation;
+        spp_handle = param->srv_open.handle;
+        spp_congested = false;
+        auth_rx_len = 0;
+        auth_attempts = 0;
+        auth_deadline_us = esp_timer_get_time() + (int64_t)STASYS_AUTH_TIMEOUT_MS * 1000;
+        auth_state = spp_auth_state::WAITING_FOR_PROOF;
+        for (size_t i = 0; i < sizeof(auth_nonce); i += sizeof(uint32_t)) {
+            uint32_t random = esp_random();
+            size_t count = sizeof(auth_nonce) - i;
+            if (count > sizeof(random)) count = sizeof(random);
+            memcpy(auth_nonce + i, &random, count);
+        }
+        uint32_t handle = spp_handle;
+        portEXIT_CRITICAL(&spp_lock);
+        xEventGroupSetBits(app_events, BT_CONNECTED);
+        char nonce_hex[STASYS_AUTH_NONCE_SIZE * 2 + 1];
+        static const char hex[] = "0123456789abcdef";
+        for (size_t i = 0; i < sizeof(auth_nonce); ++i) {
+            nonce_hex[i * 2] = hex[auth_nonce[i] >> 4];
+            nonce_hex[i * 2 + 1] = hex[auth_nonce[i] & 0xf];
+        }
+        nonce_hex[sizeof(nonce_hex) - 1] = '\0';
+        char greeting[sizeof(nonce_hex) + 40];
+        int greeting_len = snprintf(greeting, sizeof(greeting),
+                                    "READY v=%u gen=%u\nAUTH %s\n",
+                                    STASYS_AUTH_VERSION, (unsigned)spp_generation, nonce_hex);
+        if (greeting_len <= 0 || !spp_write(handle, (const uint8_t *)greeting, (size_t)greeting_len)) {
+            esp_spp_disconnect(handle);
+        }
+        break;
+    }
+    case ESP_SPP_DATA_IND_EVT: {
+        spp_auth_state state;
+        uint32_t handle;
+        int64_t deadline;
+        portENTER_CRITICAL(&spp_lock);
+        state = auth_state;
+        handle = spp_handle;
+        deadline = auth_deadline_us;
+        portEXIT_CRITICAL(&spp_lock);
+        if (state == spp_auth_state::AUTHENTICATED) break;
+        if (state != spp_auth_state::WAITING_FOR_PROOF ||
+            esp_timer_get_time() > deadline) {
+            if (handle != 0) esp_spp_disconnect(handle);
+            break;
+        }
+        for (uint16_t i = 0; i < param->data_ind.len; ++i) {
+            uint8_t byte = param->data_ind.data[i];
+            if (byte == '\n') {
+                auth_rx[auth_rx_len] = '\0';
+                const char prefix[] = "PROOF ";
+                bool valid_line = auth_rx_len == sizeof(prefix) - 1 + STASYS_AUTH_PROOF_HEX_SIZE &&
+                                  memcmp(auth_rx, prefix, sizeof(prefix) - 1) == 0;
+                uint8_t received[STASYS_AUTH_PROOF_SIZE] = {0};
+                uint8_t expected[STASYS_AUTH_PROOF_SIZE] = {0};
+                uint8_t transcript[sizeof("STASYS-AUTH/v2\0") - 1 + 6 + 4 + STASYS_AUTH_NONCE_SIZE];
+                const uint8_t *key = nullptr;
+                size_t key_len = 0;
+                size_t transcript_len = build_auth_transcript(transcript, sizeof(transcript));
+                bool success = valid_line && hex_decode(auth_rx + sizeof(prefix) - 1,
+                                                         STASYS_AUTH_PROOF_HEX_SIZE,
+                                                         received, sizeof(received)) &&
+                               staysys_auth_get_key(&key, &key_len) == 0 &&
+                               transcript_len != 0 &&
+                               staysys_auth_proof(key, key_len, transcript, transcript_len, expected) == 0 &&
+                               staysys_constant_time_equal(received, expected, sizeof(received));
+                staysys_secure_zero(expected, sizeof(expected));
+                staysys_secure_zero(received, sizeof(received));
+                staysys_secure_zero(transcript, sizeof(transcript));
+                auth_rx_len = 0;
+                if (success) {
+                    auth_state = spp_auth_state::AUTHENTICATED;
+                    xEventGroupSetBits(app_events, BT_AUTHENTICATED);
+                    static const uint8_t ok[] = "OK\n";
+                    if (!spp_write(handle, ok, sizeof(ok) - 1)) esp_spp_disconnect(handle);
+                } else if (++auth_attempts >= STASYS_AUTH_MAX_ATTEMPTS) {
+                    esp_spp_disconnect(handle);
+                } else {
+                    static const uint8_t fail[] = "FAIL\n";
+                    (void)spp_write(handle, fail, sizeof(fail) - 1);
+                }
+            } else if (byte != '\r') {
+                if (auth_rx_len >= STASYS_AUTH_MAX_LINE) {
+                    auth_rx_len = 0;
+                    if (++auth_attempts >= STASYS_AUTH_MAX_ATTEMPTS) esp_spp_disconnect(handle);
+                } else {
+                    auth_rx[auth_rx_len++] = (char)byte;
                 }
             }
-            vTaskDelay(pdMS_TO_TICKS(AUTH_POLL_MS));
-            break;
         }
-
-        case AUTH_STATE_DONE:
-            return true;
+        break;
     }
-    return false;
+    case ESP_SPP_CONG_EVT:
+        portENTER_CRITICAL(&spp_lock);
+        spp_congested = param->cong.cong;
+        portEXIT_CRITICAL(&spp_lock);
+        break;
+    case ESP_SPP_CLOSE_EVT:
+        reset_spp_state(true);
+        break;
+    default:
+        break;
+    }
 }
 
-// --- BATTERY MONITOR TASK ---
-static void batteryMonitorTask(void* parameter) {
-    (void)parameter;
-    int lastReportedVal = -1;
-    uint32_t lastSaveTime = 0;
-    esp_task_wdt_add(NULL);
+static void bt_init(void)
+{
+    esp_bt_controller_config_t config = BT_CONTROLLER_INIT_CONFIG_DEFAULT();
+    ESP_ERROR_CHECK(esp_bt_controller_init(&config));
+    ESP_ERROR_CHECK(esp_bt_controller_enable(ESP_BT_MODE_CLASSIC_BT));
+    ESP_ERROR_CHECK(esp_bluedroid_init());
+    ESP_ERROR_CHECK(esp_bluedroid_enable());
+    ESP_ERROR_CHECK(esp_spp_register_callback(spp_callback));
+    esp_spp_cfg_t spp_cfg = {
+        .mode = ESP_SPP_MODE_CB,
+        .enable_l2cap_ertm = false,
+        .tx_buffer_size = 0,
+    };
+    ESP_ERROR_CHECK(esp_spp_enhanced_init(&spp_cfg));
 
-    for (;;) {
-        esp_task_wdt_reset();
+    uint64_t mac = 0;
+    esp_read_mac((uint8_t *)&mac, ESP_MAC_BT);
+    char name[24];
+    snprintf(name, sizeof(name), "STASYS-%04X", (uint16_t)(mac >> 32));
+    ESP_ERROR_CHECK(esp_bt_dev_set_device_name(name));
+    ESP_ERROR_CHECK(esp_bt_gap_set_scan_mode(ESP_BT_CONNECTABLE, ESP_BT_GENERAL_DISCOVERABLE));
+}
 
-        float voltage = readBatteryVoltage();
-        int newPct = calculateBatteryPercentage(voltage);
+static void sensor_task(void *)
+{
+        int16_t last_mpu[6] = {0};
+        int16_t last_mag[3] = {0};
+        bool have_mpu = false;
+    float previous[3] = {0};
+    const int64_t diagnostic_interval_us = 500000;
+    int64_t next_log_deadline = 0;
+    while (true) {
+        int64_t deadline = esp_timer_get_time() + STASYS_PACKET_PERIOD_US;
+        have_mpu = false;
 
-        if (batteryMutex && xSemaphoreTake(batteryMutex, pdMS_TO_TICKS(5)) == pdTRUE) {
-            batteryPercentage = (uint8_t)newPct;
-            xSemaphoreGive(batteryMutex);
+        float peak[3] = {0};
+        float max_jerk = -1.0f;
+        int64_t gyro_sum[3] = {0};
+        int successful_mpu_reads = 0;
+        uint16_t max_piezo = 0;
+        for (int i = 0; i < STASYS_OVERSAMPLE_LOOPS; ++i) {
+            if (staysys_mpu_read(&sensors, last_mpu) != ESP_OK) {
+                esp_rom_delay_us(STASYS_SENSOR_DELAY_US);
+                continue;
+            }
+            have_mpu = true;
+            ++successful_mpu_reads;
+            int piezo = 0;
+            if (staysys_piezo_read(&sensors, &piezo) == ESP_OK && piezo > max_piezo) {
+                max_piezo = (uint16_t)piezo;
+            }
+            float current[3] = {
+                last_mpu[0] / 8192.0f * 9.81f,
+                last_mpu[1] / 8192.0f * 9.81f,
+                last_mpu[2] / 8192.0f * 9.81f,
+            };
+            float jerk = fabsf(current[0] - previous[0]) +
+                         fabsf(current[1] - previous[1]) +
+                         fabsf(current[2] - previous[2]);
+            if (jerk > max_jerk) {
+                max_jerk = jerk;
+                memcpy(peak, current, sizeof(peak));
+            }
+            previous[0] = current[0]; previous[1] = current[1]; previous[2] = current[2];
+            gyro_sum[0] += last_mpu[3]; gyro_sum[1] += last_mpu[4]; gyro_sum[2] += last_mpu[5];
+            esp_rom_delay_us(STASYS_SENSOR_DELAY_US);
         }
-
-        bool wasLow = batteryLow;
-        bool wasCritical = batteryCritical;
-
-        if (newPct <= BATTERY_CRITICAL_PCT) {
-            batteryCritical = true;
-            batteryLow = true;
-            ledSetPattern(LED_CRITICAL_BAT);
-        } else if (newPct <= BATTERY_LOW_PCT) {
-            batteryLow = true;
-            batteryCritical = false;
-            ledSetPattern(LED_LOW_BATTERY);
-        } else {
-            batteryLow = false;
-            batteryCritical = false;
+        if (!have_mpu || successful_mpu_reads == 0) continue;
+        bool have_mag = staysys_mag_read(&sensors, last_mag) == ESP_OK;
+        if (!have_mag) memset(last_mag, 0, sizeof(last_mag));
+        float gyro[3] = {
+            (gyro_sum[0] / (float)successful_mpu_reads) / 65.5f * 0.0174533f,
+            (gyro_sum[1] / (float)successful_mpu_reads) / 65.5f * 0.0174533f,
+            (gyro_sum[2] / (float)successful_mpu_reads) / 65.5f * 0.0174533f,
+        };
+        staysys_packet_payload_t payload = {
+            .ax = peak[0], .ay = peak[1], .az = peak[2],
+            .gx = gyro[0], .gy = gyro[1], .gz = gyro[2],
+            .mag_x = last_mag[0], .mag_y = last_mag[1], .mag_z = last_mag[2],
+            .piezo = max_piezo, .battery = battery_percentage,
+        };
+        int64_t now = esp_timer_get_time();
+        if (now >= next_log_deadline) {
+            ESP_LOGI(TAG, "SENS accel[m/s2]=(%.3f,%.3f,%.3f) gyro[rad/s]=(%.3f,%.3f,%.3f) mag[raw]=(%d,%d,%d)",
+                     payload.ax, payload.ay, payload.az,
+                     payload.gx, payload.gy, payload.gz,
+                     payload.mag_x, payload.mag_y, payload.mag_z);
+            next_log_deadline = now + diagnostic_interval_us;
         }
-
-        if (lastReportedVal == -1 || abs(newPct - lastReportedVal) >= 2) {
-            lastReportedVal = newPct;
+        uint8_t packet[STASYS_PACKET_SIZE];
+        staysys_packet_serialize(&payload, packet);
+        if (!spp_congested && (xEventGroupGetBits(app_events) & BT_CONNECTED)) {
+            uint32_t handle;
+            portENTER_CRITICAL(&spp_lock);
+            handle = spp_handle;
+            bool can_send = auth_state == spp_auth_state::AUTHENTICATED && !spp_congested && handle != 0;
+            portEXIT_CRITICAL(&spp_lock);
+            if (can_send && !spp_write(handle, packet, sizeof(packet))) {
+                esp_spp_disconnect(handle);
+            }
         }
+        int64_t remaining = deadline - esp_timer_get_time();
+        if (remaining > 0) esp_rom_delay_us((uint32_t)remaining);
+    }
+}
 
-        if (millis() - lastSaveTime > 30000) {
-            g_stats.lastBatteryPct = newPct;
-            storageSaveStats(&g_stats);
-            lastSaveTime = millis();
+static void battery_task(void *)
+{
+    while (true) {
+        int sum = 0;
+        int successful = 0;
+        for (int i = 0; i < 16; ++i) {
+            int raw = 0;
+            if (staysys_battery_read(&sensors, &raw) == ESP_OK) {
+                sum += raw;
+                ++successful;
+            }
         }
-
-        if (batteryCritical && !wasCritical) {
-            Serial.println("[Battery] Critical level reached. Entering deep sleep...");
-            ledSetPattern(LED_OFF);
-            storageIncrementDeepSleepCount();
-            storageSaveStats(&g_stats);
-
-            esp_sleep_enable_gpio_wakeup();
-            esp_deep_sleep_start();
+        if (successful > 0) {
+            float voltage = (sum / (float)successful) / 4095.0f * 3.3f * STASYS_VOLTAGE_DIVIDER_RATIO;
+            battery_percentage = (uint8_t)staysys_battery_percentage(voltage);
         }
-
         vTaskDelay(pdMS_TO_TICKS(2000));
     }
 }
 
-// --- FACTORY RESET HANDLER TASK ---
-static void factoryResetButtonTask(void* parameter) {
-    (void)parameter;
-    gpio_pad_select_gpio(FACTORY_RESET_PIN);
-    gpio_set_direction((gpio_num_t)FACTORY_RESET_PIN, GPIO_MODE_INPUT);
-    gpio_pullup_en((gpio_num_t)FACTORY_RESET_PIN);
-
-    for (;;) {
-        if (gpio_get_level((gpio_num_t)FACTORY_RESET_PIN) == 0) {
-            uint32_t pressStart = millis();
-            while (gpio_get_level((gpio_num_t)FACTORY_RESET_PIN) == 0) {
-                vTaskDelay(pdMS_TO_TICKS(100));
-                if (millis() - pressStart > FACTORY_RESET_HOLD_MS) {
-                    Serial.println("[RESET] Factory reset triggered!");
-                    ledSetPattern(LED_SENSOR_ERROR);
-
-                    storageFactoryReset();
-                    vTaskDelay(pdMS_TO_TICKS(500));
-                    esp_restart();
-                    break;
-                }
-            }
-        }
-        vTaskDelay(pdMS_TO_TICKS(200));
-    }
+static void enrollment_task(void *)
+{
+    vTaskDelay(pdMS_TO_TICKS(ENROLLMENT_WINDOW_MS));
+    esp_bt_gap_set_scan_mode(ESP_BT_CONNECTABLE, ESP_BT_NON_DISCOVERABLE);
+    ESP_LOGW(TAG, "enrollment window closed; device no longer discoverable");
+    vTaskDelete(NULL);
 }
 
-// --- SENSOR TASK ---
-static void sensorTask(void* parameter) {
-    (void)parameter;
-
-    int16_t rax, ray, raz, rgx, rgy, rgz;
-    float peak_ax, peak_ay, peak_az;
-    int64_t gyro_sum_x = 0, gyro_sum_y = 0, gyro_sum_z = 0;
-    uint16_t max_piezo = 0;
-    float prev_ax_val = 0, prev_ay_val = 0, prev_az_val = 0;
-
-    DataPacket pkt;
-    TickType_t lastWakeTime = xTaskGetTickCount();
-
-    esp_task_wdt_add(NULL);
-    TickType_t sendPeriod = pdMS_TO_TICKS(1000 / currentSampleRate);
-
+static void provisioning_task(void *)
+{
+    uint8_t c;
+    char line[96];
+    size_t pos = 0;
+    bool dropping = false;
+    printf("PROVISION_READY\n");
     for (;;) {
-        esp_task_wdt_reset();
-
-        if (isAuthenticated) {
-            uint32_t idleMs = (xTaskGetTickCount() - lastAuthenticatedTick) * portTICK_PERIOD_MS;
-            if (idleMs > SESSION_TIMEOUT_MS) {
-                isAuthenticated = false;
-                authState = AUTH_STATE_IDLE;
-                ledSetPattern(LED_IDLE);
-                Serial.println("[Auth] Session timed out");
-            }
-        }
-
-        if (batteryLow && currentSampleRate != SAMPLE_RATE_LOW) {
-            currentSampleRate = SAMPLE_RATE_LOW;
-            sendPeriod = pdMS_TO_TICKS(1000 / currentSampleRate);
-            Serial.printf("[Power] Battery low — reduced to %d Hz\n", currentSampleRate);
-        } else if (!batteryLow && currentSampleRate != SAMPLE_RATE_NORMAL) {
-            currentSampleRate = SAMPLE_RATE_NORMAL;
-            sendPeriod = pdMS_TO_TICKS(1000 / currentSampleRate);
-        }
-
-        if (SerialBT.connected()) {
-            if (!isAuthenticated) {
-                updateAuthentication();
-            }
-
-            if (isAuthenticated) {
-                pmRequestMaxFreq();
-
-                lastAuthenticatedTick = xTaskGetTickCount();
-
-                float max_shock_energy = -1.0f;
-                gyro_sum_x = gyro_sum_y = gyro_sum_z = 0;
-                max_piezo = 0;
-
-                for (int i = 0; i < OVERSAMPLE_LOOPS; i++) {
-                    Wire.beginTransmission(MPU_ADDR);
-                    Wire.write(0x3B);
-                    uint8_t err = Wire.endTransmission(false);
-                    if (err != 0) {
-                        recoverI2CBus(I2C_SDA, I2C_SCL);
-                        Wire.begin(I2C_SDA, I2C_SCL);
-                        Wire.setClock(400000);
-                        sensorReady = false;
-                    }
-
-                    Wire.requestFrom((int)MPU_ADDR, (int)14, (int)1);
-
-                    if (Wire.available() >= 14) {
-                        rax = Wire.read() << 8 | Wire.read();
-                        ray = Wire.read() << 8 | Wire.read();
-                        raz = Wire.read() << 8 | Wire.read();
-                        Wire.read(); Wire.read();
-                        rgx = Wire.read() << 8 | Wire.read();
-                        rgy = Wire.read() << 8 | Wire.read();
-                        rgz = Wire.read() << 8 | Wire.read();
-                        sensorReady = true;
-                    }
-
-                    uint16_t current_piezo = analogRead(PIEZO_PIN);
-                    if (current_piezo > max_piezo) max_piezo = current_piezo;
-
-                    float c_ax = (rax / 8192.0f) * 9.81f - g_config.accelOffset[0];
-                    float c_ay = (ray / 8192.0f) * 9.81f - g_config.accelOffset[1];
-                    float c_az = (raz / 8192.0f) * 9.81f - g_config.accelOffset[2];
-
-                    float ax_nograv = c_ax;
-                    float ay_nograv = c_ay;
-                    float az_nograv = c_az - 9.81f;
-                    float jerk = fabsf(ax_nograv - (prev_ax_val))
-                               + fabsf(ay_nograv - (prev_ay_val))
-                               + fabsf(az_nograv - (prev_az_val - 9.81f));
-
-                    if (jerk > max_shock_energy) {
-                        max_shock_energy = jerk;
-                        peak_ax = c_ax;
-                        peak_ay = c_ay;
-                        peak_az = c_az;
-                    }
-
-                    if (g_ahrsReady) {
-                        float accel_corrected[3] = {
-                            c_ax - g_config.accelOffset[0],
-                            c_ay - g_config.accelOffset[1],
-                            c_az - g_config.accelOffset[2]
-                        };
-                        if (zuptUpdate(accel_corrected)) {
-                            float gyroRaw[3] = {
-                                (float)rgx / 65.5f * 0.0174533f - g_config.gyroOffset[0],
-                                (float)rgy / 65.5f * 0.0174533f - g_config.gyroOffset[1],
-                                (float)rgz / 65.5f * 0.0174533f - g_config.gyroOffset[2]
-                            };
-                            zuptUpdateBias(gyroRaw);
-                            for (int b = 0; b < 3; b++) g_gyroRuntimeBias[b] = zuptGetGyroBias()[b];
-                        }
-                    }
-
-                    gyro_sum_x += rgx - (int16_t)(g_config.gyroOffset[0] * 65.5f) - (int16_t)(g_gyroRuntimeBias[0] * 65.5f);
-                    gyro_sum_y += rgy - (int16_t)(g_config.gyroOffset[1] * 65.5f) - (int16_t)(g_gyroRuntimeBias[1] * 65.5f);
-                    gyro_sum_z += rgz - (int16_t)(g_config.gyroOffset[2] * 65.5f) - (int16_t)(g_gyroRuntimeBias[2] * 65.5f);
-
-                    prev_ax_val = ax_nograv;
-                    prev_ay_val = ay_nograv;
-                    prev_az_val = az_nograv;
-
-                    delayMicroseconds(400);
-                }
-
-                float avg_gyro[3] = {
-                    ((gyro_sum_x / OVERSAMPLE_LOOPS) / 65.5f) * 0.0174533f,
-                    ((gyro_sum_y / OVERSAMPLE_LOOPS) / 65.5f) * 0.0174533f,
-                    ((gyro_sum_z / OVERSAMPLE_LOOPS) / 65.5f) * 0.0174533f
-                };
-                if (g_ahrsReady) {
-                    float avg_accel[3] = {
-                        peak_ax - g_config.accelOffset[0],
-                        peak_ay - g_config.accelOffset[1],
-                        peak_az - g_config.accelOffset[2]
-                    };
-                    float dt = (sendPeriod * portTICK_PERIOD_MS) / 1000.0f;
-                    madgwickUpdate(&g_ahrs, avg_gyro, avg_accel, dt);
-                }
-
-                pkt.header[0] = 0xAA;
-                pkt.header[1] = 0xBB;
-                pkt.ax = peak_ax;
-                pkt.ay = peak_ay;
-                pkt.az = peak_az;
-                pkt.gx = avg_gyro[0];
-                pkt.gy = avg_gyro[1];
-                pkt.gz = avg_gyro[2];
-                pkt.piezo = max_piezo;
-
-                if (batteryMutex && xSemaphoreTake(batteryMutex, pdMS_TO_TICKS(1)) == pdTRUE) {
-                    pkt.battery = batteryPercentage;
-                    xSemaphoreGive(batteryMutex);
+        int n = uart_read_bytes(UART_NUM_0, &c, 1, pdMS_TO_TICKS(100));
+        if (n <= 0) continue;
+        if (c == '\n' || c == '\r') {
+            if (dropping) {
+                printf("PROVISION_ERR:line_too_long\n");
+            } else if (pos > 0) {
+                line[pos] = '\0';
+                if (strcmp(line, "PROVISION_STATUS") == 0) {
+                    provisioning_print_status();
                 } else {
-                    pkt.battery = 0;
+                    provisioning_handle_line(line);
                 }
-
-                pkt.crc16 = computeCRC16(&pkt);
-
-                // Skip transmission during OTA update to prevent BT buffer overflow
-                static uint32_t lastOtaDebug = 0;
-                bool otaActive = btOtaIsActive();
-                if (millis() - lastOtaDebug > 10000) {
-                    Serial.printf("[Sensor] btOtaIsActive()=%d, authenticated=%d\n", otaActive, isAuthenticated);
-                    lastOtaDebug = millis();
-                }
-                if (!otaActive) {
-                    SerialBT.write((const uint8_t*)&pkt, sizeof(DataPacket));
-                }
-
-                pmReleaseMaxFreq();
-            } else {
-                vTaskDelay(pdMS_TO_TICKS(100));
+                memset(line, 0, sizeof(line));
             }
+            pos = 0;
+            dropping = false;
+        } else if (!dropping && pos < sizeof(line) - 1) {
+            line[pos++] = (char)c;
         } else {
-            isAuthenticated = false;
-            authState = AUTH_STATE_IDLE;
-            sensorReady = false;
-            ledSetPattern(LED_IDLE);
-            vTaskDelay(pdMS_TO_TICKS(500));
+            dropping = true;
         }
-
-        vTaskDelayUntil(&lastWakeTime, sendPeriod);
     }
 }
 
-// --- MPU6050 CALIBRATION ---
-static void calibrateMPU6050(void) {
-    Serial.println("[Calib] Starting factory calibration (500 samples)...");
-    calibrationStart(500);
-    uint32_t startMs = millis();
-
-    while (!calibrationIsDone()) {
-        if (millis() - startMs > 30000) {
-            Serial.println("[Calib] Timeout — using uncalibrated defaults");
-            break;
-        }
-        Wire.beginTransmission(MPU_ADDR);
-        Wire.write(0x3B);
-        Wire.endTransmission(false);
-        Wire.requestFrom((int)MPU_ADDR, (int)14, (int)1);
-
-        if (Wire.available() >= 14) {
-            int16_t rax = Wire.read() << 8 | Wire.read();
-            int16_t ray = Wire.read() << 8 | Wire.read();
-            int16_t raz = Wire.read() << 8 | Wire.read();
-            Wire.read(); Wire.read();
-            int16_t rgx = Wire.read() << 8 | Wire.read();
-            int16_t rgy = Wire.read() << 8 | Wire.read();
-            int16_t rgz = Wire.read() << 8 | Wire.read();
-
-            float aRaw[3] = {
-                (float)rax / 8192.0f * 9.81f,
-                (float)ray / 8192.0f * 9.81f,
-                (float)raz / 8192.0f * 9.81f
-            };
-            float gRaw[3] = {
-                (float)rgx / 65.5f * 0.0174533f,
-                (float)rgy / 65.5f * 0.0174533f,
-                (float)rgz / 65.5f * 0.0174533f
-            };
-            calibrationCollectSample(gRaw, aRaw);
-        }
-        vTaskDelay(pdMS_TO_TICKS(20));
+extern "C" void app_main(void)
+{
+    esp_err_t nvs = nvs_flash_init();
+    if (nvs == ESP_ERR_NVS_NO_FREE_PAGES || nvs == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        ESP_ERROR_CHECK(nvs_flash_erase());
+        nvs = nvs_flash_init();
     }
-
-    if (calibrationFinish(500)) {
-        ImuCalibration* res = calibrationGetResult();
-        for (int i = 0; i < 3; i++) {
-            g_config.accelOffset[i] = res->accel[i].bias;
-            g_config.gyroOffset[i]  = res->gyro[i].bias;
-        }
-        storageSaveConfig(&g_config);
-    }
-
-    Serial.printf("[Calib] Accel offsets: %.3f, %.3f, %.3f m/s²\n",
-        g_config.accelOffset[0], g_config.accelOffset[1], g_config.accelOffset[2]);
-    Serial.printf("[Calib] Gyro offsets: %.3f, %.3f, %.3f rad/s\n",
-        g_config.gyroOffset[0], g_config.gyroOffset[1], g_config.gyroOffset[2]);
-}
-
-// =================================================
-
-void setup() {
-    setCpuFrequencyMhz(CPU_FREQ_MAX_MHZ);
-    Serial.begin(115200);
-
-    esp_reset_reason_t resetReason = esp_reset_reason();
-    Serial.printf("[Boot] Reset reason: %d\n", resetReason);
-    storageLogReset(resetReason);
-
-    if (!storageInit()) {
-        Serial.println("[FATAL] NVS init failed");
-    }
-
-    storageLoadConfig(&g_config);
-    storageLoadStats(&g_stats);
-
-    if (resetReason == ESP_RST_PANIC || resetReason == ESP_RST_WDT) {
-        Serial.println("[Boot] Crash/panic reset detected — running self-test...");
-    }
-
-    batteryMutex = xSemaphoreCreateMutex();
-    if (!batteryMutex) {
-        Serial.println("[FATAL] Battery mutex failed");
-        while (1) delay(100);
-    }
-
-    recoverI2CBus(I2C_SDA, I2C_SCL);
-    Wire.begin(I2C_SDA, I2C_SCL);
-    Wire.setClock(400000);
-    delay(100);
-
-    analogReadResolution(12);
-    analogSetAttenuation(ADC_11db);
-    pinMode(PIEZO_PIN, INPUT);
-
-    ledInit();
-
-    initMPU6050();
-
-    if (!checkMPU6050()) {
-        Serial.println("[ERROR] MPU6050 not responding!");
-        recoverI2CBus(I2C_SDA, I2C_SCL);
-        delay(100);
-        Wire.begin(I2C_SDA, I2C_SCL);
-        Wire.setClock(400000);
-
-        if (!checkMPU6050()) {
-            Serial.println("[FATAL] MPU6050 self-test FAILED");
-            ledSetPattern(LED_SENSOR_ERROR);
-        }
-    } else {
-        Serial.println("[MPU] OK: 4G / 500dps / 260Hz DLPF");
-
-        if (!storageIsInitialized()) {
-            calibrateMPU6050();
-            storageSetInitialized();
-        }
-    }
-
-    madgwickInit(&g_ahrs, 0.1f);
-    zuptInit();
-    if (storageIsInitialized()) {
-        calibrationSetOffsets(g_config.gyroOffset, g_config.accelOffset);
-        float accelInit[3] = {
-            g_config.accelOffset[0],
-            g_config.accelOffset[1],
-            g_config.accelOffset[2] + 9.81f
-        };
-        g_ahrs.orientation = quatFromAccel(accelInit, 9.81f);
-        g_ahrsReady = true;
-        Serial.println("[AHRS] Orientation initialized from gravity");
-    }
-
-    initPowerManager();
-
-    uint64_t chipid = ESP.getEfuseMac();
-    char uniqueName[30];
-    const char* baseName = g_config.deviceName[0] != '\0' ? g_config.deviceName : "STASYS";
-    snprintf(uniqueName, sizeof(uniqueName), "%s-%04X",
-        baseName,
-        (uint16_t)(chipid >> 32));
-
-    SerialBT.begin(uniqueName);
-    Serial.printf("[BT] Device name: %s\n", uniqueName);
-    esp_bredr_tx_power_set(ESP_PWR_LVL_N0, ESP_PWR_LVL_P3);
-
-    esp_task_wdt_init(WDT_TIMEOUT_S, true);
-
-    xTaskCreatePinnedToCore(sensorTask, "SensorTask", 8192, NULL, 2, &sensorTaskHandle, 1);
-    xTaskCreatePinnedToCore(batteryMonitorTask, "BatMonitor", 4096, NULL, 1, &batteryTaskHandle, 0);
-    xTaskCreatePinnedToCore(factoryResetButtonTask, "ResetBtn", 2048, NULL, 3, &resetButtonTaskHandle, 0);
-
-    otaInit();
-    btOtaInit();
-
-    char runningVersion[16];
-    storageGetFirmwareVersion(runningVersion, sizeof(runningVersion));
-    Serial.printf("[Boot] STASYS_ONE v%s ready\n", runningVersion);
-    ledSetPattern(LED_IDLE);
-}
-
-void loop() {
-    static uint32_t lastOpTimeLog = 0;
-    if (millis() - lastOpTimeLog > 60000) {
-        storageAddOperatingTime(60);
-        lastOpTimeLog = millis();
-    }
-
-    vTaskDelay(pdMS_TO_TICKS(1000));
+    ESP_ERROR_CHECK(nvs);
+    app_events = xEventGroupCreate();
+    if (app_events == NULL) abort();
+    spp_tx_mutex = xSemaphoreCreateMutex();
+    if (spp_tx_mutex == NULL) abort();
+    staysys_auth_set_key_provider(device_key_provider, nullptr);
+    ESP_ERROR_CHECK(staysys_sensors_init(&sensors));
+    if (xTaskCreatePinnedToCore(provisioning_task, "provision", 4096, NULL, 1, NULL, 0) != pdPASS) abort();
+    bt_init();
+    if (xTaskCreatePinnedToCore(enrollment_task, "enroll", 2048, NULL, 1, NULL, 0) != pdPASS) abort();
+    TaskHandle_t sensor_handle = NULL;
+    TaskHandle_t battery_handle = NULL;
+    if (xTaskCreatePinnedToCore(sensor_task, "sensor", 6144, NULL, 1, &sensor_handle, 1) != pdPASS || sensor_handle == NULL) abort();
+    if (xTaskCreatePinnedToCore(battery_task, "battery", 3072, NULL, 1, &battery_handle, 0) != pdPASS || battery_handle == NULL) abort();
+    ESP_LOGI(TAG, "STASYS firmware %s starting (ESP-IDF app_main)", FIRMWARE_VERSION);
 }

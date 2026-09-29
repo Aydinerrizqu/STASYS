@@ -73,6 +73,26 @@ class ValidateTest(unittest.TestCase):
             any("non-positive size" in error for error in errors), errors
         )
 
+    def test_negative_hex_offset_detected(self):
+        errors = self._validate_text(
+            "neg,data,nvs,-0x1000,0x5000,\n"
+            "nvs,data,nvs,0x9000,0x5000,\n",
+            0x200000,
+        )
+        self.assertTrue(
+            any("negative offset" in error for error in errors), errors
+        )
+
+    def test_negative_decimal_offset_detected(self):
+        errors = self._validate_text(
+            "neg,data,nvs,-1,0x5000,\n"
+            "nvs,data,nvs,0x9000,0x5000,\n",
+            0x200000,
+        )
+        self.assertTrue(
+            any("negative offset" in error for error in errors), errors
+        )
+
     def test_invalid_value_detected(self):
         errors = self._validate_text(
             "bad,data,nvs,notanumber,0x1000,\n",
@@ -82,6 +102,7 @@ class ValidateTest(unittest.TestCase):
             any("invalid offset/size" in error for error in errors), errors
         )
 
+    # 4194304 (4 MiB) is a PROVISIONAL assumption, not measured hardware flash.
     def test_real_dual_ota_table_fits_4mb(self):
         self.assertEqual(validate(PARTITIONS_CSV, DUAL_OTA_FLASH), [])
 

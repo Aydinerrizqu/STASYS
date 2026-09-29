@@ -32,6 +32,9 @@ def validate(path: Path, flash_size: int) -> list[str]:
             except ValueError:
                 errors.append(f"line {line_no}: invalid offset/size for {name}")
                 continue
+            if offset < 0:
+                errors.append(f"line {line_no}: negative offset for {name}")
+                continue
             if size <= 0:
                 errors.append(f"line {line_no}: non-positive size for {name}")
                 continue

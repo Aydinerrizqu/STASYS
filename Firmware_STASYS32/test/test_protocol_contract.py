@@ -6,6 +6,7 @@ import unittest
 
 
 DOMAIN = b"STASYS-AUTH/v2\0"
+AUTH_VERSION = 2
 KNOWN_PROOF = "12855b0e5b9ed50c4a618a5e0b84cf2d86f7dbbf94fef1d0df83fa6c82d1353b"
 UINT32_MAX = 0xFFFFFFFF
 
@@ -35,7 +36,7 @@ def encode_frame(payload):
 
 
 def greeting_generation(message):
-    match = re.fullmatch(r"READY v=2 gen=(0|[1-9][0-9]*)", message)
+    match = re.fullmatch(rf"READY v={AUTH_VERSION} gen=(0|[1-9][0-9]*)", message)
     if not match:
         raise ValueError("invalid greeting")
     generation = int(match.group(1))
@@ -51,7 +52,6 @@ class ProtocolContractTests(unittest.TestCase):
         nonce = bytes(32)
         transcript = auth_transcript(identity, generation, nonce)
 
-        self.assertEqual(len(DOMAIN), 15)
         self.assertEqual(transcript[:15], DOMAIN)
         self.assertEqual(transcript[15:21], identity)
         self.assertEqual(transcript[21:25], b"\x01\x00\x00\x00")
@@ -71,6 +71,9 @@ class ProtocolContractTests(unittest.TestCase):
         self.assertEqual(frame[:2], b"\xAA\xBB")
         self.assertEqual(frame[2:35], payload)
         self.assertEqual(struct.unpack("<6f3hHB", frame[2:35]), values)
+        self.assertEqual(struct.unpack("<3h", frame[26:32]), (-1, 2, -3))
+        self.assertEqual(struct.unpack("<H", frame[32:34])[0], 0x1234)
+        self.assertEqual(frame[34], 87)
         expected_xor = 0
         for byte in frame[2:35]:
             expected_xor ^= byte

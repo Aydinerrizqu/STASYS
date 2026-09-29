@@ -1,3 +1,10 @@
+/* DUPLICATE HEADER: this file is kept in sync with the other copy —
+ * components/system_config.h and components/system_config/system_config.h.
+ * sensors/sensor_hal.h includes this via the component include path;
+ * system_config/system_config.c includes its local copy.
+ * Edit both together (or delete one only after updating all includes).
+ * See plan: docs/superpowers/plans/2026-09-28-stasys-firmware-esp-idf-port.md Task 3.
+ */
 #pragma once
 
 #include "driver/gpio.h"

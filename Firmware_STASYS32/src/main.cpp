@@ -378,6 +378,7 @@ static void provisioning_task(void *)
         if (c == '\n' || c == '\r') {
             if (dropping) {
                 printf("PROVISION_ERR:line_too_long\n");
+                memset(line, 0, sizeof(line));
             } else if (pos > 0) {
                 line[pos] = '\0';
                 if (strcmp(line, "PROVISION_STATUS") == 0) {

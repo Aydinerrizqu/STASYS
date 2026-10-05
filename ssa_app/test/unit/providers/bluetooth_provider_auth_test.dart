@@ -1,18 +1,16 @@
-/// Auth failure-path tests for BluetoothProvider's v2 line state machine (I2).
-///
-/// The BT socket stream cannot be driven in a unit test without a connection
-/// abstraction (explicitly out of scope), so the provider exposes two minimal
-/// `@visibleForTesting` seams:
-///   - `feedAuthData` feeds raw bytes into the exact `_handleTextData` state
-///     machine the BT stream listener calls in production;
-///   - `selectDeviceForAuth` injects the device identity used for proof
-///     computation and flags the state machine as running outside a real
-///     socket, so the post-`readKey` connection check (a teardown-race
-///     guard) does not trip on the absent socket.
-/// Everything else — DeviceKeyStore, line buffering, phase transitions,
-/// `_failAuthentication` — runs the real implementation.
-
-import 'dart:typed_data';
+// Auth failure-path tests for BluetoothProvider's v2 line state machine (I2).
+//
+// The BT socket stream cannot be driven in a unit test without a connection
+// abstraction (explicitly out of scope), so the provider exposes two minimal
+// `@visibleForTesting` seams:
+//   - `feedAuthData` feeds raw bytes into the exact `_handleTextData` state
+//     machine the BT stream listener calls in production;
+//   - `selectDeviceForAuth` injects the device identity used for proof
+//     computation and flags the state machine as running outside a real
+//     socket, so the post-`readKey` connection check (a teardown-race
+//     guard) does not trip on the absent socket.
+// Everything else — DeviceKeyStore, line buffering, phase transitions,
+// `_failAuthentication` — runs the real implementation.
 
 import 'package:flutter_bluetooth_serial/flutter_bluetooth_serial.dart';
 import 'package:flutter_test/flutter_test.dart';

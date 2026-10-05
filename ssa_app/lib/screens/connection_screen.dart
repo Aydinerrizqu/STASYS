@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bluetooth_serial/flutter_bluetooth_serial.dart';
 import 'package:go_router/go_router.dart';
@@ -22,6 +23,7 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
   bool _isScanning = false;
   List<BluetoothDevice> _devices = [];
   StreamSubscription<BluetoothDiscoveryResult>? _discoverySubscription;
+  bool _exitDialogOpen = false;
   final FirmwareService _firmwareService = FirmwareService();
 
   @override
@@ -104,6 +106,17 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
       Navigator.of(context).pop();
       if (btProvider.isConnected && btProvider.isAuthenticated) {
         await _checkFirmwareUpdate(context);
+      } else {
+        // Connection/auth failed — surface the provider's failure reason
+        // (v2 auth failures) so the user gets a readable message.
+        final message = btProvider.authError ?? 'Connection failed.';
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(message),
+            backgroundColor: StsysTheme.error,
+            duration: const Duration(seconds: 6),
+          ),
+        );
       }
     }
   }
@@ -113,21 +126,21 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
       context: context,
       barrierDismissible: false,
       builder: (ctx) => AlertDialog(
-        backgroundColor: StsysTheme.surfaceContainerHigh,
+        backgroundColor: StsysTheme.surfaceContainerHighOf(context),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             const SizedBox(height: 16),
-            const CircularProgressIndicator(color: StsysTheme.primary),
+            CircularProgressIndicator(color: StsysTheme.primaryOf(context)),
             const SizedBox(height: 24),
             Text(
               'CONNECTING',
-              style: StsysText.labelBold.copyWith(color: StsysTheme.primary),
+              style: StsysText.labelBold.copyWith(color: StsysTheme.primaryOf(context)),
             ),
             const SizedBox(height: 8),
             Text(
               deviceName,
-              style: StsysText.body,
+              style: StsysText.bodyOf(context),
               textAlign: TextAlign.center,
             ),
           ],
@@ -170,20 +183,12 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
       if (!mounted) return;
 
       if (currentFw == null) {
-        // ESP32 didn't respond to GET_VERSION. Stay on connection screen
-        // and show a clear error — don't silently allow tracking.
-        if (!context.mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Gagal membaca versi firmware dari STASYS. '
-              'Pastikan firmware mendukung perintah GET_VERSION, '
-              'lalu coba lagi.',
-            ),
-            backgroundColor: StsysTheme.error,
-            duration: Duration(seconds: 6),
-          ),
+        // Firmware v2 has no legacy GET_VERSION command — version query
+        // unsupported; skip the OTA check and proceed to calibration.
+        debugPrint(
+          '[BT] Firmware version query unsupported (v2 firmware); skipping OTA check.',
         );
+        if (mounted) _showCalibrationFlow();
         return;
       }
 
@@ -223,229 +228,216 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
     }
   }
 
+  Future<void> _confirmExit() async {
+    if (_exitDialogOpen || !mounted) return;
+    _exitDialogOpen = true;
+    final shouldExit = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: Theme.of(context).colorScheme.surfaceContainerHigh,
+        title: Text('Keluar dari STASYS'),
+        content: Text('Yakin ingin keluar dari aplikasi?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: Text('No', style: TextStyle(color: StsysTheme.cyanOf(context))),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: Text('Yes', style: TextStyle(color: StsysTheme.cyanOf(context))),
+          ),
+        ],
+      ),
+    );
+    _exitDialogOpen = false;
+    if (shouldExit == true && mounted) {
+      await SystemNavigator.pop();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Consumer<BluetoothProvider>(
-      builder: (context, btProvider, _) {
-        return Scaffold(
-          backgroundColor: StsysTheme.surfaceContainerLowest,
-          body: SafeArea(
-            child: Column(
-              children: [
-                // Header
-                Padding(
-                  padding: const EdgeInsets.all(20),
-                  child: Row(
-                    children: [
-                      ShaderMask(
-                        shaderCallback: (bounds) {
-                          return StsysTheme.tacticalGradient.createShader(
-                            bounds,
-                          );
-                        },
-                        child: const Text(
-                          'STASYS',
-                          style: TextStyle(
-                            fontFamily: 'Manrope',
-                            fontSize: 24,
-                            fontWeight: FontWeight.w900,
-                            color: Colors.white,
-                            letterSpacing: 3,
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _confirmExit();
+      },
+      child: Consumer<BluetoothProvider>(
+        builder: (context, btProvider, _) {
+          return Scaffold(
+            backgroundColor: const Color(0xFF080B0E),
+            body: SafeArea(
+              child: Column(
+                children: [
+                  const SizedBox(height: 40),
+                  SizedBox(
+                    height: 59,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.gps_fixed,
+                            color: StsysTheme.cyanOf(context),
+                            size: 22,
                           ),
-                        ),
-                      ),
-                      const Spacer(),
-                      StatusBadge(
-                        isConnected: btProvider.isConnected,
-                        deviceName: btProvider.isConnected
-                            ? btProvider.connectedDeviceName
-                            : null,
-                      ),
-                    ],
-                  ),
-                ),
-
-                // Content
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 20),
-                    child: Column(
-                      children: [
-                        _buildStatusCard(btProvider),
-                        const SizedBox(height: 16),
-                        _buildScanButton(),
-                        const SizedBox(height: 16),
-                        Expanded(child: _buildDeviceList()),
-                      ],
-                    ),
-                  ),
-                ),
-
-                // Explore App button
-                Padding(
-                  padding: const EdgeInsets.all(20),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      GestureDetector(
-                        onTap: _onExploreApp,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 20,
-                            vertical: 12,
-                          ),
-                          decoration: BoxDecoration(
-                            color: StsysTheme.surfaceContainerHigh,
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                              color: StsysTheme.outlineVariant.withValues(
-                                alpha: 0.2,
+                          const SizedBox(width: 9),
+                          ShaderMask(
+                            shaderCallback: (bounds) =>
+                                StsysTheme.brandGradient.createShader(bounds),
+                            child: const Text(
+                              'STASYS',
+                              style: TextStyle(
+                                fontFamily: 'Manrope',
+                                fontSize: 21,
+                                fontWeight: FontWeight.w900,
+                                color: Colors.white,
+                                letterSpacing: 2.5,
                               ),
                             ),
                           ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                Icons.explore,
-                                color: StsysTheme.primary.withValues(
-                                  alpha: 0.7,
-                                ),
-                                size: 18,
-                              ),
-                              const SizedBox(width: 8),
-                              Text(
-                                'EXPLORE APP',
-                                style: TextStyle(
-                                  fontFamily: 'Manrope',
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w800,
-                                  letterSpacing: 1.5,
-                                  color: StsysTheme.primary.withValues(
-                                    alpha: 0.7,
-                                  ),
-                                ),
-                              ),
-                            ],
+                          const Spacer(),
+                          _ConnectionBadge(
+                            isConnected: btProvider.isConnected,
+                            deviceName: btProvider.isConnected
+                                ? btProvider.connectedDeviceName
+                                : null,
                           ),
-                        ),
+                        ],
                       ),
-                    ],
+                    ),
                   ),
-                ),
-              ],
+                  _buildStatusCard(btProvider),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
+                    child: _buildScanButton(),
+                  ),
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
+                      child: _buildDeviceList(),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
+                    child: SizedBox(
+                      width: double.infinity,
+                      child: _buildExploreButton(),
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
-        );
-      },
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildExploreButton() {
+    return OutlinedButton.icon(
+      onPressed: _onExploreApp,
+      icon: Icon(Icons.explore_outlined, size: 17),
+      label: Text('EXPLORE APP'),
+      style: OutlinedButton.styleFrom(
+        minimumSize: const Size.fromHeight(48),
+        foregroundColor: StsysTheme.cyanOf(context),
+        side: BorderSide(color: StsysTheme.cyanOf(context), width: 1),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(9)),
+        textStyle: TextStyle(
+          fontFamily: 'Manrope',
+          fontSize: 11,
+          fontWeight: FontWeight.w800,
+          letterSpacing: 1.6,
+        ),
+      ),
     );
   }
 
   Widget _buildStatusCard(BluetoothProvider btProvider) {
-    String statusText;
-    Color statusColor;
-
-    if (btProvider.isAuthenticated) {
-      statusText = 'CONNECTED & AUTHENTICATED';
-      statusColor = const Color(0xFF4CAF50);
-    } else if (btProvider.isConnected) {
-      statusText = 'CONNECTED — AUTHENTICATING...';
-      statusColor = const Color(0xFFFF9800);
-    } else {
-      statusText = 'NOT CONNECTED';
-      statusColor = StsysTheme.error;
-    }
-
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: StsysTheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: statusColor.withValues(alpha: 0.3)),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 10,
-            height: 10,
-            decoration: BoxDecoration(
-              color: statusColor,
-              shape: BoxShape.circle,
+    final isConnected = btProvider.isConnected;
+    final color = isConnected ? StsysTheme.cyanOf(context) : StsysTheme.mobileMutedTextOf(context);
+    return SizedBox(
+      height: 28,
+      child: Center(
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 6,
+              height: 6,
+              decoration: BoxDecoration(color: color, shape: BoxShape.circle),
             ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  statusText,
-                  style: TextStyle(
-                    fontFamily: 'Manrope',
-                    fontSize: 13,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 1,
-                    color: statusColor,
-                  ),
-                ),
-                if (btProvider.isConnected)
-                  Text(
-                    btProvider.connectedDeviceName,
-                    style: TextStyle(
-                      fontFamily: 'Inter',
-                      fontSize: 11,
-                      color: StsysTheme.onSurface.withValues(alpha: 0.5),
-                    ),
-                  ),
-              ],
+            const SizedBox(width: 8),
+            Text(
+              isConnected ? 'CONNECTED' : 'NOT CONNECTED',
+              style: TextStyle(
+                fontFamily: 'Manrope',
+                fontSize: 11,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 1.4,
+                color: color,
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
 
   Widget _buildScanButton() {
-    return GestureDetector(
-      onTap: _isScanning ? _stopScan : _startScan,
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(vertical: 16),
-        decoration: BoxDecoration(
-          gradient: StsysTheme.tacticalGradient,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            if (_isScanning)
-              const SizedBox(
-                width: 18,
-                height: 18,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: StsysTheme.onPrimary,
+    return Semantics(
+      button: true,
+      label: _isScanning ? 'Stop scanning for STASYS' : 'Connect to STASYS',
+      child: GestureDetector(
+        onTap: _isScanning ? _stopScan : _startScan,
+        child: Container(
+          width: double.infinity,
+          height: 48,
+          padding: EdgeInsets.zero,
+          decoration: BoxDecoration(
+            color: StsysTheme.cyanOf(context),
+            borderRadius: BorderRadius.circular(12),
+            boxShadow: [
+              BoxShadow(
+                color: StsysTheme.primaryOf(context).withValues(alpha: 0.16),
+                blurRadius: 18,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              if (_isScanning)
+                const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: const Color(0xFF001519),
+                  ),
+                )
+              else
+                const Icon(
+                  Icons.bluetooth_searching,
+                  color: const Color(0xFF001519),
+                  size: 20,
                 ),
-              )
-            else
-              const Icon(
-                Icons.bluetooth_searching,
-                color: StsysTheme.onPrimary,
-                size: 20,
+              const SizedBox(width: 10),
+              Text(
+                _isScanning ? 'SCANNING...' : 'CONNECT TO STASYS',
+                style: const TextStyle(
+                  fontFamily: 'Manrope',
+                  fontSize: 14,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 1.8,
+                  color: const Color(0xFF001519),
+                ),
               ),
-            const SizedBox(width: 8),
-            Text(
-              _isScanning ? 'SCANNING...' : 'SCAN BLUETOOTH',
-              style: const TextStyle(
-                fontFamily: 'Manrope',
-                fontSize: 14,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 2,
-                color: StsysTheme.onPrimary,
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -457,8 +449,8 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const CircularProgressIndicator(
-              color: StsysTheme.primary,
+            CircularProgressIndicator(
+              color: StsysTheme.primaryOf(context),
               strokeWidth: 2,
             ),
             const SizedBox(height: 16),
@@ -468,7 +460,7 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
                 fontFamily: 'Inter',
                 fontSize: 11,
                 letterSpacing: 2,
-                color: StsysTheme.onSurface.withValues(alpha: 0.4),
+                color: StsysTheme.onSurfaceOf(context).withValues(alpha: 0.4),
               ),
             ),
           ],
@@ -484,7 +476,7 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
             Icon(
               Icons.bluetooth_disabled,
               size: 48,
-              color: StsysTheme.onSurface.withValues(alpha: 0.1),
+              color: StsysTheme.onSurfaceOf(context).withValues(alpha: 0.1),
             ),
             const SizedBox(height: 16),
             Text(
@@ -494,7 +486,7 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
                 fontSize: 14,
                 fontWeight: FontWeight.w800,
                 letterSpacing: 2,
-                color: StsysTheme.onSurface.withValues(alpha: 0.2),
+                color: StsysTheme.onSurfaceOf(context).withValues(alpha: 0.2),
               ),
             ),
             const SizedBox(height: 8),
@@ -503,7 +495,7 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
               style: TextStyle(
                 fontFamily: 'Inter',
                 fontSize: 11,
-                color: StsysTheme.onSurface.withValues(alpha: 0.3),
+                color: StsysTheme.onSurfaceOf(context).withValues(alpha: 0.3),
               ),
               textAlign: TextAlign.center,
             ),
@@ -522,6 +514,46 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
   }
 }
 
+class _ConnectionBadge extends StatelessWidget {
+  final bool isConnected;
+  final String? deviceName;
+
+  const _ConnectionBadge({required this.isConnected, this.deviceName});
+
+  @override
+  Widget build(BuildContext context) {
+    final color = isConnected ? StsysTheme.cyanOf(context) : StsysTheme.mobileMutedTextOf(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 6,
+            height: 6,
+            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: 6),
+          Text(
+            isConnected ? 'CONNECTED' : 'DISCONNECTED',
+            style: TextStyle(
+              fontFamily: 'Inter',
+              fontSize: 10,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 1.2,
+              color: color,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _DeviceCard extends StatelessWidget {
   final BluetoothDevice device;
   final VoidCallback onTap;
@@ -536,10 +568,10 @@ class _DeviceCard extends StatelessWidget {
         margin: const EdgeInsets.only(bottom: 8),
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: StsysTheme.surfaceContainerLow,
+          color: StsysTheme.surfaceContainerLowOf(context),
           borderRadius: BorderRadius.circular(10),
           border: Border.all(
-            color: StsysTheme.outlineVariant.withValues(alpha: 0.15),
+            color: StsysTheme.outlineVariantOf(context).withValues(alpha: 0.15),
           ),
         ),
         child: Row(
@@ -548,12 +580,12 @@ class _DeviceCard extends StatelessWidget {
               width: 40,
               height: 40,
               decoration: BoxDecoration(
-                color: StsysTheme.primary.withValues(alpha: 0.1),
+                color: StsysTheme.primaryOf(context).withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Icon(
                 device.isBonded ? Icons.watch : Icons.bluetooth,
-                color: StsysTheme.primary,
+                color: StsysTheme.primaryOf(context),
                 size: 20,
               ),
             ),
@@ -564,11 +596,11 @@ class _DeviceCard extends StatelessWidget {
                 children: [
                   Text(
                     device.name ?? 'Unknown Device',
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontFamily: 'Manrope',
                       fontSize: 13,
                       fontWeight: FontWeight.w700,
-                      color: StsysTheme.onSurface,
+                      color: StsysTheme.onSurfaceOf(context),
                     ),
                   ),
                   const SizedBox(height: 2),
@@ -580,8 +612,8 @@ class _DeviceCard extends StatelessWidget {
                       fontWeight: FontWeight.w600,
                       letterSpacing: 1.5,
                       color: device.isBonded
-                          ? StsysTheme.primary.withValues(alpha: 0.6)
-                          : StsysTheme.onSurface.withValues(alpha: 0.3),
+                          ? StsysTheme.primaryOf(context).withValues(alpha: 0.6)
+                          : StsysTheme.onSurfaceOf(context).withValues(alpha: 0.3),
                     ),
                   ),
                 ],
@@ -589,7 +621,7 @@ class _DeviceCard extends StatelessWidget {
             ),
             Icon(
               Icons.chevron_right,
-              color: StsysTheme.onSurface.withValues(alpha: 0.3),
+              color: StsysTheme.onSurfaceOf(context).withValues(alpha: 0.3),
               size: 20,
             ),
           ],

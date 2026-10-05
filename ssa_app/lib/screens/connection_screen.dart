@@ -178,9 +178,6 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
     final router = GoRouter.of(context);
     try {
       final currentFw = await bt.getFirmwareVersion();
-      final newFw = await _firmwareService.loadFirmware();
-
-      if (!mounted) return;
 
       if (currentFw == null) {
         // Firmware v2 has no legacy GET_VERSION command — version query
@@ -191,6 +188,10 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
         if (mounted) _showCalibrationFlow();
         return;
       }
+
+      final newFw = await _firmwareService.loadFirmware();
+
+      if (!mounted) return;
 
       if (currentFw != newFw.version) {
         showDialog(

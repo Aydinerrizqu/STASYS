@@ -163,6 +163,11 @@ void main() {
     expect(backend.value, isNull);
     expect(find.text('CONFIGURED'), findsNothing);
     expect(find.byType(TextField), findsOneWidget);
+    expect(
+      tester.widget<TextField>(find.byType(TextField)).controller!.text,
+      isEmpty,
+      reason: 'removed key must not be re-echoed in the entry field',
+    );
     expect(find.text('SAVE'), findsOneWidget);
   });
 

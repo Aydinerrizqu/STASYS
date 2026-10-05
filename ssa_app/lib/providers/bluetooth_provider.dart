@@ -115,6 +115,10 @@ class BluetoothProvider extends ChangeNotifier {
           case _ConnectionPhase.waitingForNonce:
             final nonce = StasysProtocol.parseNonce(line);
             final key = await _deviceKeyStore.readKey();
+            if (_connection == null ||
+                _connectionPhase != _ConnectionPhase.waitingForNonce) {
+              return;
+            }
             if (key == null) {
               await _failAuthentication('Device key not configured.');
               return;
@@ -132,6 +136,7 @@ class BluetoothProvider extends ChangeNotifier {
           case _ConnectionPhase.waitingForAuthResult:
             if (line == 'OK') {
               debugPrint('[BT] Authenticated; starting sensor stream');
+              _authError = null;
               _isAuthenticated = true;
               _connectionPhase = _ConnectionPhase.streaming;
               _lineBuffer.clear();
@@ -175,7 +180,11 @@ class BluetoothProvider extends ChangeNotifier {
     _authError = message;
     _isAuthenticated = false;
     notifyListeners();
-    await disconnect();
+    try {
+      await disconnect();
+    } catch (e) {
+      debugPrint('[BT] Disconnect after auth failure error: $e');
+    }
   }
 
   void _sendText(String text) {
@@ -368,6 +377,7 @@ class BluetoothProvider extends ChangeNotifier {
           return true;
         } else {
           debugPrint('[BT] Auth timeout after ${waited}ms');
+          _authError = 'Authentication timed out.';
           await disconnect();
           if (attempt < maxRetries) continue;
           return false;
@@ -412,6 +422,9 @@ class BluetoothProvider extends ChangeNotifier {
   }
 
   void _handleDisconnection() {
+    if (!_isAuthenticated && _authError == null) {
+      _authError = 'Connection closed before authentication completed.';
+    }
     _isConnected = false;
     _isAuthenticated = false;
     _connectionPhase = _ConnectionPhase.waitingForGreeting;

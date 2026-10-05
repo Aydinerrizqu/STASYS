@@ -1,33 +1,37 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bluetooth_serial/flutter_bluetooth_serial.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'dart:typed_data';
+
+import '../services/device_key_store.dart';
+import '../services/stasys_protocol.dart';
 import './sensor_data_provider.dart';
-import 'package:crypto/crypto.dart';
-import 'dart:convert';
-import 'dart:async';
 
 // ================= CONNECTION PHASE =================
-// Upstream firmware uses text-based auth, then binary float packets.
 enum _ConnectionPhase {
-  waitingForReady,  // Waiting for "READY\n" from ESP32
-  waitingForHash,   // Sent challenge, waiting for SHA256 hex response
-  streaming,        // Auth succeeded, receiving 0xAA 0xBB binary packets
-  otaMode,          // Dedicated OTA mode — pure text parser, no binary
+  waitingForGreeting,
+  waitingForNonce,
+  waitingForAuthResult,
+  streaming,
+  otaMode,
 }
 
 // Separate text buffer for OTA mode — unlimited, no trim, no collision
 String _otaTextBuffer = '';
 
-const String _secretKey = "12ebaf10h12fa9123z21sti";
-
 class BluetoothProvider extends ChangeNotifier {
-
   SensorDataProvider _sensorDataProvider;
+  final DeviceKeyStore _deviceKeyStore;
   StreamSubscription<Uint8List>? _dataSubscription;
 
-  BluetoothProvider({required SensorDataProvider sensorDataProvider})
-      : _sensorDataProvider = sensorDataProvider;
+  BluetoothProvider({
+    required SensorDataProvider sensorDataProvider,
+    DeviceKeyStore? deviceKeyStore,
+  })  : _sensorDataProvider = sensorDataProvider,
+        _deviceKeyStore = deviceKeyStore ?? DeviceKeyStore();
 
   set sensorDataProvider(SensorDataProvider provider) {
     _sensorDataProvider = provider;
@@ -40,20 +44,10 @@ class BluetoothProvider extends ChangeNotifier {
   bool _isScanning = false;
   bool _isAuthenticated = false;
   String _deviceName = '';
-  _ConnectionPhase _connectionPhase = _ConnectionPhase.waitingForReady;
+  String? _authError;
+  _ConnectionPhase _connectionPhase = _ConnectionPhase.waitingForGreeting;
 
-  // Binary parser state
-  static const int _SYNC0 = 0xAA;
-  static const int _SYNC1 = 0xBB;
-  // STASYS_FW packet structure (31 bytes):
-  // [0-1] sync (0xAA, 0xBB)
-  // [2-5] ax, [6-9] ay, [10-13] az (float, m/s²)
-  // [14-17] gx, [18-21] gy, [22-25] gz (float, rad/s)
-  // [26-27] piezo (uint16 ADC peak)
-  // [28] battery (uint8 %)
-  // [29-30] crc16 (CRC-16 CCITT over bytes 2-28)
-  static const int _PACKET_SIZE = 31;
-  final List<int> _binaryBuffer = [];
+  final FrameAssembler _frameAssembler = FrameAssembler();
 
   // Statistics
   int _totalPacketsReceived = 0;
@@ -66,6 +60,7 @@ class BluetoothProvider extends ChangeNotifier {
   bool get isConnected => _isConnected;
   bool get isScanning => _isScanning;
   bool get isAuthenticated => _isAuthenticated;
+  String? get authError => _authError;
   String get connectedDeviceName => _deviceName.isNotEmpty ? _deviceName : (_selectedDevice?.name ?? 'STASYS');
   int get totalPacketsReceived => _totalPacketsReceived;
   int get invalidPacketsCount => 0;  // Not tracked in upstream protocol
@@ -81,18 +76,18 @@ class BluetoothProvider extends ChangeNotifier {
 
   // ================= DEBUG =================
   static int _debugRxPrinted = 0;
-  static int _debugBinaryPrinted = 0;
 
   // ================= DUAL-MODE DATA RECEPTION =================
   void _onDataReceived(Uint8List data) {
     if (_debugRxPrinted < 3) {
-      debugPrint('[RX] raw len=${data.length}: ${data.map((e) => e.toRadixString(16).padLeft(2, '0')).join(' ')}');
+      debugPrint('[RX] raw len=${data.length}');
       _debugRxPrinted++;
     }
 
     switch (_connectionPhase) {
-      case _ConnectionPhase.waitingForReady:
-      case _ConnectionPhase.waitingForHash:
+      case _ConnectionPhase.waitingForGreeting:
+      case _ConnectionPhase.waitingForNonce:
+      case _ConnectionPhase.waitingForAuthResult:
         _handleTextData(data);
         break;
       case _ConnectionPhase.streaming:
@@ -104,43 +99,83 @@ class BluetoothProvider extends ChangeNotifier {
     }
   }
 
-  // ================= TEXT-BASED AUTH (upstream firmware) =================
+  // ================= TEXT-BASED AUTH (firmware v2) =================
+  final LineBuffer _lineBuffer = LineBuffer();
   String _textBuffer = '';
 
-  void _handleTextData(Uint8List data) {
-    _textBuffer += String.fromCharCodes(data);
-
-    while (_textBuffer.contains('\n')) {
-      int nlIndex = _textBuffer.indexOf('\n');
-      String line = _textBuffer.substring(0, nlIndex).trim();
-      _textBuffer = _textBuffer.substring(nlIndex + 1);
-
-      if (line.isEmpty) continue;
-
-      if (_connectionPhase == _ConnectionPhase.waitingForReady) {
-        if (line == 'READY') {
-          debugPrint('[BT] Received READY, sending auth challenge...');
-          _sendText('AUTH_CHALLENGE');
-          _connectionPhase = _ConnectionPhase.waitingForHash;
-        }
-      } else if (_connectionPhase == _ConnectionPhase.waitingForHash) {
-        if (line.length == 64) {
-          debugPrint('[BT] Received hash response (${line.length} chars)');
-          String toHash = 'AUTH_CHALLENGE' + _secretKey;
-          String computedHash = sha256.convert(utf8.encode(toHash)).toString();
-          if (line.toLowerCase() == computedHash.toLowerCase()) {
-            debugPrint('[BT] Auth verified, switching to streaming mode');
-            _isAuthenticated = true;
-            _connectionPhase = _ConnectionPhase.streaming;
-            _textBuffer = '';
-            notifyListeners();
-            _sensorDataProvider.requestFullSync();
-          } else {
-            debugPrint('[BT] Auth FAILED: expected=$computedHash, got=$line');
-          }
+  Future<void> _handleTextData(Uint8List data) async {
+    try {
+      for (final line in _lineBuffer.feed(data)) {
+        switch (_connectionPhase) {
+          case _ConnectionPhase.waitingForGreeting:
+            final greeting = StasysProtocol.parseGreeting(line);
+            _connectionPhase = _ConnectionPhase.waitingForNonce;
+            _authGeneration = greeting.generation;
+            break;
+          case _ConnectionPhase.waitingForNonce:
+            final nonce = StasysProtocol.parseNonce(line);
+            final key = await _deviceKeyStore.readKey();
+            if (key == null) {
+              await _failAuthentication('Device key not configured.');
+              return;
+            }
+            final identity = _parseDeviceAddress(_selectedDevice!.address);
+            final proof = StasysProtocol.authenticationProof(
+              key: key,
+              identity: identity,
+              generation: _authGeneration!,
+              nonce: nonce,
+            );
+            _sendText('PROOF $proof');
+            _connectionPhase = _ConnectionPhase.waitingForAuthResult;
+            break;
+          case _ConnectionPhase.waitingForAuthResult:
+            if (line == 'OK') {
+              debugPrint('[BT] Authenticated; starting sensor stream');
+              _isAuthenticated = true;
+              _connectionPhase = _ConnectionPhase.streaming;
+              _lineBuffer.clear();
+              _textBuffer = '';
+              notifyListeners();
+              _sensorDataProvider.requestFullSync();
+            } else {
+              await _failAuthentication(
+                line == 'FAIL' ? 'Device rejected authentication.' : 'Unexpected authentication response.',
+              );
+              return;
+            }
+            break;
+          case _ConnectionPhase.streaming:
+          case _ConnectionPhase.otaMode:
+            return;
         }
       }
+    } catch (error) {
+      await _failAuthentication('Authentication failed: ${_readableError(error)}');
     }
+  }
+
+  int? _authGeneration;
+
+  List<int> _parseDeviceAddress(String address) {
+    final octets = address.split(':');
+    if (octets.length != 6 ||
+        octets.any((octet) => !RegExp(r'^[0-9a-fA-F]{2}$').hasMatch(octet))) {
+      throw const FormatException('Invalid Bluetooth device address');
+    }
+    return octets.map((octet) => int.parse(octet, radix: 16)).toList();
+  }
+
+  String _readableError(Object error) {
+    if (error is FormatException) return error.message.toString();
+    return 'Unable to read the device key or authenticate.';
+  }
+
+  Future<void> _failAuthentication(String message) async {
+    _authError = message;
+    _isAuthenticated = false;
+    notifyListeners();
+    await disconnect();
   }
 
   void _sendText(String text) {
@@ -172,7 +207,7 @@ class BluetoothProvider extends ChangeNotifier {
     _otaTextBuffer = '';
   }
 
-  // ================= BINARY PACKET PARSER (31-byte float packets) =================
+  // ================= BINARY PACKET PARSER (firmware v2 frames) =================
   void _handleBinaryData(Uint8List data) {
     // Also accumulate printable ASCII for OTA text responses during streaming
     for (int b in data) {
@@ -185,94 +220,24 @@ class BluetoothProvider extends ChangeNotifier {
       _textBuffer = _textBuffer.substring(_textBuffer.length - 2048);
     }
 
-    for (int b in data) {
-      _binaryBuffer.add(b);
-
-      if (_binaryBuffer.length == 1) {
-        if (b != _SYNC0) {
-          _binaryBuffer.clear();
-          _binaryBuffer.add(b);
-        }
-      } else if (_binaryBuffer.length == 2) {
-        if (b != _SYNC1) {
-          _binaryBuffer.clear();
-          if (b == _SYNC0) {
-            _binaryBuffer.add(b);
-          }
-        }
+    final result = _frameAssembler.feed(data);
+    _checksumErrorsCount += result.checksumErrors;
+    for (final frame in result.frames) {
+      if (_isValidSensorData(
+        frame.ax, frame.ay, frame.az, frame.gx, frame.gy, frame.gz,
+      )) {
+        _sensorDataProvider.updateAllData(
+          ax: frame.ax,
+          ay: frame.ay,
+          az: frame.az,
+          gx: frame.gx,
+          gy: frame.gy,
+          gz: frame.gz,
+          battery: frame.battery,
+          piezo: frame.piezo,
+        );
       }
-      if (_binaryBuffer.length == _PACKET_SIZE) {
-        if (_binaryBuffer[0] == _SYNC0 && _binaryBuffer[1] == _SYNC1) {
-          if (_verifyCrc16(_binaryBuffer)) {
-            _parseBinaryPacket(_binaryBuffer);
-            _totalPacketsReceived++;
-          } else {
-            _checksumErrorsCount++;
-            if (_debugBinaryPrinted < 3) {
-              // Compute CRC-16 for debugging
-              int crc = 0xFFFF;
-              for (int i = 2; i < 29; i++) {
-                crc ^= _binaryBuffer[i] << 8;
-                for (int j = 0; j < 8; j++) {
-                  if ((crc & 0x8000) != 0) {
-                    crc = (crc << 1) ^ 0x1021;
-                  } else {
-                    crc <<= 1;
-                  }
-                }
-              }
-              crc &= 0xFFFF;
-              int receivedCrc = (_binaryBuffer[30] << 8) | _binaryBuffer[29];
-              debugPrint('[BT] CRC16 fail: got=$receivedCrc.toRadixString(16), expected=$crc.toRadixString(16), bytes=${_binaryBuffer.sublist(2, 29).map((e) => e.toRadixString(16).padLeft(2, '0')).join(' ')}');
-              _debugBinaryPrinted++;
-            }
-          }
-        }
-        _binaryBuffer.clear();
-      }
-    }
-  }
-
-  bool _verifyCrc16(List<int> buf) {
-    // CRC-16 CCITT over bytes 2-28 (27 bytes: floats + piezo + battery)
-    // Initial: 0xFFFF, Polynomial: 0x1021
-    int crc = 0xFFFF;
-    for (int i = 2; i < 29; i++) {
-      crc ^= buf[i] << 8;
-      for (int j = 0; j < 8; j++) {
-        if ((crc & 0x8000) != 0) {
-          crc = (crc << 1) ^ 0x1021;
-        } else {
-          crc <<= 1;
-        }
-      }
-    }
-    crc &= 0xFFFF;
-
-    int receivedCrc = (buf[30] << 8) | buf[29];
-    return crc == receivedCrc;
-  }
-
-  void _parseBinaryPacket(List<int> buf) {
-    ByteData bd = ByteData.sublistView(Uint8List.fromList(buf));
-
-    // [0-1] sync, [2-5] ax, [6-9] ay, [10-13] az, [14-17] gx, [18-21] gy, [22-25] gz, [26-27] piezo, [28] battery, [29-30] crc16
-    double ax = bd.getFloat32(2, Endian.little);
-    double ay = bd.getFloat32(6, Endian.little);
-    double az = bd.getFloat32(10, Endian.little);
-    double gx = bd.getFloat32(14, Endian.little);
-    double gy = bd.getFloat32(18, Endian.little);
-    double gz = bd.getFloat32(22, Endian.little);
-    int piezo = bd.getUint16(26, Endian.little);
-    int battery = buf[28];
-
-    if (_isValidSensorData(ax, ay, az, gx, gy, gz)) {
-      _sensorDataProvider.updateAllData(
-        ax: ax, ay: ay, az: az,
-        gx: gx, gy: gy, gz: gz,
-        battery: battery,
-        piezo: piezo,
-      );
+      _totalPacketsReceived++;
     }
   }
 
@@ -348,9 +313,12 @@ class BluetoothProvider extends ChangeNotifier {
     await _forceDisconnect();
 
     _selectedDevice = device;
-    _connectionPhase = _ConnectionPhase.waitingForReady;
-    _binaryBuffer.clear();
+    _connectionPhase = _ConnectionPhase.waitingForGreeting;
+    _frameAssembler.clear();
+    _lineBuffer.clear();
     _textBuffer = '';
+    _authError = null;
+    _authGeneration = null;
     _isAuthenticated = false;
     _totalPacketsReceived = 0;
     _checksumErrorsCount = 0;
@@ -433,9 +401,10 @@ class BluetoothProvider extends ChangeNotifier {
       }
       _isConnected = false;
       _isAuthenticated = false;
-      _connectionPhase = _ConnectionPhase.waitingForReady;
+      _connectionPhase = _ConnectionPhase.waitingForGreeting;
       _textBuffer = '';
-      _binaryBuffer.clear();
+      _lineBuffer.clear();
+      _frameAssembler.clear();
       debugPrint('[BT] Force disconnect completed');
     } catch (e) {
       debugPrint('[BT] Force disconnect error: $e');
@@ -445,10 +414,11 @@ class BluetoothProvider extends ChangeNotifier {
   void _handleDisconnection() {
     _isConnected = false;
     _isAuthenticated = false;
-    _connectionPhase = _ConnectionPhase.waitingForReady;
+    _connectionPhase = _ConnectionPhase.waitingForGreeting;
     _connection = null;
     _selectedDevice = null;
-    _binaryBuffer.clear();
+    _lineBuffer.clear();
+    _frameAssembler.clear();
     _textBuffer = '';
     _sensorDataProvider.resetTimeReference();
     notifyListeners();
@@ -475,7 +445,7 @@ class BluetoothProvider extends ChangeNotifier {
       await _connection!.close();
       _isConnected = false;
       _isAuthenticated = false;
-      _connectionPhase = _ConnectionPhase.waitingForReady;
+      _connectionPhase = _ConnectionPhase.waitingForGreeting;
       _connection = null;
       _selectedDevice = null;
 

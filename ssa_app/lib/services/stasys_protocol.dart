@@ -40,6 +40,78 @@ class StasysSensorFrame {
   final int battery;
 }
 
+/// Incrementally collects newline-delimited text from arbitrary byte chunks.
+class LineBuffer {
+  String _text = '';
+
+  String get text => _text;
+
+  List<String> feed(List<int> bytes) {
+    _text += String.fromCharCodes(bytes);
+    final lines = <String>[];
+    var newline = _text.indexOf('\n');
+    while (newline >= 0) {
+      final line = _text.substring(0, newline).trim();
+      if (line.isNotEmpty) lines.add(line);
+      _text = _text.substring(newline + 1);
+      newline = _text.indexOf('\n');
+    }
+    return lines;
+  }
+
+  void clear() => _text = '';
+}
+
+class FrameAssemblyResult {
+  const FrameAssemblyResult({required this.frames, required this.checksumErrors});
+
+  final List<StasysSensorFrame> frames;
+  final int checksumErrors;
+}
+
+/// Incrementally frames v2 sensor data and recovers from corrupt candidates.
+class FrameAssembler {
+  final List<int> _buffer = [];
+
+  FrameAssemblyResult feed(List<int> bytes) {
+    _buffer.addAll(bytes);
+    final frames = <StasysSensorFrame>[];
+    var errors = 0;
+    while (true) {
+      var header = -1;
+      for (var i = 0; i + 1 < _buffer.length; i++) {
+        if (_buffer[i] == StasysProtocol.syncByte0 &&
+            _buffer[i + 1] == StasysProtocol.syncByte1) {
+          header = i;
+          break;
+        }
+      }
+      if (header < 0) {
+        final keepSyncPrefix = _buffer.isNotEmpty &&
+            _buffer.last == StasysProtocol.syncByte0;
+        _buffer
+          ..clear()
+          ..addAll(keepSyncPrefix ? [StasysProtocol.syncByte0] : const []);
+        break;
+      }
+      if (header > 0) _buffer.removeRange(0, header);
+      if (_buffer.length < StasysProtocol.frameSize) break;
+      try {
+        frames.add(StasysProtocol.parseFrame(
+          Uint8List.fromList(_buffer.sublist(0, StasysProtocol.frameSize)),
+        ));
+        _buffer.removeRange(0, StasysProtocol.frameSize);
+      } on FormatException {
+        errors++;
+        _buffer.removeAt(0);
+      }
+    }
+    return FrameAssemblyResult(frames: frames, checksumErrors: errors);
+  }
+
+  void clear() => _buffer.clear();
+}
+
 /// Pure STASYS firmware v2 authentication helpers.
 ///
 /// No Flutter dependency; never logs inputs or proofs.

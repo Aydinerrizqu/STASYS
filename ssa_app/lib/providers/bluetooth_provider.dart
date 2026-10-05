@@ -115,7 +115,7 @@ class BluetoothProvider extends ChangeNotifier {
           case _ConnectionPhase.waitingForNonce:
             final nonce = StasysProtocol.parseNonce(line);
             final key = await _deviceKeyStore.readKey();
-            if (_connection == null ||
+            if ((_connection == null && !_authSeamActive) ||
                 _connectionPhase != _ConnectionPhase.waitingForNonce) {
               return;
             }
@@ -161,6 +161,27 @@ class BluetoothProvider extends ChangeNotifier {
   }
 
   int? _authGeneration;
+
+  // ================= TEST SEAMS =================
+  // The BT socket stream cannot be driven in unit tests without a connection
+  // abstraction (explicitly out of scope), so tests inject the device
+  // identity and mark the state machine as running outside a real socket.
+  // Production never calls these; `_authSeamActive` stays false there, so
+  // the post-`readKey` connection check keeps its full teardown-guard
+  // semantics.
+  bool _authSeamActive = false;
+
+  /// Supplies the device identity used when the auth proof is computed.
+  @visibleForTesting
+  void selectDeviceForAuth(BluetoothDevice device) {
+    _selectedDevice = device;
+    _authSeamActive = true;
+  }
+
+  /// Feeds raw bytes into the same line state machine the BT listener uses.
+  @visibleForTesting
+  Future<void> feedAuthData(List<int> bytes) =>
+      _handleTextData(Uint8List.fromList(bytes));
 
   List<int> _parseDeviceAddress(String address) {
     final octets = address.split(':');
@@ -365,9 +386,12 @@ class BluetoothProvider extends ChangeNotifier {
           cancelOnError: false,
         );
 
-        // Wait up to 15s for auth to complete
+        // Wait up to 15s for auth to complete; stop early when a definitive
+        // failure has already torn the connection down.
         int waited = 0;
-        while (!_isAuthenticated && waited < 15000) {
+        while (!_isAuthenticated &&
+            waited < 15000 &&
+            !(_authError != null && _connection == null)) {
           await Future.delayed(const Duration(milliseconds: 300));
           waited += 300;
         }
@@ -375,13 +399,21 @@ class BluetoothProvider extends ChangeNotifier {
         if (_isAuthenticated) {
           debugPrint('[BT] Connection and auth successful');
           return true;
-        } else {
-          debugPrint('[BT] Auth timeout after ${waited}ms');
-          _authError = 'Authentication timed out.';
-          await disconnect();
-          if (attempt < maxRetries) continue;
+        }
+
+        // Definitive failure already diagnosed by _failAuthentication or
+        // _handleDisconnection: keep its root-cause message and do not
+        // retry (transient timeouts below still retry as before).
+        if (_authError != null && _connection == null) {
+          debugPrint('[BT] Auth failed definitively; skipping retries');
           return false;
         }
+
+        debugPrint('[BT] Auth timeout after ${waited}ms');
+        _authError ??= 'Authentication timed out.';
+        await disconnect();
+        if (attempt < maxRetries) continue;
+        return false;
       } catch (e) {
         debugPrint('[BT] Connection attempt ${attempt + 1} failed: $e');
         _isConnected = false;

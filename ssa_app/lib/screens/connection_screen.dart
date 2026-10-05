@@ -417,13 +417,13 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
                   height: 18,
                   child: CircularProgressIndicator(
                     strokeWidth: 2,
-                    color: const Color(0xFF001519),
+                    color: Color(0xFF001519),
                   ),
                 )
               else
                 const Icon(
                   Icons.bluetooth_searching,
-                  color: const Color(0xFF001519),
+                  color: Color(0xFF001519),
                   size: 20,
                 ),
               const SizedBox(width: 10),
@@ -434,7 +434,7 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
                   fontSize: 14,
                   fontWeight: FontWeight.w800,
                   letterSpacing: 1.8,
-                  color: const Color(0xFF001519),
+                  color: Color(0xFF001519),
                 ),
               ),
             ],

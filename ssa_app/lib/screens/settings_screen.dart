@@ -8,6 +8,7 @@ import '../providers/settings_provider.dart';
 import '../providers/sensor_data_provider.dart';
 import '../models/data_models.dart';
 import '../theme/app_theme.dart';
+import '../widgets/device_key_section.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -41,7 +42,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
     try {
       final bondedDevices = await bt.getBondedDevices();
       if (mounted) {
-        setState(() => _devices.addAll(bondedDevices.where((d) => (d.name ?? '').toLowerCase().contains('stasys'))));
+        setState(
+          () => _devices.addAll(
+            bondedDevices.where(
+              (d) => (d.name ?? '').toLowerCase().contains('stasys'),
+            ),
+          ),
+        );
       }
     } catch (_) {}
 
@@ -49,8 +56,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
       (result) {
         if (mounted) {
           setState(() {
-            if (_devices.indexWhere((d) => d.address == result.device.address) < 0 &&
-              (result.device.name ?? '').toLowerCase().contains('stasys')) {
+            if (_devices.indexWhere((d) => d.address == result.device.address) <
+                    0 &&
+                (result.device.name ?? '').toLowerCase().contains('stasys')) {
               _devices.add(result.device);
             }
           });
@@ -88,7 +96,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: StsysTheme.mobileBackground,
+      backgroundColor: StsysTheme.mobileBackgroundOf(context),
       body: SafeArea(
         child: Column(
           children: [
@@ -110,6 +118,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   _buildFirmwareUpdateSection(),
                   const SizedBox(height: 24),
 
+                  // Theme
+                  _buildSectionHeader('THEME'),
+                  _buildThemeSection(),
+                  const SizedBox(height: 24),
+
                   // Trace Window
                   _buildSectionHeader('TRACE WINDOW'),
                   _buildTraceWindowSection(),
@@ -128,6 +141,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   // Training Mode
                   _buildSectionHeader('TRAINING MODE'),
                   _buildTrainingModeSection(),
+                  const SizedBox(height: 24),
+                  const DeviceKeySection(),
                   const SizedBox(height: 100),
                 ],
               ),
@@ -145,18 +160,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
       decoration: BoxDecoration(
-        color: StsysTheme.surfaceContainerLow,
-        border: Border(
-          bottom: BorderSide(
-            color: StsysTheme.outlineVariant.withValues(alpha: 0.2),
-          ),
-        ),
+        color: StsysTheme.mobileHeaderOf(context, StsysTheme.mobileHeaderSettings),
+        border: Border(bottom: BorderSide(color: StsysTheme.mobileBorderOf(context))),
       ),
       child: Row(
         children: [
           ShaderMask(
             shaderCallback: (bounds) {
-              return StsysTheme.tacticalGradient.createShader(bounds);
+              return StsysTheme.brandGradient.createShader(bounds);
             },
             child: const Text(
               'STASYS',
@@ -176,22 +187,29 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 margin: const EdgeInsets.only(left: 8),
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFFF9800).withValues(alpha: 0.15),
+                  color: StsysTheme.cyanOf(context).withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(20),
                   border: Border.all(
-                    color: const Color(0xFFFF9800).withValues(alpha: 0.3),
+                    color: StsysTheme.cyanOf(context).withValues(alpha: 0.3),
                   ),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(Icons.science_outlined, size: 12, color: Color(0xFFFF9800)),
+                    Icon(
+                      Icons.science_outlined,
+                      size: 12,
+                      color: StsysTheme.cyanOf(context),
+                    ),
                     const SizedBox(width: 4),
                     Text(
                       'DEMO',
                       style: TextStyle(
-                        fontFamily: 'Inter', fontSize: 9, fontWeight: FontWeight.w700,
-                        letterSpacing: 1, color: const Color(0xFFFF9800),
+                        fontFamily: 'Inter',
+                        fontSize: 9,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 1,
+                        color: StsysTheme.cyanOf(context),
                       ),
                     ),
                   ],
@@ -205,6 +223,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               return StatusBadge(
                 isConnected: bt.isConnected,
                 deviceName: bt.isConnected ? bt.connectedDeviceName : null,
+                mutedDisconnected: true,
               );
             },
           ),
@@ -229,7 +248,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           fontSize: 10,
           fontWeight: FontWeight.w700,
           letterSpacing: 2,
-          color: StsysTheme.primary,
+          color: StsysTheme.cyanOf(context),
         ),
       ),
     );
@@ -244,7 +263,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         return Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: StsysTheme.surfaceContainerLow,
+            color: StsysTheme.surfaceContainerLowOf(context),
             borderRadius: BorderRadius.circular(12),
           ),
           child: Column(
@@ -259,8 +278,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       color: isAuth
                           ? const Color(0xFF4CAF50)
                           : isConnected
-                              ? const Color(0xFFFF9800)
-                              : StsysTheme.error,
+                          ? StsysTheme.cyanOf(context)
+                          : StsysTheme.mobileMutedTextOf(context),
                       shape: BoxShape.circle,
                     ),
                   ),
@@ -273,8 +292,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           isAuth
                               ? 'CONNECTED'
                               : isConnected
-                                  ? 'CONNECTING...'
-                                  : 'NOT CONNECTED',
+                              ? 'CONNECTING...'
+                              : 'NOT CONNECTED',
                           style: TextStyle(
                             fontFamily: 'Manrope',
                             fontSize: 13,
@@ -282,8 +301,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             color: isAuth
                                 ? const Color(0xFF4CAF50)
                                 : isConnected
-                                    ? const Color(0xFFFF9800)
-                                    : StsysTheme.error,
+                                ? StsysTheme.cyanOf(context)
+                                : StsysTheme.mobileMutedTextOf(context),
                           ),
                         ),
                         if (isConnected)
@@ -292,7 +311,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             style: TextStyle(
                               fontFamily: 'Inter',
                               fontSize: 11,
-                              color: StsysTheme.onSurface.withValues(alpha: 0.5),
+                              color: StsysTheme.onSurfaceOf(context).withValues(
+                                alpha: 0.5,
+                              ),
                             ),
                           ),
                       ],
@@ -325,15 +346,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       child: Container(
                         padding: const EdgeInsets.symmetric(vertical: 12),
                         decoration: BoxDecoration(
-                          gradient: StsysTheme.tacticalGradient,
+                          gradient: StsysTheme.brandGradient,
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
                             Icon(
-                              _showDeviceList ? Icons.close : Icons.bluetooth_searching,
-                              color: StsysTheme.onPrimary,
+                              _showDeviceList
+                                  ? Icons.close
+                                  : Icons.bluetooth_searching,
+                              color: StsysTheme.onPrimaryOf(context),
                               size: 18,
                             ),
                             const SizedBox(width: 8),
@@ -341,14 +364,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               _isScanning
                                   ? 'SCANNING...'
                                   : _showDeviceList
-                                      ? 'CLOSE'
-                                      : 'SCAN DEVICES',
-                              style: const TextStyle(
+                                  ? 'CLOSE'
+                                  : 'SCAN DEVICES',
+                              style: TextStyle(
                                 fontFamily: 'Manrope',
                                 fontSize: 12,
                                 fontWeight: FontWeight.w800,
                                 letterSpacing: 1,
-                                color: StsysTheme.onPrimary,
+                                color: StsysTheme.onPrimaryOf(context),
                               ),
                             ),
                           ],
@@ -400,7 +423,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         return Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: StsysTheme.surfaceContainerLow,
+            color: StsysTheme.surfaceContainerLowOf(context),
             borderRadius: BorderRadius.circular(12),
           ),
           child: Row(
@@ -423,13 +446,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
+                    Text(
                       'Auto-update firmware',
                       style: TextStyle(
                         fontFamily: 'Manrope',
                         fontSize: 14,
                         fontWeight: FontWeight.w700,
-                        color: Colors.white,
+                        color: StsysTheme.onSurfaceOf(context),
                       ),
                     ),
                     const SizedBox(height: 2),
@@ -438,7 +461,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       style: TextStyle(
                         fontFamily: 'Inter',
                         fontSize: 11,
-                        color: StsysTheme.onSurface.withValues(alpha: 0.5),
+                        color: StsysTheme.onSurfaceOf(context).withValues(alpha: 0.5),
                       ),
                     ),
                   ],
@@ -456,13 +479,97 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  Widget _buildThemeSection() {
+    return Consumer<SettingsProvider>(
+      builder: (context, settings, _) {
+        final colorScheme = Theme.of(context).colorScheme;
+        final selectedColor = colorScheme.surfaceContainerHighest;
+        final selectedTextColor = colorScheme.onSurface;
+        final unselectedColor = colorScheme.surface;
+        final unselectedTextColor = colorScheme.onSurfaceVariant;
+
+        Widget option({
+          required ThemeMode mode,
+          required String label,
+          required IconData icon,
+        }) {
+          final isSelected = settings.themeMode == mode;
+          return Expanded(
+            child: Semantics(
+              button: true,
+              selected: isSelected,
+              label: '$label theme',
+              child: InkWell(
+                onTap: () => settings.setThemeMode(mode),
+                borderRadius: BorderRadius.circular(8),
+                child: Container(
+                  height: 44,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: isSelected ? selectedColor : unselectedColor,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: isSelected
+                          ? StsysTheme.cyanOf(context)
+                          : colorScheme.outlineVariant,
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        icon,
+                        size: 18,
+                        color: isSelected
+                            ? selectedTextColor
+                            : unselectedTextColor,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        label,
+                        style: TextStyle(
+                          fontFamily: 'Inter',
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: isSelected
+                              ? selectedTextColor
+                              : unselectedTextColor,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          );
+        }
+
+        return Row(
+          children: [
+            option(
+              mode: ThemeMode.dark,
+              label: 'Dark',
+              icon: Icons.dark_mode_outlined,
+            ),
+            const SizedBox(width: 8),
+            option(
+              mode: ThemeMode.light,
+              label: 'Light',
+              icon: Icons.light_mode_outlined,
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   Widget _buildTraceWindowSection() {
     return Consumer<SettingsProvider>(
       builder: (context, settings, _) {
         return Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: StsysTheme.surfaceContainerLow,
+            color: StsysTheme.surfaceContainerLowOf(context),
             borderRadius: BorderRadius.circular(12),
           ),
           child: Row(
@@ -472,7 +579,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 style: TextStyle(
                   fontFamily: 'Inter',
                   fontSize: 12,
-                  color: StsysTheme.onSurface,
+                  color: StsysTheme.onSurfaceOf(context),
                 ),
               ),
               const Spacer(),
@@ -483,8 +590,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   min: 2,
                   max: 10,
                   divisions: 8,
-                  activeColor: StsysTheme.primary,
-                  inactiveColor: StsysTheme.surfaceContainerHighest,
+                  activeColor: StsysTheme.cyanOf(context),
+                  inactiveColor: StsysTheme.surfaceContainerHighestOf(context),
                   onChanged: (v) {
                     settings.updateMaxSamples(v.round());
                   },
@@ -503,7 +610,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         return Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: StsysTheme.surfaceContainerLow,
+            color: StsysTheme.surfaceContainerLowOf(context),
             borderRadius: BorderRadius.circular(12),
           ),
           child: Row(
@@ -513,7 +620,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 style: TextStyle(
                   fontFamily: 'Inter',
                   fontSize: 12,
-                  color: StsysTheme.onSurface,
+                  color: StsysTheme.onSurfaceOf(context),
                 ),
               ),
               const Spacer(),
@@ -524,8 +631,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   min: 5.0,
                   max: 25.0,
                   divisions: 20,
-                  activeColor: StsysTheme.primary,
-                  inactiveColor: StsysTheme.surfaceContainerHighest,
+                  activeColor: StsysTheme.cyanOf(context),
+                  inactiveColor: StsysTheme.surfaceContainerHighestOf(context),
                   onChanged: (v) {
                     settings.updateTargetDistanceM(v);
                   },
@@ -549,15 +656,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
             return GestureDetector(
               onTap: () => settings.updateFirearmType(type),
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 10,
+                ),
                 decoration: BoxDecoration(
-                  gradient: isSelected ? StsysTheme.tacticalGradient : null,
-                  color: isSelected ? null : StsysTheme.surfaceContainerLow,
+                  gradient: isSelected ? StsysTheme.brandGradient : null,
+                  color: isSelected ? null : StsysTheme.surfaceContainerLowOf(context),
                   borderRadius: BorderRadius.circular(8),
                   border: isSelected
                       ? null
                       : Border.all(
-                          color: StsysTheme.outlineVariant.withValues(alpha: 0.2),
+                          color: StsysTheme.outlineVariantOf(context).withValues(
+                            alpha: 0.2,
+                          ),
                         ),
                 ),
                 child: Text(
@@ -568,8 +680,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     fontWeight: FontWeight.w800,
                     letterSpacing: 1,
                     color: isSelected
-                        ? StsysTheme.onPrimary
-                        : StsysTheme.onSurface.withValues(alpha: 0.7),
+                        ? StsysTheme.onPrimaryOf(context)
+                        : StsysTheme.onSurfaceOf(context).withValues(alpha: 0.7),
                   ),
                 ),
               ),
@@ -591,15 +703,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
             return GestureDetector(
               onTap: () => settings.updateTrainingMode(mode),
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 10,
+                ),
                 decoration: BoxDecoration(
-                  gradient: isSelected ? StsysTheme.tacticalGradient : null,
-                  color: isSelected ? null : StsysTheme.surfaceContainerLow,
+                  gradient: isSelected ? StsysTheme.brandGradient : null,
+                  color: isSelected ? null : StsysTheme.surfaceContainerLowOf(context),
                   borderRadius: BorderRadius.circular(8),
                   border: isSelected
                       ? null
                       : Border.all(
-                          color: StsysTheme.outlineVariant.withValues(alpha: 0.2),
+                          color: StsysTheme.outlineVariantOf(context).withValues(
+                            alpha: 0.2,
+                          ),
                         ),
                 ),
                 child: Text(
@@ -610,8 +727,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     fontWeight: FontWeight.w800,
                     letterSpacing: 1,
                     color: isSelected
-                        ? StsysTheme.onPrimary
-                        : StsysTheme.onSurface.withValues(alpha: 0.7),
+                        ? StsysTheme.onPrimaryOf(context)
+                        : StsysTheme.onSurfaceOf(context).withValues(alpha: 0.7),
                   ),
                 ),
               ),
@@ -630,7 +747,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           margin: const EdgeInsets.all(24),
           padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
-            color: StsysTheme.surfaceContainerHigh,
+            color: StsysTheme.surfaceContainerHighOf(context),
             borderRadius: BorderRadius.circular(16),
           ),
           child: Column(
@@ -646,7 +763,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       fontSize: 10,
                       fontWeight: FontWeight.w700,
                       letterSpacing: 2,
-                      color: StsysTheme.primary,
+                      color: StsysTheme.cyanOf(context),
                     ),
                   ),
                   const Spacer(),
@@ -657,7 +774,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     },
                     child: Icon(
                       Icons.close,
-                      color: StsysTheme.onSurface.withValues(alpha: 0.5),
+                      color: StsysTheme.onSurfaceOf(context).withValues(alpha: 0.5),
                       size: 20,
                     ),
                   ),
@@ -671,8 +788,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     child: _isScanning
                         ? Column(
                             children: [
-                              const CircularProgressIndicator(
-                                color: StsysTheme.primary,
+                              CircularProgressIndicator(
+                                color: StsysTheme.cyanOf(context),
                                 strokeWidth: 2,
                               ),
                               const SizedBox(height: 16),
@@ -682,7 +799,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                   fontFamily: 'Inter',
                                   fontSize: 11,
                                   letterSpacing: 2,
-                                  color: StsysTheme.onSurface.withValues(alpha: 0.4),
+                                  color: StsysTheme.onSurfaceOf(context).withValues(
+                                    alpha: 0.4,
+                                  ),
                                 ),
                               ),
                             ],
@@ -691,7 +810,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             'No devices found',
                             style: TextStyle(
                               fontFamily: 'Inter',
-                              color: StsysTheme.onSurface.withValues(alpha: 0.4),
+                              color: StsysTheme.onSurfaceOf(context).withValues(
+                                alpha: 0.4,
+                              ),
                             ),
                           ),
                   ),
@@ -710,14 +831,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           padding: const EdgeInsets.all(12),
                           margin: const EdgeInsets.only(bottom: 8),
                           decoration: BoxDecoration(
-                            color: StsysTheme.surfaceContainerLow,
+                            color: StsysTheme.surfaceContainerLowOf(context),
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: Row(
                             children: [
                               Icon(
                                 device.isBonded ? Icons.watch : Icons.bluetooth,
-                                color: StsysTheme.primary,
+                                color: StsysTheme.cyanOf(context),
                                 size: 18,
                               ),
                               const SizedBox(width: 12),
@@ -727,11 +848,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                   children: [
                                     Text(
                                       device.name ?? 'Unknown',
-                                      style: const TextStyle(
+                                      style: TextStyle(
                                         fontFamily: 'Manrope',
                                         fontSize: 13,
                                         fontWeight: FontWeight.w700,
-                                        color: StsysTheme.onSurface,
+                                        color: StsysTheme.onSurfaceOf(context),
                                       ),
                                     ),
                                     Text(
@@ -741,8 +862,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                         fontSize: 9,
                                         letterSpacing: 1.5,
                                         color: device.isBonded
-                                            ? StsysTheme.primary.withValues(alpha: 0.6)
-                                            : StsysTheme.onSurface.withValues(alpha: 0.3),
+                                            ? Theme.of(context)
+                                                  .colorScheme
+                                                  .primary
+                                                  .withValues(alpha: 0.6)
+                                            : StsysTheme.onSurfaceOf(context).withValues(
+                                                alpha: 0.3,
+                                              ),
                                       ),
                                     ),
                                   ],
@@ -750,7 +876,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               ),
                               Icon(
                                 Icons.chevron_right,
-                                color: StsysTheme.onSurface.withValues(alpha: 0.3),
+                                color: StsysTheme.onSurfaceOf(context).withValues(
+                                  alpha: 0.3,
+                                ),
                               ),
                             ],
                           ),

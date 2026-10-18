@@ -1,28 +1,8 @@
-import hashlib
-import hmac
-import re
 import struct
 import unittest
+from pathlib import Path
 
-
-DOMAIN = b"STASYS-AUTH/v2\0"
-AUTH_VERSION = 2
-KNOWN_PROOF = "12855b0e5b9ed50c4a618a5e0b84cf2d86f7dbbf94fef1d0df83fa6c82d1353b"
-UINT32_MAX = 0xFFFFFFFF
-
-
-def auth_transcript(identity, generation, nonce):
-    if len(identity) != 6:
-        raise ValueError("identity must be six bytes")
-    if not 0 <= generation <= UINT32_MAX:
-        raise ValueError("generation out of range")
-    if len(nonce) != 32:
-        raise ValueError("nonce must be 32 bytes")
-    return DOMAIN + identity + struct.pack("<I", generation) + nonce
-
-
-def auth_proof(key, identity, generation, nonce):
-    return hmac.new(key, auth_transcript(identity, generation, nonce), hashlib.sha256).digest()
+MAIN_CPP = Path(__file__).resolve().parents[1] / "src" / "main.cpp"
 
 
 def encode_frame(payload):
@@ -35,33 +15,7 @@ def encode_frame(payload):
     return body + bytes((checksum,))
 
 
-def greeting_generation(message):
-    match = re.fullmatch(rf"READY v={AUTH_VERSION} gen=(0|[1-9][0-9]*)", message)
-    if not match:
-        raise ValueError("invalid greeting")
-    generation = int(match.group(1))
-    if generation > UINT32_MAX:
-        raise ValueError("generation out of range")
-    return generation
-
-
-class ProtocolContractTests(unittest.TestCase):
-    def test_auth_transcript_exact_boundaries(self):
-        identity = bytes.fromhex("010203040506")
-        generation = 1
-        nonce = bytes(32)
-        transcript = auth_transcript(identity, generation, nonce)
-
-        self.assertEqual(transcript[:15], DOMAIN)
-        self.assertEqual(transcript[15:21], identity)
-        self.assertEqual(transcript[21:25], b"\x01\x00\x00\x00")
-        self.assertEqual(transcript[25:], nonce)
-        self.assertEqual(len(transcript), 57)
-
-    def test_auth_fixed_known_proof(self):
-        proof = auth_proof(bytes(range(32)), bytes.fromhex("010203040506"), 1, bytes(32))
-        self.assertEqual(proof.hex(), KNOWN_PROOF)
-
+class FrameLayoutTests(unittest.TestCase):
     def test_frame_layout_xor_and_single_bit_flip(self):
         values = (1.0, -2.0, 3.5, 0.25, -0.5, 6.0, -1, 2, -3, 0x1234, 87)
         payload = struct.pack("<6f3hHB", *values)
@@ -86,22 +40,39 @@ class ProtocolContractTests(unittest.TestCase):
             recalculated_xor ^= byte
         self.assertNotEqual(flipped[35], recalculated_xor)
 
-    def test_greeting_uint32_boundaries(self):
-        self.assertEqual(greeting_generation("READY v=2 gen=0"), 0)
-        self.assertEqual(greeting_generation("READY v=2 gen=4294967295"), UINT32_MAX)
 
-    def test_greeting_rejects_invalid_version_or_generation(self):
-        for greeting in (
-            "READY v=1 gen=0",
-            "READY v=3 gen=1",
-            "READY v=2 gen=-1",
-            "READY v=2 gen=4294967296",
-            "READY v=2 gen=",
-            "READY v=2 gen=01",
-            "READY v=2 gen=1 extra",
+class AuthFreeProtocolTests(unittest.TestCase):
+    """Contract of the auth-free streaming protocol (upstream 5f955e8):
+    static READY greeting, open SPP, packets stream without any exchange."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.source = MAIN_CPP.read_text(encoding="utf-8")
+
+    def test_static_ready_v2_greeting(self):
+        self.assertIn('"READY v=2\\n"', self.source)
+        self.assertNotIn("AUTH ", self.source)
+        self.assertNotIn("PROOF", self.source)
+
+    def test_spp_server_started_with_sec_none(self):
+        self.assertIn("ESP_SPP_SEC_NONE", self.source)
+        self.assertNotIn("ESP_SPP_SEC_AUTHENTICATE", self.source)
+        self.assertNotIn("ESP_SPP_SEC_ENCRYPT", self.source)
+
+    def test_no_auth_or_provisioning_symbols_remain(self):
+        for symbol in (
+            "staysys_auth_",
+            "staysys_provisioned_key",
+            "auth_nonce",
+            "auth_state",
+            "provisioning",
+            "ENROLLMENT_WINDOW",
         ):
-            with self.subTest(greeting=greeting), self.assertRaises(ValueError):
-                greeting_generation(greeting)
+            self.assertNotIn(symbol, self.source, f"'{symbol}' must be removed from src/main.cpp")
+
+    def test_packet_send_gate_has_no_auth_bit(self):
+        self.assertIn("bool can_send = !spp_congested && handle != 0;", self.source)
+        self.assertNotIn("BT_AUTHENTICATED", self.source)
 
 
 if __name__ == "__main__":

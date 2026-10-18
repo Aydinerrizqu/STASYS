@@ -10,7 +10,6 @@ from tools.stasys_packet import (
     Packet,
     PacketParser,
     PacketParseError,
-    SppAuthenticationError,
     SppReceiver,
     encode_packet,
     parse_packet,
@@ -103,62 +102,28 @@ class FakeSerial:
 
 
 class SppReceiverTests(unittest.TestCase):
-    def test_authentication_handles_fragments_and_coalesced_first_frame(self):
-        import hmac
-        from tools.stasys_packet import auth_transcript, auth_proof
-        key = b"test-secret"
-        identity = bytes.fromhex("010203040506")
-        generation = 7
-        nonce = bytes(range(32))
-        proof = auth_proof(key, auth_transcript(identity, generation, nonce)).hex().encode("ascii")
+    def test_ready_and_packet_are_read_without_writing(self):
         packet = Packet(1, 2, 3, 4, 5, 6, -1, 2, -3, 400, 88)
-        serial = FakeSerial([
-            b"READY v=2 gen=7\nAUTH " + nonce.hex().encode("ascii")[:17],
-            nonce.hex().encode("ascii")[17:] + b"\n",
-            b"OK\n" + encode_packet(packet),
-        ])
-        receiver = SppReceiver(serial, key=key, identity=identity, generation=generation, read_size=128)
+        frame = encode_packet(packet)
+        serial = FakeSerial([b"READY v=2\n" + frame])
+        receiver = SppReceiver(serial, read_size=128)
+
         decoded = receiver.read_packets(limit=1)
-        self.assertEqual(decoded, [parse_packet(encode_packet(packet))])
-        self.assertEqual(serial.writes, [b"PROOF " + proof + b"\n"])
-        self.assertFalse(serial.closed)
 
-    def test_generation_parsed_from_greeting_is_used_in_transcript(self):
-        from tools.stasys_packet import auth_proof, auth_transcript
-        key = b"test-secret"
-        identity = bytes.fromhex("aabbccddeeff")
-        nonce = bytes(range(32))
-        serial = FakeSerial([
-            b"READY v=2 gen=42\nAUTH " + nonce.hex().encode("ascii") + b"\n",
-            b"OK\n",
-        ])
-        receiver = SppReceiver(serial, key=key, identity=identity, generation=1, read_size=128)
-        receiver.authenticate()
-        # Generation comes from the greeting (42), not the constructor default (1).
-        expected = auth_proof(key, auth_transcript(identity, 42, nonce)).hex().encode("ascii")
-        self.assertEqual(serial.writes, [b"PROOF " + expected + b"\n"])
-        self.assertEqual(receiver.generation, 42)
+        self.assertEqual(decoded, [parse_packet(frame)])
+        self.assertEqual(serial.writes, [])
+        self.assertGreaterEqual(receiver.parser.discarded_bytes, len(b"READY v=2\n"))
 
-    def test_greeting_missing_generation_is_rejected(self):
-        serial = FakeSerial([b"READY v=2\nAUTH " + bytes(32).hex().encode("ascii") + b"\n"])
-        receiver = SppReceiver(serial, key=b"test-secret", identity=bytes(6), generation=1, read_size=128)
-        with self.assertRaises(SppAuthenticationError):
-            receiver.authenticate()
+    def test_packet_fragmentation_is_reassembled_without_writing(self):
+        packet = Packet(1, 2, 3, 4, 5, 6, -1, 2, -3, 400, 88)
+        frame = encode_packet(packet)
+        serial = FakeSerial([b"READY v=2\n" + frame[:9], frame[9:]])
+        receiver = SppReceiver(serial, read_size=128)
 
-    def test_same_nonce_different_generations_give_different_proofs(self):
-        from tools.stasys_packet import auth_proof, auth_transcript
-        key = b"test-secret"
-        identity = bytes(6)
-        nonce = bytes(range(32))
-        proof_a = auth_proof(key, auth_transcript(identity, 1, nonce))
-        proof_b = auth_proof(key, auth_transcript(identity, 2, nonce))
-        self.assertNotEqual(proof_a, proof_b)
+        decoded = receiver.read_packets(limit=1)
 
-    def test_authentication_rejects_wrong_proof(self):
-        serial = FakeSerial([b"READY v=2 gen=1\nAUTH " + bytes(32).hex().encode("ascii") + b"\n", b"FAIL\n"])
-        receiver = SppReceiver(serial, key=b"test-secret", identity=bytes(6), generation=1, read_size=128)
-        with self.assertRaises(SppAuthenticationError):
-            receiver.read_packets(limit=1)
+        self.assertEqual(decoded, [parse_packet(frame)])
+        self.assertEqual(serial.writes, [])
 
 
 if __name__ == "__main__":

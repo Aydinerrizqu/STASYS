@@ -12,19 +12,14 @@ Frame layout (little endian):
   34     battery as uint8
   35     XOR of bytes 2..34 (header and checksum excluded)
 
-Authentication text is not a binary frame. After SPP connects, the firmware
-sends ``READY\n`` and expects a newline-terminated challenge. Binary packets
-start after authentication succeeds.
+The firmware sends ``READY v=2\n`` after SPP connects and immediately streams
+36-byte binary packets. The receiver ignores text and synchronizes on ``AA BB``.
 """
 
 from __future__ import annotations
 
 import argparse
-import hmac
-import hashlib
 import json
-import os
-import re
 import struct
 import sys
 from dataclasses import asdict, dataclass
@@ -35,47 +30,11 @@ FRAME_SIZE = 36
 CHECKSUM_OFFSET = 35
 PAYLOAD_FORMAT = "<6f3hHB"
 PAYLOAD_SIZE = struct.calcsize(PAYLOAD_FORMAT)
-AUTH_VERSION = 2
-AUTH_NONCE_SIZE = 32
-AUTH_PROOF_SIZE = 32
-AUTH_PROOF_HEX_SIZE = AUTH_PROOF_SIZE * 2
-AUTH_MAX_LINE = 160
-AUTH_DOMAIN = b"STASYS-AUTH/v2\0"
 MAX_BUFFER_SIZE = FRAME_SIZE * 4
-
-
-def auth_transcript(identity: bytes, generation: int, nonce: bytes) -> bytes:
-    if len(identity) != 6 or not (0 <= generation <= 0xFFFFFFFF):
-        raise ValueError("identity must be 6 bytes and generation must be uint32")
-    if len(nonce) != AUTH_NONCE_SIZE:
-        raise ValueError("invalid authentication nonce length")
-    return AUTH_DOMAIN + identity + generation.to_bytes(4, "little") + nonce
-
-
-def auth_proof(key: bytes, transcript: bytes) -> bytes:
-    if not key:
-        raise ValueError("a provisioned key is required")
-    return hmac.new(key, transcript, hashlib.sha256).digest()
-
-
-def _parse_hex_proof(value: bytes) -> bytes:
-    if len(value) != AUTH_PROOF_HEX_SIZE:
-        raise SppAuthenticationError("authentication proof has invalid length")
-    try:
-        result = bytes.fromhex(value.decode("ascii"))
-    except (UnicodeDecodeError, ValueError) as error:
-        raise SppAuthenticationError("authentication proof is not hexadecimal") from error
-    if len(result) != AUTH_PROOF_SIZE:
-        raise SppAuthenticationError("authentication proof has invalid length")
-    return result
 
 
 class PacketParseError(ValueError):
     """Raised when a complete frame is malformed."""
-
-
-class SppAuthenticationError(RuntimeError):
-    """Raised when the Bluetooth SPP authentication exchange fails."""
 
 
 @dataclass(frozen=True)
@@ -183,90 +142,24 @@ class PacketParser:
             packets.append(packet)
         return packets
 
-_READY_GREETING = re.compile(rb"READY v=(\d+) gen=(\d+)")
-_READY_GREETING_NO_GEN = re.compile(rb"READY v=(\d+)")
-
-
 class SppReceiver:
-    """Authenticate and decode packets from a serial-like Bluetooth stream."""
+    """Decode packets from a serial-like Bluetooth stream."""
 
-    def __init__(
-        self,
-        serial_port,
-        *,
-        key: bytes,
-        identity: bytes,
-        generation: int,
-        read_size: int = 256,
-        max_auth_bytes: int = AUTH_MAX_LINE,
-    ):
-        if not key:
-            raise ValueError("a provisioned key is required")
-        if len(identity) != 6:
-            raise ValueError("identity must be six Bluetooth-address bytes")
-        if read_size <= 0 or max_auth_bytes < 1:
-            raise ValueError("read_size and max_auth_bytes must be positive")
+    def __init__(self, serial_port, *, read_size: int = 256):
+        if read_size <= 0:
+            raise ValueError("read_size must be positive")
         self.serial = serial_port
-        self.key = bytes(key)
-        self.identity = bytes(identity)
-        self.generation = generation
         self.read_size = read_size
-        self.max_auth_bytes = max_auth_bytes
         self._pending = bytearray()
-        self._authenticated = False
         self.parser = PacketParser()
 
     def _read(self) -> bytes:
         chunk = self.serial.read(self.read_size)
         if not chunk:
-            raise SppAuthenticationError("Bluetooth COM port closed or timed out")
+            raise TimeoutError("Bluetooth COM port closed or timed out")
         return bytes(chunk)
 
-    def _read_line(self, label: str) -> bytes:
-        while True:
-            newline = self._pending.find(b"\n")
-            if newline >= 0:
-                line = bytes(self._pending[:newline])
-                del self._pending[:newline + 1]
-                return line.rstrip(b"\r")
-            if len(self._pending) >= self.max_auth_bytes:
-                raise SppAuthenticationError(f"{label} is too long")
-            self._pending.extend(self._read())
-
-    def authenticate(self) -> None:
-        if self._authenticated:
-            return
-        ready = self._read_line("greeting")
-        match = _READY_GREETING.fullmatch(ready)
-        if match is None:
-            if _READY_GREETING_NO_GEN.fullmatch(ready):
-                raise SppAuthenticationError("greeting missing gen= field")
-            raise SppAuthenticationError("unsupported firmware authentication version")
-        if int(match.group(1)) != AUTH_VERSION:
-            raise SppAuthenticationError("unsupported firmware authentication version")
-        generation = int(match.group(2))
-        if not 0 <= generation <= 0xFFFFFFFF:
-            raise SppAuthenticationError("invalid connection generation")
-        self.generation = generation
-        auth_line = self._read_line("nonce")
-        if not auth_line.startswith(b"AUTH "):
-            raise SppAuthenticationError("missing authentication nonce")
-        try:
-            nonce = bytes.fromhex(auth_line[5:].decode("ascii"))
-        except (UnicodeDecodeError, ValueError) as error:
-            raise SppAuthenticationError("invalid authentication nonce") from error
-        if len(nonce) != AUTH_NONCE_SIZE:
-            raise SppAuthenticationError("invalid authentication nonce length")
-        transcript = auth_transcript(self.identity, self.generation, nonce)
-        proof = auth_proof(self.key, transcript).hex().encode("ascii")
-        self.serial.write(b"PROOF " + proof + b"\n")
-        result = self._read_line("authentication result")
-        if not hmac.compare_digest(result, b"OK"):
-            raise SppAuthenticationError("authentication proof rejected")
-        self._authenticated = True
-
     def read_packets(self, limit: int | None = None) -> list[Packet]:
-        self.authenticate()
         packets: list[Packet] = []
         if self._pending:
             packets.extend(self.parser.feed(self._pending))
@@ -281,22 +174,9 @@ def _serial_receiver(args) -> int:
         import serial
     except ImportError as error:
         raise ValueError("live COM mode requires pyserial; install it with: python -m pip install pyserial") from error
-    if not args.key_file and not args.key_env:
-        raise ValueError("--key-file or --key-env is required with --port")
-    if args.key_file:
-        with open(args.key_file, "rb") as stream:
-            key = stream.read()
-    else:
-        key = os.environ.get(args.key_env, "").encode("utf-8")
-    if not key:
-        raise ValueError("provisioned key is empty")
-    try:
-        identity = bytes.fromhex(args.identity.replace(":", ""))
-    except ValueError as error:
-        raise ValueError("identity must be six hexadecimal Bluetooth-address bytes") from error
     connection = serial.Serial(args.port, baudrate=args.baud, timeout=args.timeout)
     try:
-        receiver = SppReceiver(connection, key=key, identity=identity, generation=args.generation)
+        receiver = SppReceiver(connection)
         for packet in receiver.read_packets(limit=args.count):
             print(json.dumps(asdict(packet)), flush=True)
     finally:
@@ -333,10 +213,6 @@ def main(argv: Iterable[str] | None = None) -> int:
     parser.add_argument("--file", help="read binary SPP bytes from a file")
     parser.add_argument("--demo", action="store_true", help="run a fragmented-input demo")
     parser.add_argument("--port", help="read live packets from a Bluetooth Windows COM port")
-    parser.add_argument("--key-file", help="read the provisioned development key from a file")
-    parser.add_argument("--key-env", help="read the provisioned development key from this environment variable")
-    parser.add_argument("--identity", required=False, default="000000000000", help="Bluetooth address as 12 hex digits")
-    parser.add_argument("--generation", type=int, default=1, help="legacy fallback; actual generation is negotiated in greeting")
     parser.add_argument("--baud", type=int, default=115200, help="nominal COM baud rate")
     parser.add_argument("--timeout", type=float, default=1.0, help="COM read timeout in seconds")
     parser.add_argument("--count", type=int, help="stop after this many packets")
@@ -346,10 +222,10 @@ def main(argv: Iterable[str] | None = None) -> int:
     if args.port:
         try:
             return _serial_receiver(args)
-        except (OSError, ValueError, SppAuthenticationError) as error:
+        except (OSError, ValueError) as error:
             parser.error(str(error))
-    if any(value is not None for value in (args.key_file, args.key_env, args.count)):
-        parser.error("--key-file, --key-env, and --count require --port")
+    if args.count is not None:
+        parser.error("--count requires --port")
     try:
         packets = PacketParser().feed(_input_bytes(args.hex_text, args.file))
     except (OSError, ValueError) as error:

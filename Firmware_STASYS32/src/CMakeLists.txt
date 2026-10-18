@@ -1,5 +1,5 @@
 idf_component_register(
-    SRCS "main.cpp" "provisioning/provisioning.cpp"
-    INCLUDE_DIRS "." "provisioning"
+    SRCS "main.cpp"
+    INCLUDE_DIRS "."
     REQUIRES app_protocol sensors system_config bt nvs_flash driver
 )

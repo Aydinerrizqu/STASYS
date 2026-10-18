@@ -40,6 +40,7 @@ Firmware_STASYS32/.pio/
 # Python files (desktop app, not Flutter)
 *.py
 !ssa_app/**/*.py
+!Firmware_STASYS32/test/**/*.py
 
 # Python legacy archive (XOR/30-byte protocol, superseded by Flutter)
 _python_legacy/

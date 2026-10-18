@@ -133,39 +133,36 @@ Implemented in `sensor_data_provider.dart`:
 
 ## Communication Protocol (STASYS_FW)
 
-> **Updated** (2026-05-05): Flutter app now uses STASYS_FW protocol from `dylemmas/STASYSFW`.
-> Source: https://github.com/dylemmas/STASYSFW
+> **Updated (2026-10-18)**: Auth-free protocol — mengikuti upstream `dylemmas/STASYS_FW` `5f955e8`.
+> SPP tanpa pairing/encryption (`ESP_SPP_SEC_NONE`); **siapa pun di jarak Bluetooth bisa membaca stream**.
+> Auth v2 (HMAC + device key, 2026-10-04) sudah di-remove dari app (commit `7bbff1c`).
 
-### Binary Packet Format (31 bytes)
+### Binary Packet Format (36 bytes, XOR checksum)
 
 | Offset | Size | Field | Notes |
 |--------|------|-------|-------|
-| 0 | 1 | Sync0 | `0xAA` |
-| 1 | 1 | Sync1 | `0xBB` |
-| 2 | 4 | ax | float m/s² |
-| 6 | 4 | ay | float m/s² |
-| 10 | 4 | az | float m/s² |
-| 14 | 4 | gx | float rad/s |
-| 18 | 4 | gy | float rad/s |
-| 22 | 4 | gz | float rad/s |
-| 26 | 2 | piezo | uint16 ADC peak |
-| 28 | 1 | battery | uint8 % |
-| 29 | 2 | crc16 | CRC-16 CCITT over bytes 2-28 |
+| 0 | 2 | sync | `0xAA 0xBB` |
+| 2 | 24 | ax..gz | 6 × float32 little-endian (accel m/s², gyro rad/s) |
+| 26 | 6 | mag_x/y/z | 3 × int16 raw magnetometer (di-decode, belum dipakai UI) |
+| 32 | 2 | piezo | uint16 ADC peak |
+| 34 | 1 | battery | uint8 % |
+| 35 | 1 | checksum | XOR bytes 2..34 |
 
-**Checksum**: CRC-16 CCITT (was XOR in older firmware)
-- Initial: `0xFFFF`
-- Polynomial: `0x1021`
-- Coverage: bytes 2-28 (27 bytes)
-
-### Authentication Protocol (unchanged)
-
+**Handshake (tanpa auth)**:
 ```
-Flutter → ESP32: "AUTH_CHALLENGE\n"
-ESP32 → Flutter: SHA256("AUTH_CHALLENGE" + SECRET_KEY) hex (64 chars)
-Flutter → ESP32: verifies hash
+ESP32 → App: "READY v=2
+"     (satu baris, saat SPP open)
+App → ESP32: (tidak mengirim apa pun — firmware mengabaikan data masuk)
+ESP32 → App: streaming 36-byte frame @ 100Hz
 ```
 
-**Secret Key**: `12ebaf10h12fa9123z21sti`
+### Code Map (v2 auth-free)
+- `lib/services/stasys_protocol.dart` — `parseGreeting('READY v=2')`, `parseFrame` (36B XOR),
+  `LineBuffer` (split feed), `FrameAssembler` (sync resync, error counter). Pure Dart, no Flutter deps.
+- `lib/providers/bluetooth_provider.dart` — phase `waitingForGreeting → streaming` setelah greeting;
+  `requestFullSync()`; frame → `updateAllData(...)`; field `isAuthenticated` kini = "streaming aktif".
+- Tidak ada key/DEVICE KEY/provisioning lagi (`device_key_store.dart` + UI section dihapus `7bbff1c`).
+- Firmware tak menjawab `GET_VERSION` → `connection_screen._checkFirmwareUpdate` null → skip ke kalibrasi (delay ~3s).
 
 ### Firmware Features (STASYS_FW)
 

@@ -92,7 +92,7 @@ d:\Aydiner\Projek Flutter SSA\
 │       │   ├── database_service.dart   # CRUD operations, binary BLOB encoding
 │       │   └── export_service.dart     # CSV export via Share Sheet (all sessions)
 │       ├── providers/
-│       │   ├── bluetooth_provider.dart  # CRC16 verification (31-byte packets)
+│       │   ├── bluetooth_provider.dart  # greeting + 36-byte XOR frame streaming
 │       │   ├── sensor_data_provider.dart # UI state, isolate communication, demo mode
 │       │   ├── sensor_data_isolate.dart  # Shot detection + 3-phase analysis
 │       │   ├── settings_provider.dart    # + isDemoMode, setDemoMode()
@@ -154,35 +154,38 @@ See `ssa_app/CLAUDE.md` for full details.
 
 ## Communication Protocol
 
-> **Updated (2026-05-05)**: Firmware STASYS_FW menggunakan CRC16-CCITT (31 bytes), bukan XOR (30 bytes).
+> **Updated (2026-10-18)**: Protokol auth-free mengikuti upstream `dylemmas/STASYS_FW` commit `5f955e8`.
+> Tidak ada auth/encryption — SPP `ESP_SPP_SEC_NONE`, greeting tunggal, langsung streaming.
+> **Keamanan**: siapa pun dalam jarak Bluetooth bisa connect dan membaca stream (keputusan sadar, lihat Progress 2026-10-18).
 
-### Binary Packet Format (STASYS_FW — 31 bytes)
+### Binary Packet Format (36 bytes, XOR checksum)
 
 | Offset | Size | Field | Notes |
 |--------|------|-------|-------|
 | 0 | 1 | Sync0 | `0xAA` |
 | 1 | 1 | Sync1 | `0xBB` |
-| 2 | 4 | ax | float m/s² |
+| 2 | 4 | ax | float m/s² (little-endian) |
 | 6 | 4 | ay | float m/s² |
 | 10 | 4 | az | float m/s² |
 | 14 | 4 | gx | float rad/s |
 | 18 | 4 | gy | float rad/s |
 | 22 | 4 | gz | float rad/s |
-| 26 | 2 | piezo | uint16 ADC peak |
-| 28 | 1 | battery | uint8 % |
-| 29 | 2 | crc16 | CRC16-CCITT over bytes 2..28 |
+| 26 | 2 | mag_x | int16 raw magnetometer |
+| 28 | 2 | mag_y | int16 raw |
+| 30 | 2 | mag_z | int16 raw |
+| 32 | 2 | piezo | uint16 ADC peak |
+| 34 | 1 | battery | uint8 % |
+| 35 | 1 | checksum | XOR over bytes 2..34 |
 
-**CRC16-CCITT**: Initial `0xFFFF`, polynomial `0x1021`.
-Test vector: `'123456789'` → `0x29B1`
-
-**Authentication** (text-based):
+**Handshake (tanpa auth)**:
 ```
-ESP32 → App: "READY\n"
-App → ESP32: "AUTH_CHALLENGE\n"
-ESP32 → App: SHA256(challenge + SECRET_KEY) hex\n
-ESP32 → App: streams 31-byte binary packets @ 100Hz
+ESP32 → App: "READY v=2
+"   (saat SPP open)
+App → ESP32: (tidak perlu mengirim apa pun)
+ESP32 → App: streams 36-byte binary packets @ 100Hz
 ```
-**Secret Key**: `12ebaf10h12fa9123z21sti`
+Tidak ada key, provisioning, atau PROOF. Lihat `tools/stasys_packet.py` (firma) dan
+`ssa_app/lib/services/stasys_protocol.dart` (app) sebagai referensi wire format.
 
 ---
 
@@ -389,6 +392,35 @@ User requirements for MantisX-style live tracking:
 - `muzzle_trace_widget.dart`: camera lerp 0.03 (~500ms delay), auto-zoom (minZoom=0.015, maxZoom=0.12), smooth shot reset, trace rebuild from isolate snapshot
 - Gyro-only for tracking (integrate → quaternion → atan2 projection). Accel only for init orientation + shot detection.
 - **Bug fixed (2026-04-26)**: `_shotDetector.process()` was receiving **bias-corrected** gyro from isolate, then bias-correcting AGAIN internally → double subtraction caused accumulated drift. Fixed by passing **raw** gyro to `process()` — bias correction now happens exactly once inside `process()`.
+
+### Progress 2026-10-18 — Auth-Free Protocol Adoption + Train Redesign ✅
+
+**Keputusan (2026-10-18)**: ikuti upstream `dylemmas/STASYS_FW` `5f955e8` yang menghapus seluruh autentikasi.
+Menggantikan implementasi auth v2 (HMAC + device key) dari 2026-10-04/06 — commit-nya tetap di history.
+
+- [x] **Firmware `96bb3b4`**: hapus auth state machine, provisioning, enrollment window;
+  `ESP_SPP_SEC_NONE`; greeting statis `READY v=2
+`; send gate koneksi saja.
+  39/39 test Python; pio build OK (RAM 15.3%, Flash 49.3%). Diagnostik ADC/piezo dipertahankan.
+- [x] **Flutter `7bbff1c`**: phase → greeting→streaming langsung (`requestFullSync()` tanpa PROOF);
+  hapus key store, DEVICE KEY UI, `flutter_secure_storage`, `allowBackup=false`.
+  190/190 test; APK debug build OK. Greeting parser hanya menerima `READY v=2`.
+- [x] **Redesign UI `a906431`** (kerjaan user): train screen redesign (shot replay controls,
+  target replay view, train target widget), theme context-aware `StsysTheme.*Of(context)` di semua
+  screen, widget tests baru (shot_replay_controls, train_target_widget, train_screen, settings_provider).
+- [x] **`.gitignore` `60b25d1`**: izinkan `Firmware_STASYS32/test/**/*.py`.
+- Review: tiap task dua tahap (spesifikasi + kualitas) + review final cross-boundary pairing → READY.
+
+**Uji hardware (belum dilakukan)**: flash firmware → reboot → connect ke STASYS-XXXX →
+stream langsung jalan. **Tanpa key/provisioning/PROOF.**
+
+**Known follow-ups (non-blocking)**:
+- `Firmware_STASYS32/src/ota/*` adalah dead code (tidak di CMakeLists SRCS);
+  guard `extern isAuthenticated`-nya sudah usang — ganti dengan `g_state != BT_OTA_IDLE` sebelum OTA dihidupkan lagi.
+- `firmware_service.expectedVersion '1.4.0'` vs firmware `2.0.0` — inert selama GET_VERSION tidak diimplementasi.
+- Delay ~3 detik saat connect (menunggu GET_VERSION timeout yang memang tak dijawab firmware v2).
+- `isAuthenticated` di provider kini berarti "streaming aktif" (nama lama, rename opsional).
+- Greeting chunk yang menyertakan frame pertama: ~1 frame hilang (FrameAssembler resync; sudah dicatat).
 
 ### Migration Status (2026-05-09)
 

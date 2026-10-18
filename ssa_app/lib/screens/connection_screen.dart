@@ -107,14 +107,11 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
       if (btProvider.isConnected && btProvider.isAuthenticated) {
         await _checkFirmwareUpdate(context);
       } else {
-        // Connection/auth failed — surface the provider's failure reason
-        // (v2 auth failures) so the user gets a readable message.
-        final message = btProvider.authError ?? 'Connection failed.';
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(message),
+          const SnackBar(
+            content: Text('Connection failed.'),
             backgroundColor: StsysTheme.error,
-            duration: const Duration(seconds: 6),
+            duration: Duration(seconds: 6),
           ),
         );
       }
@@ -267,7 +264,7 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
       child: Consumer<BluetoothProvider>(
         builder: (context, btProvider, _) {
           return Scaffold(
-            backgroundColor: const Color(0xFF080B0E),
+            backgroundColor: StsysTheme.mobileBackgroundOf(context),
             body: SafeArea(
               child: Column(
                 children: [

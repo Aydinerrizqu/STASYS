@@ -4,124 +4,24 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:ssa_app/services/stasys_protocol.dart';
 
 void main() {
-  group('v2 authentication proof', () {
-    final identity = <int>[0x78, 0x1c, 0x3c, 0xf5, 0x16, 0x18];
-    final nonce = Uint8List.fromList(List<int>.generate(32, (i) => i));
-    final key = Uint8List.fromList([
-      0x01,
-      0x23,
-      0x45,
-      0x67,
-      0x89,
-      0xab,
-      0xcd,
-      0xef,
-      0xfe,
-      0xdc,
-      0xba,
-      0x98,
-      0x76,
-      0x54,
-      0x32,
-      0x10,
-      0x01,
-      0x23,
-      0x45,
-      0x67,
-      0x89,
-      0xab,
-      0xcd,
-      0xef,
-      0xfe,
-      0xdc,
-      0xba,
-      0x98,
-      0x76,
-      0x54,
-      0x32,
-      0x10,
-    ]);
-
-    test('matches the firmware Python HMAC vector', () {
-      final proof = StasysProtocol.authenticationProof(
-        key: key,
-        identity: identity,
-        generation: 7,
-        nonce: nonce,
-      );
-      expect(
-        proof,
-        'afb667996e895d54a1c77f26ab66f46e5bbb63c509194eeec1b76e6b18cb5678',
-      );
-    });
-
-    test('parses a supported v2 greeting', () {
-      final greeting = StasysProtocol.parseGreeting('READY v=2 gen=7');
-      expect(greeting.version, 2);
-      expect(greeting.generation, 7);
+  group('auth-free greeting', () {
+    test('parses the READY v=2 greeting', () {
+      expect(StasysProtocol.parseGreeting('READY v=2'), 2);
     });
 
     test('rejects legacy and unsupported greetings', () {
+      // Bare READY belonged to the pre-v2 auth handshake (dead protocol).
       expect(
         () => StasysProtocol.parseGreeting('READY'),
         throwsFormatException,
       );
       expect(
-        () => StasysProtocol.parseGreeting('READY v=3 gen=7'),
+        () => StasysProtocol.parseGreeting('READY v=3'),
         throwsFormatException,
       );
-    });
-
-    test('rejects negative or out-of-range greeting generations', () {
+      // The gen= form belonged to the removed auth protocol.
       expect(
-        () => StasysProtocol.parseGreeting('READY v=2 gen=-1'),
-        throwsFormatException,
-      );
-      expect(
-        () => StasysProtocol.parseGreeting('READY v=2 gen=4294967296'),
-        throwsFormatException,
-      );
-    });
-
-    test('parses a 32-byte AUTH nonce', () {
-      final nonceHex = nonce
-          .map((byte) => byte.toRadixString(16).padLeft(2, '0'))
-          .join();
-      expect(StasysProtocol.parseNonce('AUTH $nonceHex'), nonce);
-    });
-
-    test('rejects malformed AUTH nonce prefix, length, and hex', () {
-      final validNonceHex = nonce
-          .map((byte) => byte.toRadixString(16).padLeft(2, '0'))
-          .join();
-      expect(
-        () => StasysProtocol.parseNonce('AUTHX $validNonceHex'),
-        throwsFormatException,
-      );
-      expect(() => StasysProtocol.parseNonce('AUTH 00'), throwsFormatException);
-      expect(
-        () => StasysProtocol.parseNonce('AUTH ${'g' * 64}'),
-        throwsFormatException,
-      );
-    });
-
-    test('rejects invalid authentication input lengths and ranges', () {
-      expect(
-        () => StasysProtocol.authenticationProof(
-          key: Uint8List(31),
-          identity: identity,
-          generation: 7,
-          nonce: nonce,
-        ),
-        throwsFormatException,
-      );
-      expect(
-        () => StasysProtocol.authenticationProof(
-          key: key,
-          identity: identity,
-          generation: 0x100000000,
-          nonce: nonce,
-        ),
+        () => StasysProtocol.parseGreeting('READY v=2 gen=7'),
         throwsFormatException,
       );
     });
@@ -186,34 +86,28 @@ void main() {
   group('LineBuffer chunked feeds', () {
     test('reassembles a greeting split across two feeds', () {
       final buffer = LineBuffer();
-      expect(buffer.feed('READY v=2 ge'.codeUnits), isEmpty);
-      expect(buffer.feed('n=7\n'.codeUnits), <String>['READY v=2 gen=7']);
+      expect(buffer.feed('READY v='.codeUnits), isEmpty);
+      expect(buffer.feed('2\n'.codeUnits), <String>['READY v=2']);
     });
 
-    test('reassembles an AUTH nonce split across two feeds', () {
-      final nonceHex = List<int>.generate(32, (i) => i)
-          .map((b) => b.toRadixString(16).padLeft(2, '0'))
-          .join();
-      final line = 'AUTH $nonceHex';
+    test('reassembles an OTA text line split across two feeds', () {
+      const line = 'VERSION=1.4.0';
       final buffer = LineBuffer();
-      expect(buffer.feed(line.substring(0, 37).codeUnits), isEmpty);
-      expect(
-        buffer.feed('${line.substring(37)}\n'.codeUnits),
-        <String>[line],
-      );
+      expect(buffer.feed(line.substring(0, 5).codeUnits), isEmpty);
+      expect(buffer.feed('${line.substring(5)}\n'.codeUnits), <String>[line]);
     });
 
     test('yields complete lines from one feed, trimming CR and empties', () {
       final buffer = LineBuffer();
       expect(
-        buffer.feed('READY v=2 gen=7\r\n\r\nOK\n'.codeUnits),
-        <String>['READY v=2 gen=7', 'OK'],
+        buffer.feed('READY v=2\r\n\r\nVERSION=2\n'.codeUnits),
+        <String>['READY v=2', 'VERSION=2'],
       );
     });
 
     test('clear drops any pending partial line', () {
       final buffer = LineBuffer();
-      expect(buffer.feed('AUTH par'.codeUnits), isEmpty);
+      expect(buffer.feed('OTA par'.codeUnits), isEmpty);
       buffer.clear();
       expect(buffer.feed('tial\n'.codeUnits), <String>['tial']);
       expect(buffer.text, isEmpty);

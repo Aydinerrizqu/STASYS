@@ -195,30 +195,28 @@ void main() {
     }
   });
 
-  testWidgets('auth failure surfaces authError in a SnackBar', (tester) async {
+  testWidgets('connection failure surfaces generic message in a SnackBar', (tester) async {
     when(() => bt.connectToDevice(any())).thenAnswer((_) async => false);
     when(() => bt.isConnected).thenReturn(false);
     when(() => bt.isAuthenticated).thenReturn(false);
-    when(() => bt.authError).thenReturn('Authentication timed out.');
 
     try {
       await connectToBondedDevice(tester);
 
-      // Connecting dialog dismissed, calibration NOT shown, authError readable.
+      // Connecting dialog dismissed, calibration NOT shown, generic message shown.
       expect(find.text('CONNECTING'), findsNothing);
       expect(find.byType(CalibrationFlowDialog), findsNothing);
-      expect(find.text('Authentication timed out.'), findsOneWidget);
+      expect(find.text('Connection failed.'), findsOneWidget);
     } finally {
       await flushPendingTimers(tester);
     }
   });
 
-  testWidgets('auth failure without authError shows generic message',
+  testWidgets('connection failure completes without crash or navigation',
       (tester) async {
     when(() => bt.connectToDevice(any())).thenAnswer((_) async => false);
     when(() => bt.isConnected).thenReturn(false);
     when(() => bt.isAuthenticated).thenReturn(false);
-    when(() => bt.authError).thenReturn(null);
 
     try {
       await connectToBondedDevice(tester);
@@ -226,6 +224,7 @@ void main() {
       expect(find.text('CONNECTING'), findsNothing);
       expect(find.byType(CalibrationFlowDialog), findsNothing);
       expect(find.text('Connection failed.'), findsOneWidget);
+      expect(routeLog, isNot(contains('/train')));
     } finally {
       await flushPendingTimers(tester);
     }

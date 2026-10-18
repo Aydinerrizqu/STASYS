@@ -6,15 +6,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bluetooth_serial/flutter_bluetooth_serial.dart';
 import 'package:permission_handler/permission_handler.dart';
 
-import '../services/device_key_store.dart';
 import '../services/stasys_protocol.dart';
 import './sensor_data_provider.dart';
 
 // ================= CONNECTION PHASE =================
 enum _ConnectionPhase {
   waitingForGreeting,
-  waitingForNonce,
-  waitingForAuthResult,
   streaming,
   otaMode,
 }
@@ -24,14 +21,10 @@ String _otaTextBuffer = '';
 
 class BluetoothProvider extends ChangeNotifier {
   SensorDataProvider _sensorDataProvider;
-  final DeviceKeyStore _deviceKeyStore;
   StreamSubscription<Uint8List>? _dataSubscription;
 
-  BluetoothProvider({
-    required SensorDataProvider sensorDataProvider,
-    DeviceKeyStore? deviceKeyStore,
-  })  : _sensorDataProvider = sensorDataProvider,
-        _deviceKeyStore = deviceKeyStore ?? DeviceKeyStore();
+  BluetoothProvider({required SensorDataProvider sensorDataProvider})
+      : _sensorDataProvider = sensorDataProvider;
 
   set sensorDataProvider(SensorDataProvider provider) {
     _sensorDataProvider = provider;
@@ -44,7 +37,6 @@ class BluetoothProvider extends ChangeNotifier {
   bool _isScanning = false;
   bool _isAuthenticated = false;
   String _deviceName = '';
-  String? _authError;
   _ConnectionPhase _connectionPhase = _ConnectionPhase.waitingForGreeting;
 
   final FrameAssembler _frameAssembler = FrameAssembler();
@@ -60,7 +52,6 @@ class BluetoothProvider extends ChangeNotifier {
   bool get isConnected => _isConnected;
   bool get isScanning => _isScanning;
   bool get isAuthenticated => _isAuthenticated;
-  String? get authError => _authError;
   String get connectedDeviceName => _deviceName.isNotEmpty ? _deviceName : (_selectedDevice?.name ?? 'STASYS');
   int get totalPacketsReceived => _totalPacketsReceived;
   int get invalidPacketsCount => 0;  // Not tracked in upstream protocol
@@ -86,8 +77,6 @@ class BluetoothProvider extends ChangeNotifier {
 
     switch (_connectionPhase) {
       case _ConnectionPhase.waitingForGreeting:
-      case _ConnectionPhase.waitingForNonce:
-      case _ConnectionPhase.waitingForAuthResult:
         _handleTextData(data);
         break;
       case _ConnectionPhase.streaming:
@@ -99,122 +88,26 @@ class BluetoothProvider extends ChangeNotifier {
     }
   }
 
-  // ================= TEXT-BASED AUTH (firmware v2) =================
+  // ================= GREETING (auth-free firmware v2) =================
   final LineBuffer _lineBuffer = LineBuffer();
   String _textBuffer = '';
 
-  Future<void> _handleTextData(Uint8List data) async {
-    try {
-      for (final line in _lineBuffer.feed(data)) {
-        switch (_connectionPhase) {
-          case _ConnectionPhase.waitingForGreeting:
-            final greeting = StasysProtocol.parseGreeting(line);
-            _connectionPhase = _ConnectionPhase.waitingForNonce;
-            _authGeneration = greeting.generation;
-            break;
-          case _ConnectionPhase.waitingForNonce:
-            final nonce = StasysProtocol.parseNonce(line);
-            final key = await _deviceKeyStore.readKey();
-            if ((_connection == null && !_authSeamActive) ||
-                _connectionPhase != _ConnectionPhase.waitingForNonce) {
-              return;
-            }
-            if (key == null) {
-              await _failAuthentication('Device key not configured.');
-              return;
-            }
-            final identity = _parseDeviceAddress(_selectedDevice!.address);
-            final proof = StasysProtocol.authenticationProof(
-              key: key,
-              identity: identity,
-              generation: _authGeneration!,
-              nonce: nonce,
-            );
-            _sendText('PROOF $proof');
-            _connectionPhase = _ConnectionPhase.waitingForAuthResult;
-            break;
-          case _ConnectionPhase.waitingForAuthResult:
-            if (line == 'OK') {
-              debugPrint('[BT] Authenticated; starting sensor stream');
-              _authError = null;
-              _isAuthenticated = true;
-              _connectionPhase = _ConnectionPhase.streaming;
-              _lineBuffer.clear();
-              _textBuffer = '';
-              notifyListeners();
-              _sensorDataProvider.requestFullSync();
-            } else {
-              await _failAuthentication(
-                line == 'FAIL' ? 'Device rejected authentication.' : 'Unexpected authentication response.',
-              );
-              return;
-            }
-            break;
-          case _ConnectionPhase.streaming:
-          case _ConnectionPhase.otaMode:
-            return;
-        }
+  void _handleTextData(Uint8List data) {
+    for (final line in _lineBuffer.feed(data)) {
+      if (_connectionPhase != _ConnectionPhase.waitingForGreeting) return;
+      try {
+        StasysProtocol.parseGreeting(line);
+      } on FormatException catch (error) {
+        debugPrint('[BT] Ignoring line before greeting: ${error.message}');
+        continue;
       }
-    } catch (error) {
-      await _failAuthentication('Authentication failed: ${_readableError(error)}');
-    }
-  }
-
-  int? _authGeneration;
-
-  // ================= TEST SEAMS =================
-  // The BT socket stream cannot be driven in unit tests without a connection
-  // abstraction (explicitly out of scope), so tests inject the device
-  // identity and mark the state machine as running outside a real socket.
-  // Production never calls these; `_authSeamActive` stays false there, so
-  // the post-`readKey` connection check keeps its full teardown-guard
-  // semantics.
-  bool _authSeamActive = false;
-
-  /// Supplies the device identity used when the auth proof is computed.
-  @visibleForTesting
-  void selectDeviceForAuth(BluetoothDevice device) {
-    _selectedDevice = device;
-    _authSeamActive = true;
-  }
-
-  /// Feeds raw bytes into the same line state machine the BT listener uses.
-  @visibleForTesting
-  Future<void> feedAuthData(List<int> bytes) =>
-      _handleTextData(Uint8List.fromList(bytes));
-
-  List<int> _parseDeviceAddress(String address) {
-    final octets = address.split(':');
-    if (octets.length != 6 ||
-        octets.any((octet) => !RegExp(r'^[0-9a-fA-F]{2}$').hasMatch(octet))) {
-      throw const FormatException('Invalid Bluetooth device address');
-    }
-    return octets.map((octet) => int.parse(octet, radix: 16)).toList();
-  }
-
-  String _readableError(Object error) {
-    if (error is FormatException) return error.message.toString();
-    return 'Unable to read the device key or authenticate.';
-  }
-
-  Future<void> _failAuthentication(String message) async {
-    _authError = message;
-    _isAuthenticated = false;
-    notifyListeners();
-    try {
-      await disconnect();
-    } catch (e) {
-      debugPrint('[BT] Disconnect after auth failure error: $e');
-    }
-  }
-
-  void _sendText(String text) {
-    if (_connection == null || !_isConnected) return;
-    try {
-      _connection!.output.add(Uint8List.fromList('$text\n'.codeUnits));
-      _connection!.output.allSent;
-    } catch (e) {
-      debugPrint('Error sending text: $e');
+      debugPrint('[BT] Greeting received; starting sensor stream');
+      _isAuthenticated = true;
+      _connectionPhase = _ConnectionPhase.streaming;
+      _lineBuffer.clear();
+      _textBuffer = '';
+      notifyListeners();
+      _sensorDataProvider.requestFullSync();
     }
   }
 
@@ -347,8 +240,6 @@ class BluetoothProvider extends ChangeNotifier {
     _frameAssembler.clear();
     _lineBuffer.clear();
     _textBuffer = '';
-    _authError = null;
-    _authGeneration = null;
     _isAuthenticated = false;
     _totalPacketsReceived = 0;
     _checksumErrorsCount = 0;
@@ -386,31 +277,20 @@ class BluetoothProvider extends ChangeNotifier {
           cancelOnError: false,
         );
 
-        // Wait up to 15s for auth to complete; stop early when a definitive
-        // failure has already torn the connection down.
+        // Wait up to 15s for the greeting; stop early if the remote side
+        // already closed the connection (onDone nulls _connection).
         int waited = 0;
-        while (!_isAuthenticated &&
-            waited < 15000 &&
-            !(_authError != null && _connection == null)) {
+        while (!_isAuthenticated && waited < 15000 && _connection != null) {
           await Future.delayed(const Duration(milliseconds: 300));
           waited += 300;
         }
 
         if (_isAuthenticated) {
-          debugPrint('[BT] Connection and auth successful');
+          debugPrint('[BT] Connection started; sensor stream active');
           return true;
         }
 
-        // Definitive failure already diagnosed by _failAuthentication or
-        // _handleDisconnection: keep its root-cause message and do not
-        // retry (transient timeouts below still retry as before).
-        if (_authError != null && _connection == null) {
-          debugPrint('[BT] Auth failed definitively; skipping retries');
-          return false;
-        }
-
-        debugPrint('[BT] Auth timeout after ${waited}ms');
-        _authError ??= 'Authentication timed out.';
+        debugPrint('[BT] No greeting after ${waited}ms');
         await disconnect();
         if (attempt < maxRetries) continue;
         return false;
@@ -454,9 +334,6 @@ class BluetoothProvider extends ChangeNotifier {
   }
 
   void _handleDisconnection() {
-    if (!_isAuthenticated && _authError == null) {
-      _authError = 'Connection closed before authentication completed.';
-    }
     _isConnected = false;
     _isAuthenticated = false;
     _connectionPhase = _ConnectionPhase.waitingForGreeting;

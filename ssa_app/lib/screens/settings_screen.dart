@@ -8,7 +8,6 @@ import '../providers/settings_provider.dart';
 import '../providers/sensor_data_provider.dart';
 import '../models/data_models.dart';
 import '../theme/app_theme.dart';
-import '../widgets/device_key_section.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -141,8 +140,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   // Training Mode
                   _buildSectionHeader('TRAINING MODE'),
                   _buildTrainingModeSection(),
-                  const SizedBox(height: 24),
-                  const DeviceKeySection(),
                   const SizedBox(height: 100),
                 ],
               ),

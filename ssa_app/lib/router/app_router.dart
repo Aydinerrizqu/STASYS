@@ -1,5 +1,4 @@
 import 'package:go_router/go_router.dart';
-import '../screens/splash_screen.dart';
 import '../screens/connection_screen.dart';
 import '../screens/ota_update_screen.dart';
 import '../screens/main_shell.dart';
@@ -9,9 +8,8 @@ import '../screens/history_screen.dart';
 import '../screens/settings_screen.dart';
 
 final router = GoRouter(
-  initialLocation: '/',
+  initialLocation: '/connection',
   routes: [
-    GoRoute(path: '/', builder: (context, state) => const SplashScreen()),
     GoRoute(
       path: '/connection',
       builder: (context, state) => const ConnectionScreen(),

@@ -4,6 +4,41 @@ import '../providers/sensor_data_provider.dart';
 import '../theme/app_theme.dart';
 import '../widgets/muzzle_trace_widget.dart';
 
+class _StasysHeader extends StatelessWidget {
+  const _StasysHeader();
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+    decoration: BoxDecoration(
+      color: StsysTheme.mobileHeaderOf(context, StsysTheme.mobileHeaderTracking),
+      border: Border(bottom: BorderSide(color: StsysTheme.mobileBorderOf(context))),
+    ),
+    child: Row(
+      children: [
+        ShaderMask(
+          shaderCallback: (bounds) =>
+              StsysTheme.brandGradient.createShader(bounds),
+          child: const Text(
+            'STASYS',
+            style: TextStyle(
+              fontFamily: 'Manrope',
+              fontSize: 20,
+              fontWeight: FontWeight.w900,
+              color: Colors.white,
+              letterSpacing: 2,
+            ),
+          ),
+        ),
+        const Spacer(),
+        Consumer<SensorDataProvider>(
+          builder: (context, sensor, _) =>
+              _BatteryIndicator(level: sensor.batteryLevel),
+        ),
+      ],
+    ),
+  );
+}
+
 /// Simplified dot-only tracking screen.
 /// Shows live trace preview — no START, END SERIES, END SESSION, score, or replay.
 class TrackingScreen extends StatelessWidget {
@@ -12,12 +47,14 @@ class TrackingScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: StsysTheme.mobileBackground,
+      backgroundColor: StsysTheme.mobileBackgroundOf(context),
       body: SafeArea(
         child: Column(
           children: [
-            // Header
-            _buildHeader(context),
+            const Padding(
+              padding: EdgeInsets.fromLTRB(0, 0, 0, 0),
+              child: _StasysHeader(),
+            ),
             // Dot-only preview
             const Expanded(child: _DotOnlyPreview()),
           ],
@@ -31,13 +68,13 @@ class TrackingScreen extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
       child: Row(
         children: [
-          const Text(
+          Text(
             'TRACKING',
             style: TextStyle(
               fontFamily: 'Manrope',
               fontWeight: FontWeight.w900,
               fontSize: 18,
-              color: Color(0xFF00D8FF),
+              color: StsysTheme.cyanOf(context),
               letterSpacing: 2,
             ),
           ),
@@ -65,14 +102,14 @@ class _DotOnlyPreview extends StatelessWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(Icons.sensors, color: Color(0xFF8B8B8B), size: 40),
+                Icon(Icons.sensors, color: StsysTheme.mobileMutedTextOf(context), size: 40),
                 const SizedBox(height: 12),
                 Text(
                   'Waiting for sensor data...',
                   style: TextStyle(
                     fontFamily: 'Inter',
                     fontSize: 13,
-                    color: StsysTheme.mobileMutedText,
+                    color: StsysTheme.mobileMutedTextOf(context),
                   ),
                 ),
                 const SizedBox(height: 4),
@@ -81,7 +118,7 @@ class _DotOnlyPreview extends StatelessWidget {
                   style: TextStyle(
                     fontFamily: 'Inter',
                     fontSize: 11,
-                    color: StsysTheme.mobileMutedText.withValues(alpha: 0.6),
+                    color: StsysTheme.mobileMutedTextOf(context).withValues(alpha: 0.6),
                   ),
                 ),
               ],
@@ -97,7 +134,7 @@ class _DotOnlyPreview extends StatelessWidget {
               decoration: BoxDecoration(
                 color: const Color(0xFF0A0C0F),
                 borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: const Color(0xFF1F242C)),
+                border: Border.all(color: StsysTheme.mobileBorderOf(context)),
               ),
               child: const MuzzleTraceWidget(),
             ),

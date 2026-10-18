@@ -400,7 +400,9 @@ class SensorDataProvider extends ChangeNotifier {
   }
   
   void startRecording() {
-    if (!_isCalibrated) return;
+    // Demo data has no physical sensor to calibrate. Real hardware still
+    // requires the normal calibration flow before recording can start.
+    if (!_isCalibrated && !_isDemoMode) return;
 
     _isRecording = true;
     _recordingStartTime = DateTime.now();
@@ -447,7 +449,14 @@ class SensorDataProvider extends ChangeNotifier {
   }
 
   /// Save session - request data dari isolate dulu
-  Future<void> saveCurrentSession() async {
+  Future<void> saveCurrentSession({
+    List<ShotResult>? shots,
+    String profileName = '',
+    String trainingPreset = '',
+    int seriesCount = 0,
+    FirearmType? firearmType,
+    TrainingMode? trainingMode,
+  }) async {
     // Guard against double-save race
     if (_isSaving) {
       debugPrint("[SAVE] ALREADY SAVING — skipping duplicate call");
@@ -503,8 +512,8 @@ class SensorDataProvider extends ChangeNotifier {
           "shots=${_sessionShots.length}");
 
       final sessionId = "SESSION_${DateTime.now().millisecondsSinceEpoch}";
-      final firearmType = _settingsProvider?.firearmType ?? FirearmType.pistol;
-      final trainingMode = _settingsProvider?.trainingMode ?? TrainingMode.dryFire;
+      final resolvedFirearmType = firearmType ?? _settingsProvider?.firearmType ?? FirearmType.pistol;
+      final resolvedTrainingMode = trainingMode ?? _settingsProvider?.trainingMode ?? TrainingMode.dryFire;
 
       final log = SessionLog(
         id: sessionId,
@@ -516,9 +525,12 @@ class SensorDataProvider extends ChangeNotifier {
         accelX: List.from(_sessionAccelX!),
         accelY: List.from(_sessionAccelY!),
         accelZ: List.from(_sessionAccelZ!),
-        firearmType: firearmType,
-        trainingMode: trainingMode,
-        shots: List.from(_sessionShots),
+        firearmType: resolvedFirearmType,
+        trainingMode: resolvedTrainingMode,
+        shots: List.from(shots ?? _sessionShots),
+        profileName: profileName,
+        trainingPreset: trainingPreset,
+        seriesCount: seriesCount,
       );
 
       await _sessionLogger.saveSession(log);

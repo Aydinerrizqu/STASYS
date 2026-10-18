@@ -41,10 +41,10 @@ class MainShell extends StatelessWidget {
       body: child,
       bottomNavigationBar: Container(
         height: 64,
-        decoration: const BoxDecoration(
-          color: StsysTheme.mobileBackground,
+        decoration: BoxDecoration(
+          color: StsysTheme.mobileBackgroundOf(context),
           border: Border(
-            top: BorderSide(color: StsysTheme.mobileBorder, width: 1),
+            top: BorderSide(color: StsysTheme.mobileBorderOf(context), width: 1),
           ),
         ),
         child: Row(
@@ -104,7 +104,7 @@ class _NavTab extends StatelessWidget {
             Icon(
               icon,
               size: 22,
-              color: isSelected ? StsysTheme.cyan : StsysTheme.mobileMutedText,
+              color: isSelected ? StsysTheme.cyanOf(context) : StsysTheme.mobileMutedTextOf(context),
             ),
             const SizedBox(height: 4),
             Text(
@@ -114,8 +114,8 @@ class _NavTab extends StatelessWidget {
                 fontSize: 10,
                 fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
                 color: isSelected
-                    ? StsysTheme.cyan
-                    : StsysTheme.mobileMutedText,
+                    ? StsysTheme.cyanOf(context)
+                    : StsysTheme.mobileMutedTextOf(context),
               ),
             ),
           ],

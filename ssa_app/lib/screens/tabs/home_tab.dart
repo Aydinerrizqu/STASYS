@@ -160,14 +160,14 @@ class HomeTab extends StatelessWidget {
     showDialog(
       context: ctx,
       builder: (ctx) => AlertDialog(
-        backgroundColor: StsysTheme.surfaceContainerHigh,
+        backgroundColor: Theme.of(ctx).colorScheme.surfaceContainerHigh,
         title: Text(
           'DELETE SESSION?',
-          style: StsysText.labelBold.copyWith(color: StsysTheme.error),
+          style: StsysText.labelBold.copyWith(color: StsysTheme.errorOf(ctx)),
         ),
         content: Text(
           'This action cannot be undone.',
-          style: StsysText.body,
+          style: StsysText.bodyOf(ctx),
         ),
         actions: [
           TextButton(
@@ -192,7 +192,7 @@ class HomeTab extends StatelessWidget {
               style: TextStyle(
                 fontFamily: 'Manrope',
                 fontWeight: FontWeight.w800,
-                color: StsysTheme.error,
+                color: StsysTheme.errorOf(ctx),
                 letterSpacing: 1,
               ),
             ),

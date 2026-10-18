@@ -448,12 +448,12 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
     showDialog(
       context: ctx,
       builder: (ctx) => AlertDialog(
-        backgroundColor: StsysTheme.surfaceContainerHigh,
+        backgroundColor: Theme.of(context).colorScheme.surfaceContainerHigh,
         title: Text(
           'DELETE SESSION?',
-          style: StsysText.labelBold.copyWith(color: StsysTheme.error),
+          style: StsysText.labelBold.copyWith(color: StsysTheme.errorOf(context)),
         ),
-        content: Text('This action cannot be undone.', style: StsysText.body),
+        content: Text('This action cannot be undone.', style: StsysText.bodyOf(context)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
@@ -476,7 +476,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
               style: TextStyle(
                 fontFamily: 'Manrope',
                 fontWeight: FontWeight.w800,
-                color: StsysTheme.error,
+                color: StsysTheme.errorOf(context),
               ),
             ),
           ),

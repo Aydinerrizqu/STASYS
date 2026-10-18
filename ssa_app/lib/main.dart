@@ -84,11 +84,15 @@ class MyApp extends StatelessWidget {
           },
         ),
       ],
-      child: MaterialApp.router(
-        title: 'STASYS App',
-        debugShowCheckedModeBanner: false,
-        theme: StsysTheme.darkTheme,
-        routerConfig: router,
+      child: Consumer<SettingsProvider>(
+        builder: (context, settings, _) => MaterialApp.router(
+          title: 'STASYS App',
+          debugShowCheckedModeBanner: false,
+          theme: StsysTheme.lightTheme,
+          darkTheme: StsysTheme.darkTheme,
+          themeMode: settings.themeMode,
+          routerConfig: router,
+        ),
       ),
     );
   }

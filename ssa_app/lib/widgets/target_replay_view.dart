@@ -31,12 +31,14 @@ class TargetReplayView extends StatefulWidget {
   final ShotResult shot;
   final int shotIndex;
   final Color Function(double score) getScoreColor;
+  final bool compact;
 
   const TargetReplayView({
     super.key,
     required this.shot,
     required this.shotIndex,
     required this.getScoreColor,
+    this.compact = false,
   });
 
   @override
@@ -115,19 +117,26 @@ class _TargetReplayViewState extends State<TargetReplayView>
     final scoreColor = widget.getScoreColor(widget.shot.totalScore);
     final progress = _controller.value;
 
+    final compact = widget.compact;
     return Material(
       color: Colors.transparent,
       child: Container(
-        margin: const EdgeInsets.all(16),
+        margin: EdgeInsets.all(compact ? 4 : 16),
         decoration: BoxDecoration(
           color: StsysTheme.surfaceContainerLow,
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(compact ? 8 : 12),
         ),
         child: Column(
           children: [
-            // Target canvas
+            // Target canvas. TRAIN-1 uses the compact form so the replay never
+            // competes with the target, shot log, or bottom navigation.
             Container(
-              margin: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+              margin: EdgeInsets.fromLTRB(
+                compact ? 6 : 12,
+                compact ? 6 : 12,
+                compact ? 6 : 12,
+                0,
+              ),
               decoration: BoxDecoration(
                 color: StsysTheme.surfaceContainerLowest,
                 borderRadius: BorderRadius.circular(8),
@@ -136,7 +145,7 @@ class _TargetReplayViewState extends State<TargetReplayView>
                 borderRadius: BorderRadius.circular(8),
                 child: RepaintBoundary(
                   child: SizedBox(
-                    height: 250,
+                    height: compact ? 50 : 250,
                     width: double.infinity,
                     child: Stack(
                       alignment: Alignment.center,
@@ -170,14 +179,19 @@ class _TargetReplayViewState extends State<TargetReplayView>
             ),
             // Selected shot card
             Padding(
-              padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
+              padding: EdgeInsets.fromLTRB(
+                compact ? 8 : 12,
+                compact ? 3 : 10,
+                compact ? 8 : 12,
+                0,
+              ),
               child: Row(
                 children: [
                   Text(
                     'SHOT ${widget.shotIndex + 1}',
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontFamily: 'Inter',
-                      fontSize: 12,
+                      fontSize: compact ? 9 : 12,
                       fontWeight: FontWeight.w700,
                       letterSpacing: 1,
                       color: StsysTheme.onSurface,
@@ -188,7 +202,7 @@ class _TargetReplayViewState extends State<TargetReplayView>
                     widget.shot.totalScore.toInt().toString(),
                     style: TextStyle(
                       fontFamily: 'Manrope',
-                      fontSize: 18,
+                      fontSize: compact ? 14 : 18,
                       fontWeight: FontWeight.w900,
                       color: scoreColor,
                     ),
@@ -203,7 +217,7 @@ class _TargetReplayViewState extends State<TargetReplayView>
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         fontFamily: 'Inter',
-                        fontSize: 10,
+                        fontSize: compact ? 8 : 10,
                         fontWeight: FontWeight.w600,
                         letterSpacing: 0.5,
                         color: StsysTheme.onSurface.withValues(alpha: 0.5),
@@ -215,46 +229,57 @@ class _TargetReplayViewState extends State<TargetReplayView>
             ),
             // Playback controls
             Padding(
-              padding: const EdgeInsets.fromLTRB(4, 0, 4, 4),
-              child: Row(
-                children: [
-                  IconButton(
-                    icon: Icon(
-                      _isPlaying ? Icons.pause : Icons.play_arrow,
-                      color: StsysTheme.primary,
-                      size: 24,
+              padding: EdgeInsets.fromLTRB(
+                compact ? 0 : 4,
+                0,
+                compact ? 0 : 4,
+                compact ? 0 : 4,
+              ),
+              child: SizedBox(
+                height: compact ? 34 : null,
+                child: Row(
+                  children: [
+                    IconButton(
+                      constraints: compact
+                          ? const BoxConstraints.tightFor(width: 32, height: 32)
+                          : null,
+                      icon: Icon(
+                        _isPlaying ? Icons.pause : Icons.play_arrow,
+                        color: StsysTheme.primary,
+                        size: compact ? 18 : 24,
+                      ),
+                      onPressed: _hasTrace
+                          ? (_isPlaying ? _pause : () => _play())
+                          : null,
+                      tooltip: _isPlaying ? 'Pause' : 'Play',
                     ),
-                    onPressed: _hasTrace
-                        ? (_isPlaying ? _pause : () => _play())
-                        : null,
-                    tooltip: _isPlaying ? 'Pause' : 'Play',
-                  ),
-                  Expanded(
-                    child: Slider(
-                      value: progress,
-                      activeColor: StsysTheme.primary,
-                      onChanged: _hasTrace ? _seek : null,
+                    Expanded(
+                      child: Slider(
+                        value: progress,
+                        activeColor: StsysTheme.primary,
+                        onChanged: _hasTrace ? _seek : null,
+                      ),
                     ),
-                  ),
-                  Text(
-                    '${(_controller.value * 2.5).toStringAsFixed(1)}s',
-                    style: TextStyle(
-                      fontFamily: 'Manrope',
-                      fontSize: 11,
-                      fontWeight: FontWeight.w800,
-                      color: StsysTheme.onSurface.withValues(alpha: 0.5),
+                    Text(
+                      '${(_controller.value * 2.5).toStringAsFixed(1)}s',
+                      style: TextStyle(
+                        fontFamily: 'Manrope',
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                        color: StsysTheme.onSurface.withValues(alpha: 0.5),
+                      ),
                     ),
-                  ),
-                  IconButton(
-                    icon: Icon(
-                      Icons.refresh,
-                      color: StsysTheme.onSurface.withValues(alpha: 0.5),
-                      size: 20,
+                    IconButton(
+                      icon: Icon(
+                        Icons.refresh,
+                        color: StsysTheme.onSurface.withValues(alpha: 0.5),
+                        size: compact ? 16 : 20,
+                      ),
+                      onPressed: _hasTrace ? _reset : null,
+                      tooltip: 'Reset',
                     ),
-                    onPressed: _hasTrace ? _reset : null,
-                    tooltip: 'Reset',
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ],

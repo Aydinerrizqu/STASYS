@@ -95,16 +95,16 @@ class TrackingModeView extends StatelessWidget {
                           showDialog(
                             context: context,
                             builder: (ctx) => AlertDialog(
-                              backgroundColor: StsysTheme.surfaceContainerHigh,
+                              backgroundColor: Theme.of(context).colorScheme.surfaceContainerHigh,
                               title: Text(
                                 'GANTI MODE?',
                                 style: StsysText.labelBold.copyWith(
-                                  color: StsysTheme.primary,
+                                  color: StsysTheme.primaryOf(context),
                                 ),
                               ),
                               content: Text(
                                 'Ingin kembali ke pemilihan mode?',
-                                style: StsysText.body,
+                                style: StsysText.bodyOf(context),
                               ),
                               actions: [
                                 TextButton(

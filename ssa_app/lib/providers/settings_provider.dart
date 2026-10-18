@@ -7,6 +7,7 @@ import '../models/data_models.dart';
 
 class SettingsProvider extends ChangeNotifier {
   late SharedPreferences _prefs;
+  Future<void>? _loadFuture;
 
   // Display settings
   int _maxSamples = 6;
@@ -22,6 +23,9 @@ class SettingsProvider extends ChangeNotifier {
   // Demo mode
   bool _isDemoMode = false;
 
+  // Display theme defaults to dark until a saved preference is loaded.
+  ThemeMode _themeMode = ThemeMode.dark;
+
   // OTA settings
   bool _autoUpdateFirmware = false;
   String? _lastCheckedFirmwareVersion;
@@ -32,6 +36,7 @@ class SettingsProvider extends ChangeNotifier {
   FirearmType get firearmType => _firearmType;
   TrainingMode get trainingMode => _trainingMode;
   bool get isDemoMode => _isDemoMode;
+  ThemeMode get themeMode => _themeMode;
   bool get autoUpdateFirmware => _autoUpdateFirmware;
   String? get lastCheckedFirmwareVersion => _lastCheckedFirmwareVersion;
   MountDirection get mountDirection => _mountDirection;
@@ -39,8 +44,14 @@ class SettingsProvider extends ChangeNotifier {
   double get targetDistanceM => _targetDistanceM;
 
   SettingsProvider() {
-    _loadSettings();
+    _loadFuture = _loadSettings();
   }
+
+  /// Waits until the initial SharedPreferences load has completed.
+  ///
+  /// The constructor still starts loading automatically for existing callers;
+  /// this seam lets tests and startup code await a deterministic ready state.
+  Future<void> load() => _loadFuture ??= _loadSettings();
 
   Future<void> _loadSettings() async {
     _prefs = await SharedPreferences.getInstance();
@@ -58,10 +69,27 @@ class SettingsProvider extends ChangeNotifier {
     _mountPosition = MountPosition.fromString(
       _prefs.getString('mountPosition') ?? 'top',
     );
-    _targetDistanceM = (_prefs.getDouble('targetDistanceM') ?? 10.0).clamp(5.0, 25.0);
+    _targetDistanceM = (_prefs.getDouble('targetDistanceM') ?? 10.0).clamp(
+      5.0,
+      25.0,
+    );
     await _prefs.setDouble('targetDistanceM', _targetDistanceM);
+    final savedThemeMode = _prefs.getString('themeMode');
+    _themeMode = savedThemeMode == 'light' ? ThemeMode.light : ThemeMode.dark;
     _autoUpdateFirmware = _prefs.getBool('autoUpdateFirmware') ?? false;
-    _lastCheckedFirmwareVersion = _prefs.getString('lastCheckedFirmwareVersion');
+    _lastCheckedFirmwareVersion = _prefs.getString(
+      'lastCheckedFirmwareVersion',
+    );
+    notifyListeners();
+  }
+
+  Future<void> setThemeMode(ThemeMode mode) async {
+    if (_themeMode == mode) return;
+    _themeMode = mode;
+    await _prefs.setString(
+      'themeMode',
+      mode == ThemeMode.light ? 'light' : 'dark',
+    );
     notifyListeners();
   }
 

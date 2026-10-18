@@ -1,29 +1,60 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../providers/train_session_provider.dart';
-import '../widgets/target_replay_view.dart';
 
-/// Slide-up panel shown in TRAIN-1 when a shot is selected.
-/// Wraps the existing TargetReplayView for selected-shot replay.
+import '../providers/train_session_provider.dart';
+import '../theme/app_theme.dart';
+import 'shot_replay_controls.dart';
+
+/// Bottom panel shown when shots exist in TRAIN-1 or review.
+///
+/// Contains the shot chips and playback controls. Playback progress is owned
+/// by the parent (TrainScreen session view) and drives the main target canvas;
+/// this panel intentionally has no graph of its own.
 class ShotReplayPanel extends StatelessWidget {
-  const ShotReplayPanel({super.key});
+  final double progress;
+  final bool isPlaying;
+  final VoidCallback? onPlay;
+  final VoidCallback? onPause;
+  final ValueChanged<double>? onSeek;
+  final VoidCallback? onReset;
+
+  const ShotReplayPanel({
+    super.key,
+    this.progress = 1.0,
+    this.isPlaying = false,
+    this.onPlay,
+    this.onPause,
+    this.onSeek,
+    this.onReset,
+  });
 
   @override
   Widget build(BuildContext context) {
     final trainProv = context.watch<TrainSessionProvider>();
-    final shots = trainProv.currentSeriesShots;
+    // During review the active series is empty; the panel replays the
+    // just-completed series snapshot instead.
+    final isReview =
+        trainProv.state == TrainSessionState.reviewSeries ||
+        trainProv.state == TrainSessionState.reviewSession;
+    final shots = isReview
+        ? trainProv.lastSeriesShots
+        : trainProv.currentSeriesShots;
     final selectedIdx = trainProv.selectedShotIndex;
 
     if (shots.isEmpty) return const SizedBox.shrink();
 
     final shot = shots[selectedIdx ?? shots.length - 1];
     final shotIndex = selectedIdx ?? shots.length - 1;
+    final hasTrace =
+        (shot.holdX?.isNotEmpty ?? false) ||
+        (shot.pressX?.isNotEmpty ?? false) ||
+        (shot.recoilX?.isNotEmpty ?? false);
 
     return Container(
-      decoration: const BoxDecoration(
-        color: Color(0xFF0C0E11),
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-        border: Border(top: BorderSide(color: Color(0xFF1F242C))),
+      decoration: BoxDecoration(
+        color: StsysTheme.mobileBackgroundOf(context),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+        border: Border(top: BorderSide(color: StsysTheme.mobileBorderOf(context))),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -34,7 +65,7 @@ class ShotReplayPanel extends StatelessWidget {
             width: 36,
             height: 4,
             decoration: BoxDecoration(
-              color: const Color(0xFF1F242C),
+              color: StsysTheme.mobileBorderOf(context),
               borderRadius: BorderRadius.circular(2),
             ),
           ),
@@ -85,11 +116,62 @@ class ShotReplayPanel extends StatelessWidget {
                 ),
               ),
             ),
-          // Replay view
-          TargetReplayView(
-            shot: shot,
-            shotIndex: shotIndex,
-            getScoreColor: _scoreColor,
+          // Selected shot score summary (compact form of the old replay card)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(8, 3, 8, 0),
+            child: Row(
+              children: [
+                Text(
+                  'SHOT ${shotIndex + 1}',
+                  style: TextStyle(
+                    fontFamily: 'Inter',
+                    fontSize: 9,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 1,
+                    color: StsysTheme.onSurfaceOf(context),
+                  ),
+                ),
+                const Spacer(),
+                Text(
+                  shot.totalScore.toInt().toString(),
+                  style: TextStyle(
+                    fontFamily: 'Manrope',
+                    fontSize: 14,
+                    fontWeight: FontWeight.w900,
+                    color: _scoreColor(shot.totalScore),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Flexible(
+                  child: Text(
+                    'HOLD ${shot.holdScore.toInt()}'
+                    ' · PRESS ${shot.pressScore.toInt()}'
+                    ' · RECOIL ${shot.recoilScore.toInt()}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontFamily: 'Inter',
+                      fontSize: 8,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 0.5,
+                      color: StsysTheme.onSurfaceOf(context).withValues(
+                        alpha: 0.5,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          // Playback controls (drive the main target canvas)
+          ShotReplayControls(
+            progress: progress,
+            hasTrace: hasTrace,
+            isPlaying: isPlaying,
+            onPlay: onPlay ?? () {},
+            onPause: onPause ?? () {},
+            onSeek: onSeek ?? (_) {},
+            onReset: onReset ?? () {},
           ),
         ],
       ),

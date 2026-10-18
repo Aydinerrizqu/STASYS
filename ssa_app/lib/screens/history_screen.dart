@@ -41,14 +41,14 @@ class _HistoryScreenState extends State<HistoryScreen>
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: StsysTheme.surfaceContainerHigh,
+        backgroundColor: StsysTheme.surfaceContainerHighOf(context),
         title: Text(
           'HAPUS SEMUA SESSION?',
-          style: StsysText.labelBold.copyWith(color: StsysTheme.error),
+          style: StsysText.labelBold.copyWith(color: StsysTheme.cyanOf(context)),
         ),
         content: Text(
           'Semua data akan hilang dan tidak bisa dikembalikan.',
-          style: StsysText.body,
+          style: StsysText.bodyOf(context),
         ),
         actions: [
           TextButton(
@@ -58,7 +58,7 @@ class _HistoryScreenState extends State<HistoryScreen>
               style: TextStyle(
                 fontFamily: 'Manrope',
                 fontWeight: FontWeight.w700,
-                color: StsysTheme.onSurfaceVariant,
+                color: StsysTheme.onSurfaceVariantOf(context),
               ),
             ),
           ),
@@ -72,7 +72,7 @@ class _HistoryScreenState extends State<HistoryScreen>
               style: TextStyle(
                 fontFamily: 'Manrope',
                 fontWeight: FontWeight.w800,
-                color: StsysTheme.error,
+                color: StsysTheme.cyanOf(context),
               ),
             ),
           ),
@@ -96,8 +96,8 @@ class _HistoryScreenState extends State<HistoryScreen>
     if (sessions.isEmpty) {
       ScaffoldMessenger.of(ctx).showSnackBar(
         SnackBar(
-          content: const Text('No sessions to export'),
-          backgroundColor: StsysTheme.error,
+          content: Text('No sessions to export'),
+          backgroundColor: StsysTheme.surfaceContainerHighOf(context),
           behavior: SnackBarBehavior.floating,
         ),
       );
@@ -112,7 +112,7 @@ class _HistoryScreenState extends State<HistoryScreen>
         ScaffoldMessenger.of(ctx).showSnackBar(
           SnackBar(
             content: Text('Export failed: $e'),
-            backgroundColor: StsysTheme.error,
+            backgroundColor: StsysTheme.surfaceContainerHighOf(context),
             behavior: SnackBarBehavior.floating,
           ),
         );
@@ -123,7 +123,7 @@ class _HistoryScreenState extends State<HistoryScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: StsysTheme.mobileBackground,
+      backgroundColor: StsysTheme.mobileBackgroundOf(context),
       body: SafeArea(
         child: Column(
           children: [
@@ -147,9 +147,9 @@ class _HistoryScreenState extends State<HistoryScreen>
                       final session = sessions[index];
                       final avgScore = session.averageScore;
                       final scoreColor = StsysTheme.getScoreColor(avgScore);
-                      final dateStr = DateFormat('EEEE, dd MMMM yyyy')
-                          .format(session.date)
-                          .toUpperCase();
+                      final dateStr = DateFormat(
+                        'EEEE, dd MMMM yyyy',
+                      ).format(session.date).toUpperCase();
                       final timeStr = DateFormat('HH:mm').format(session.date);
 
                       return Dismissible(
@@ -169,24 +169,29 @@ class _HistoryScreenState extends State<HistoryScreen>
                           return await showDialog<bool>(
                             context: context,
                             builder: (ctx) => AlertDialog(
-                              backgroundColor: StsysTheme.surfaceContainerHigh,
+                              backgroundColor: StsysTheme.surfaceContainerHighOf(context),
                               title: Text(
                                 'HAPUS SESSION?',
                                 style: StsysText.labelBold.copyWith(
-                                  color: StsysTheme.error,
+                                  color: StsysTheme.cyanOf(context),
                                 ),
                               ),
                               actions: [
                                 TextButton(
                                   onPressed: () => Navigator.pop(ctx, false),
-                                  child: Text('BATAL',
-                                      style: TextStyle(
-                                          color: StsysTheme.onSurfaceVariant)),
+                                  child: Text(
+                                    'BATAL',
+                                    style: TextStyle(
+                                      color: StsysTheme.onSurfaceVariantOf(context),
+                                    ),
+                                  ),
                                 ),
                                 TextButton(
                                   onPressed: () => Navigator.pop(ctx, true),
-                                  child: Text('HAPUS',
-                                      style: TextStyle(color: StsysTheme.error)),
+                                  child: Text(
+                                    'HAPUS',
+                                    style: TextStyle(color: StsysTheme.cyanOf(context)),
+                                  ),
                                 ),
                               ],
                             ),
@@ -209,7 +214,7 @@ class _HistoryScreenState extends State<HistoryScreen>
                             margin: const EdgeInsets.only(bottom: 12),
                             padding: const EdgeInsets.all(16),
                             decoration: BoxDecoration(
-                              color: StsysTheme.surfaceContainerLow,
+                              color: StsysTheme.surfaceContainerLowOf(context),
                               borderRadius: BorderRadius.circular(12),
                             ),
                             child: Row(
@@ -217,7 +222,8 @@ class _HistoryScreenState extends State<HistoryScreen>
                                 Expanded(
                                   flex: 4,
                                   child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     children: [
                                       Text(
                                         dateStr,
@@ -226,17 +232,17 @@ class _HistoryScreenState extends State<HistoryScreen>
                                           fontSize: 10,
                                           fontWeight: FontWeight.w700,
                                           letterSpacing: 1,
-                                          color: StsysTheme.primary,
+                                          color: StsysTheme.cyanOf(context),
                                         ),
                                       ),
                                       const SizedBox(height: 4),
                                       Text(
                                         timeStr,
-                                        style: const TextStyle(
+                                        style: TextStyle(
                                           fontFamily: 'Manrope',
                                           fontSize: 20,
                                           fontWeight: FontWeight.w700,
-                                          color: StsysTheme.onSurface,
+                                          color: StsysTheme.onSurfaceOf(context),
                                         ),
                                       ),
                                       const SizedBox(height: 4),
@@ -246,17 +252,21 @@ class _HistoryScreenState extends State<HistoryScreen>
                                           vertical: 2,
                                         ),
                                         decoration: BoxDecoration(
-                                          color: StsysTheme.surfaceContainerHighest,
-                                          borderRadius: BorderRadius.circular(20),
+                                          color: StsysTheme
+                                              .surfaceContainerHighest,
+                                          borderRadius: BorderRadius.circular(
+                                            20,
+                                          ),
                                         ),
                                         child: Text(
-                                          session.firearmType.displayName.toUpperCase(),
+                                          session.firearmType.displayName
+                                              .toUpperCase(),
                                           style: TextStyle(
                                             fontFamily: 'Inter',
                                             fontSize: 10,
                                             fontWeight: FontWeight.w600,
                                             letterSpacing: 1,
-                                            color: StsysTheme.onSurface
+                                            color: StsysTheme.onSurfaceOf(context)
                                                 .withValues(alpha: 0.7),
                                           ),
                                         ),
@@ -274,21 +284,28 @@ class _HistoryScreenState extends State<HistoryScreen>
                                           vertical: 8,
                                         ),
                                         decoration: BoxDecoration(
-                                          color: StsysTheme.surfaceContainerHighest,
-                                          borderRadius: BorderRadius.circular(8),
+                                          color: StsysTheme
+                                              .surfaceContainerHighest,
+                                          borderRadius: BorderRadius.circular(
+                                            8,
+                                          ),
                                         ),
                                         child: Row(
                                           mainAxisSize: MainAxisSize.min,
                                           children: [
-                                            Icon(Icons.ads_click, size: 14, color: StsysTheme.primary),
+                                            Icon(
+                                              Icons.ads_click,
+                                              size: 14,
+                                              color: StsysTheme.cyanOf(context),
+                                            ),
                                             const SizedBox(width: 4),
                                             Text(
                                               '${session.shots.length}',
-                                              style: const TextStyle(
+                                              style: TextStyle(
                                                 fontFamily: 'Manrope',
                                                 fontSize: 16,
                                                 fontWeight: FontWeight.w800,
-                                                color: StsysTheme.onSurface,
+                                                color: StsysTheme.onSurfaceOf(context),
                                               ),
                                             ),
                                           ],
@@ -322,7 +339,7 @@ class _HistoryScreenState extends State<HistoryScreen>
                                               fontSize: 9,
                                               fontWeight: FontWeight.w500,
                                               letterSpacing: 1.5,
-                                              color: StsysTheme.onSurfaceVariant
+                                              color: StsysTheme.onSurfaceVariantOf(context)
                                                   .withValues(alpha: 0.5),
                                             ),
                                           ),
@@ -332,9 +349,10 @@ class _HistoryScreenState extends State<HistoryScreen>
                                               Navigator.push(
                                                 context,
                                                 MaterialPageRoute(
-                                                  builder: (context) => ReplayScreen(
-                                                    sessionId: session.id,
-                                                  ),
+                                                  builder: (context) =>
+                                                      ReplayScreen(
+                                                        sessionId: session.id,
+                                                      ),
                                                 ),
                                               );
                                             },
@@ -378,12 +396,8 @@ class _HistoryScreenState extends State<HistoryScreen>
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
       decoration: BoxDecoration(
-        color: StsysTheme.surfaceContainerLow,
-        border: Border(
-          bottom: BorderSide(
-            color: StsysTheme.outlineVariant.withValues(alpha: 0.2),
-          ),
-        ),
+        color: StsysTheme.mobileHeaderOf(context, StsysTheme.mobileHeaderHistory),
+        border: Border(bottom: BorderSide(color: StsysTheme.mobileBorderOf(context))),
       ),
       child: Row(
         children: [
@@ -395,13 +409,13 @@ class _HistoryScreenState extends State<HistoryScreen>
                 child: Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: StsysTheme.surfaceContainerHigh,
+                    color: StsysTheme.surfaceContainerHighOf(context),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Icon(
                     Icons.refresh,
                     size: 20,
-                    color: StsysTheme.primary,
+                    color: StsysTheme.cyanOf(context),
                   ),
                 ),
               );
@@ -410,7 +424,7 @@ class _HistoryScreenState extends State<HistoryScreen>
           const SizedBox(width: 8),
           ShaderMask(
             shaderCallback: (bounds) {
-              return StsysTheme.tacticalGradient.createShader(bounds);
+              return StsysTheme.brandGradient.createShader(bounds);
             },
             child: const Text(
               'STASYS',
@@ -430,22 +444,29 @@ class _HistoryScreenState extends State<HistoryScreen>
                 margin: const EdgeInsets.only(left: 8),
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFFF9800).withValues(alpha: 0.15),
+                  color: StsysTheme.cyanOf(context).withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(20),
                   border: Border.all(
-                    color: const Color(0xFFFF9800).withValues(alpha: 0.3),
+                    color: StsysTheme.cyanOf(context).withValues(alpha: 0.3),
                   ),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(Icons.science_outlined, size: 12, color: Color(0xFFFF9800)),
+                    Icon(
+                      Icons.science_outlined,
+                      size: 12,
+                      color: StsysTheme.cyanOf(context),
+                    ),
                     const SizedBox(width: 4),
                     Text(
                       'DEMO',
                       style: TextStyle(
-                        fontFamily: 'Inter', fontSize: 9, fontWeight: FontWeight.w700,
-                        letterSpacing: 1, color: const Color(0xFFFF9800),
+                        fontFamily: 'Inter',
+                        fontSize: 9,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 1,
+                        color: StsysTheme.cyanOf(context),
                       ),
                     ),
                   ],
@@ -464,14 +485,10 @@ class _HistoryScreenState extends State<HistoryScreen>
                 child: Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: StsysTheme.surfaceContainerHigh,
+                    color: StsysTheme.surfaceContainerHighOf(context),
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child: Icon(
-                    Icons.share,
-                    size: 20,
-                    color: StsysTheme.primary,
-                  ),
+                  child: Icon(Icons.share, size: 20, color: StsysTheme.cyanOf(context)),
                 ),
               );
             },
@@ -487,7 +504,7 @@ class _HistoryScreenState extends State<HistoryScreen>
                 child: Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: StsysTheme.surfaceContainerHigh,
+                    color: StsysTheme.surfaceContainerHighOf(context),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Icon(
@@ -512,7 +529,7 @@ class _HistoryScreenState extends State<HistoryScreen>
           Icon(
             Icons.ads_click_outlined,
             size: 64,
-            color: StsysTheme.onSurface.withValues(alpha: 0.1),
+            color: StsysTheme.onSurfaceOf(context).withValues(alpha: 0.1),
           ),
           const SizedBox(height: 16),
           Text(
@@ -522,7 +539,7 @@ class _HistoryScreenState extends State<HistoryScreen>
               fontWeight: FontWeight.w800,
               fontSize: 16,
               letterSpacing: 2,
-              color: StsysTheme.onSurface.withValues(alpha: 0.2),
+              color: StsysTheme.onSurfaceOf(context).withValues(alpha: 0.2),
             ),
           ),
           const SizedBox(height: 8),
@@ -531,7 +548,7 @@ class _HistoryScreenState extends State<HistoryScreen>
             style: TextStyle(
               fontFamily: 'Inter',
               fontSize: 12,
-              color: StsysTheme.onSurfaceVariant.withValues(alpha: 0.4),
+              color: StsysTheme.onSurfaceVariantOf(context).withValues(alpha: 0.4),
             ),
           ),
         ],

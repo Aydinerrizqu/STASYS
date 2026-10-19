@@ -34,6 +34,7 @@ ssa_app/*.zip
 ssa_app/*.rar
 
 # ESP32 Firmware
+.pio/
 Firmware_STASYS32/.pio/
 !.pio/lib/
 
@@ -47,6 +48,8 @@ _python_legacy/
 
 # Claude Code
 .claude/
+.superpowers/
+ssa_app/.superpowers/
 
 # Local git worktrees
 .worktrees/
@@ -76,6 +79,7 @@ shooter_data.db
 *.mov
 *.png
 *.jpg
+*.jpeg
 !assets/**/*
 !ssa_app/assets/**
 

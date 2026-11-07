@@ -33,7 +33,7 @@ class TrajectoryCanvas extends StatelessWidget {
     return Container(
       margin: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: StsysTheme.surfaceContainerLow,
+        color: StsysTheme.surfaceContainerLowOf(context),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Column(
@@ -49,7 +49,7 @@ class TrajectoryCanvas extends StatelessWidget {
                     fontSize: 9,
                     fontWeight: FontWeight.w700,
                     letterSpacing: 2,
-                    color: StsysTheme.onSurfaceVariant,
+                    color: StsysTheme.onSurfaceVariantOf(context),
                   ),
                 ),
                 const Spacer(),
@@ -63,7 +63,7 @@ class TrajectoryCanvas extends StatelessWidget {
                     fontFamily: 'Inter',
                     fontSize: 8,
                     fontWeight: FontWeight.w700,
-                    color: StsysTheme.onSurface.withValues(alpha: 0.5),
+                    color: StsysTheme.onSurfaceOf(context).withValues(alpha: 0.5),
                   ),
                 ),
               ],
@@ -73,7 +73,7 @@ class TrajectoryCanvas extends StatelessWidget {
             child: Container(
               margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
               decoration: BoxDecoration(
-                color: StsysTheme.surfaceContainerLowest,
+                color: StsysTheme.surfaceContainerLowestOf(context),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: ClipRRect(

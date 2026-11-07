@@ -14,16 +14,23 @@ void main() {
 
   late DatabaseHelper helper;
 
+  /// This file owns its own SQLite file so it can run in parallel with the
+  /// other database test files without locking each other out.
+  const dbFileName = 'stasys_sessions_migration_test.db';
+
   setUp(() async {
     helper = DatabaseHelper();
     // Reset singleton state so each test gets a fresh DB.
     DatabaseHelper.resetForTesting();
+    DatabaseHelper.setDatabaseFileNameForTesting(dbFileName);
     final dbPath = await getDatabasesPath();
-    await deleteDatabase('$dbPath/stasys_sessions.db');
+    await deleteDatabase('$dbPath/$dbFileName');
   });
 
   tearDown(() async {
     await helper.close();
+    final dbPath = await getDatabasesPath();
+    await deleteDatabase('$dbPath/$dbFileName');
   });
 
   group('Database migration v1 → v2', () {
@@ -32,7 +39,7 @@ void main() {
       () async {
         // Open a v1 database directly (bypass DatabaseHelper).
         final dbPath = await getDatabasesPath();
-        final path = '$dbPath/stasys_sessions.db';
+        final path = '$dbPath/$dbFileName';
 
         final db = await openDatabase(
           path,
@@ -172,6 +179,69 @@ void main() {
       expect(loaded.trainingPreset, 'live-rifle-50');
       expect(loaded.seriesCount, 5);
       expect(loaded.shots.first.seriesNumber, 3);
+    });
+
+    test(
+      'History summary omits raw BLOBs while getSession hydrates them',
+      () async {
+        final service = DatabaseService(dbHelper: helper);
+        final rawPoints = List.generate(
+          40000,
+          (index) => DataPoint(index / 100, index / 10),
+        );
+        final session = SessionLog(
+          id: 'LARGE_RAW_SESSION',
+          date: DateTime(2026, 10, 18),
+          duration: 400,
+          gyroX: rawPoints,
+          gyroY: rawPoints,
+          gyroZ: rawPoints,
+          accelX: rawPoints,
+          accelY: rawPoints,
+          accelZ: rawPoints,
+          firearmType: FirearmType.pistol,
+          trainingMode: TrainingMode.dryFire,
+          profileName: 'Large Session',
+          trainingPreset: 'dry-air-softgun-10',
+          seriesCount: 1,
+          shots: [
+            ShotResult(
+              timestamp: DateTime(2026, 10, 18),
+              totalScore: 82,
+              holdScore: 81,
+              pressScore: 82,
+              recoilScore: 83,
+              elevationScore: 80,
+              windageScore: 80,
+              travelDistance: 0.01,
+              peakJerk: 1,
+              firearmType: FirearmType.pistol,
+              trainingMode: TrainingMode.dryFire,
+            ),
+          ],
+        );
+        await service.saveSession(session);
+
+        final historySessions = await service.loadAllSessions();
+        expect(historySessions, hasLength(1));
+        expect(historySessions.single.id, 'LARGE_RAW_SESSION');
+        expect(historySessions.single.profileName, 'Large Session');
+        expect(historySessions.single.shots, hasLength(1));
+        expect(historySessions.single.hasRawData, isFalse);
+
+        final detailSession = await service.getSession('LARGE_RAW_SESSION');
+        expect(detailSession, isNotNull);
+        expect(detailSession!.hasRawData, isTrue);
+        expect(detailSession.gyroX, hasLength(rawPoints.length));
+        expect(detailSession.accelZ, hasLength(rawPoints.length));
+      },
+    );
+
+    test('missing session yields null session and empty raw map', () async {
+      final service = DatabaseService(dbHelper: helper);
+
+      expect(await service.getSession('DOES_NOT_EXIST'), isNull);
+      expect(await service.decodeRawSession('DOES_NOT_EXIST'), isEmpty);
     });
   });
 }

@@ -36,7 +36,7 @@ class TrajectoryScrubber extends StatelessWidget {
 
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-      color: StsysTheme.surfaceContainerLow,
+      color: StsysTheme.surfaceContainerLowOf(context),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -49,7 +49,7 @@ class TrajectoryScrubber extends StatelessWidget {
                   fontSize: 9,
                   fontWeight: FontWeight.w700,
                   letterSpacing: 2,
-                  color: StsysTheme.onSurfaceVariant,
+                  color: StsysTheme.onSurfaceVariantOf(context),
                 ),
               ),
               const Spacer(),
@@ -59,19 +59,19 @@ class TrajectoryScrubber extends StatelessWidget {
                   fontFamily: 'Manrope',
                   fontSize: 10,
                   fontWeight: FontWeight.w800,
-                  color: StsysTheme.onSurface.withValues(alpha: 0.7),
+                  color: StsysTheme.onSurfaceOf(context).withValues(alpha: 0.7),
                 ),
               ),
             ],
           ),
           SliderTheme(
             data: SliderTheme.of(context).copyWith(
-              activeTrackColor: StsysTheme.secondary,
+              activeTrackColor: StsysTheme.secondaryOf(context),
               inactiveTrackColor:
-                  StsysTheme.surfaceContainerHighest,
-              thumbColor: StsysTheme.secondary,
+                  StsysTheme.surfaceContainerHighestOf(context),
+              thumbColor: StsysTheme.secondaryOf(context),
               overlayColor:
-                  StsysTheme.secondary.withValues(alpha: 0.2),
+                  StsysTheme.secondaryOf(context).withValues(alpha: 0.2),
               trackHeight: 2,
             ),
             child: Slider(

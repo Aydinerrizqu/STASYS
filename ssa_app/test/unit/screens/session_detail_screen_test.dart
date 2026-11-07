@@ -1,13 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mocktail/mocktail.dart';
+import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:ssa_app/models/data_models.dart';
 import 'package:ssa_app/providers/session_logger.dart';
+import 'package:ssa_app/providers/session_provider.dart';
+import 'package:ssa_app/providers/settings_provider.dart';
 import 'package:ssa_app/screens/session_detail_screen.dart';
+import 'package:ssa_app/widgets/analysis_tab.dart';
+import 'package:ssa_app/widgets/replay_shot_widget.dart';
+import 'package:ssa_app/widgets/shot_replay_controls.dart';
 
-ShotResult _shot({
-  required DateTime timestamp,
-  required double score,
-}) {
+ShotResult _shot({required DateTime timestamp, required double score}) {
   return ShotResult(
     timestamp: timestamp,
     totalScore: score,
@@ -47,25 +52,129 @@ SessionLog _session() {
   );
 }
 
-Widget _testApp() => MaterialApp(home: SessionDetailScreen(session: _session()));
+Widget _testApp({
+  SessionLog? session,
+  Brightness brightness = Brightness.light,
+}) {
+  return ChangeNotifierProvider<SettingsProvider>(
+    create: (_) => SettingsProvider(),
+    child: MaterialApp(
+      theme: brightness == Brightness.light
+          ? ThemeData.light()
+          : ThemeData.dark(),
+      home: SessionDetailScreen(session: session ?? _session()),
+    ),
+  );
+}
+
+class _MockSessionProvider extends Mock implements SessionProvider {}
+
+class _RecordingNavigatorObserver extends NavigatorObserver {
+  /// Names of the routes that were popped, in order.
+  final List<String?> poppedRoutes = [];
+
+  @override
+  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    poppedRoutes.add(route.settings.name);
+    super.didPop(route, previousRoute);
+  }
+}
+
+/// Hosts the detail screen on a pushed route so `Navigator.pop` has
+/// something to pop.
+Widget _pushedApp({
+  required SessionLog session,
+  required SessionProvider sessionProvider,
+  required NavigatorObserver observer,
+  Brightness brightness = Brightness.light,
+}) {
+  return MultiProvider(
+    providers: [
+      ChangeNotifierProvider<SettingsProvider>(
+        create: (_) => SettingsProvider(),
+      ),
+      ChangeNotifierProvider<SessionProvider>.value(value: sessionProvider),
+    ],
+    child: MaterialApp(
+      theme: brightness == Brightness.light
+          ? ThemeData.light()
+          : ThemeData.dark(),
+      navigatorObservers: [observer],
+      home: Builder(
+        builder: (context) => Scaffold(
+          body: Center(
+            child: TextButton(
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute(
+                  settings: const RouteSettings(name: 'session-detail'),
+                  builder: (_) => SessionDetailScreen(session: session),
+                ),
+              ),
+              child: const Text('OPEN SESSION'),
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
+}
 
 void main() {
-  group('SessionDetailScreen layout', () {
-    testWidgets('defaults to TARGET and renders score without layout errors',
-        (tester) async {
+  // SettingsProvider reads SharedPreferences on construction; mock the store
+  // so its async load never fails mid-test with a MissingPluginException.
+  setUpAll(() {
+    SharedPreferences.setMockInitialValues({});
+    // mocktail needs a dummy instance to match `any()` against.
+    registerFallbackValue(_session());
+  });
+
+  group('SessionDetailScreen single-page layout', () {
+    testWidgets('shows no TARGET/SHOT DATA/ANALYSIS tab selector', (
+      tester,
+    ) async {
       await tester.pumpWidget(_testApp());
       await tester.pump();
 
-      expect(find.text('TARGET'), findsOneWidget);
-      expect(find.text('SHOT DATA'), findsOneWidget);
-      expect(find.text('ANALYSIS'), findsOneWidget);
-      expect(find.text('SCORE'), findsOneWidget);
-      expect(find.text('MATCH TOTAL'), findsOneWidget);
-      expect(find.text('92'), findsWidgets);
+      expect(find.text('TARGET'), findsNothing);
+      expect(find.text('SHOT DATA'), findsNothing);
+      expect(find.text('ANALYSIS'), findsNothing);
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('selecting the second shot updates the target score', (tester) async {
+    testWidgets('renders score, target and shot chips on one page', (
+      tester,
+    ) async {
+      await tester.pumpWidget(_testApp());
+      await tester.pump();
+
+      expect(find.text('SCORE'), findsOneWidget);
+      expect(find.text('MATCH TOTAL'), findsOneWidget);
+      expect(find.byKey(const ValueKey('session-target')), findsOneWidget);
+      expect(find.byKey(const ValueKey('shot-chip-0')), findsOneWidget);
+      expect(find.byKey(const ValueKey('shot-chip-1')), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('keeps score, target, replay and chips only — no shot data or '
+        'analysis sections', (tester) async {
+      await tester.pumpWidget(_testApp());
+      await tester.pumpAndSettle();
+
+      // Everything up to SHOTS IN SESSION stays on the page...
+      expect(find.byKey(const ValueKey('session-target')), findsOneWidget);
+      expect(find.byType(ShotReplayControls), findsOneWidget);
+      expect(find.byKey(const ValueKey('shot-chip-1')), findsOneWidget);
+
+      // ...and everything below the chip strip is removed.
+      expect(find.byType(ReplayShotWidget), findsNothing);
+      expect(find.byType(AnalysisTab), findsNothing);
+      expect(find.text('NO IMU DATA AVAILABLE'), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('selecting the second shot updates the target score', (
+      tester,
+    ) async {
       await tester.pumpWidget(_testApp());
       await tester.pump();
 
@@ -85,31 +194,9 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('SHOT DATA preserves phase scores and does not throw', (tester) async {
-      await tester.pumpWidget(_testApp());
-      await tester.pump();
-
-      await tester.tap(find.text('SHOT DATA'));
-      await tester.pump();
-
-      expect(find.text('HOLD'), findsWidgets);
-      expect(find.text('PRESS'), findsWidgets);
-      expect(find.text('RECOIL'), findsWidgets);
-      expect(tester.takeException(), isNull);
-    });
-
-    testWidgets('ANALYSIS tab remains available without throwing', (tester) async {
-      await tester.pumpWidget(_testApp());
-      await tester.pump();
-
-      await tester.tap(find.text('ANALYSIS'));
-      await tester.pump();
-
-      expect(find.text('ANALYSIS'), findsOneWidget);
-      expect(tester.takeException(), isNull);
-    });
-
-    testWidgets('empty session shows NO SHOTS and no shot chips', (tester) async {
+    testWidgets('empty session shows NO SHOTS and no shot chips', (
+      tester,
+    ) async {
       SessionLog emptySession() => SessionLog(
         id: 'empty-test',
         date: DateTime(2026, 8, 23),
@@ -121,9 +208,7 @@ void main() {
         accelY: const [],
         accelZ: const [],
       );
-      await tester.pumpWidget(MaterialApp(
-        home: SessionDetailScreen(session: emptySession()),
-      ));
+      await tester.pumpWidget(_testApp(session: emptySession()));
       await tester.pump();
 
       expect(find.text('NO SHOTS IN SESSION'), findsOneWidget);
@@ -131,13 +216,12 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('session swap via didUpdateWidget resets selection and trace',
-        (tester) async {
+    testWidgets('session swap via didUpdateWidget resets selection', (
+      tester,
+    ) async {
       final first = _session();
       final second = _session();
-      await tester.pumpWidget(MaterialApp(
-        home: SessionDetailScreen(session: first),
-      ));
+      await tester.pumpWidget(_testApp(session: first));
       await tester.pump();
 
       await tester.tap(find.byKey(const ValueKey('shot-chip-0')));
@@ -146,21 +230,123 @@ void main() {
         tester.widget<Text>(find.byKey(const ValueKey('target-score'))).data,
         '80',
       );
-      await tester.tap(find.text('ANALYSIS'));
-      await tester.pump();
 
-      await tester.pumpWidget(MaterialApp(
-        home: SessionDetailScreen(session: second),
-      ));
+      await tester.pumpWidget(_testApp(session: second));
       await tester.pump();
 
       // Selection resets to the new session's last shot (score 92).
-      await tester.tap(find.text('TARGET'));
-      await tester.pump();
       expect(
         tester.widget<Text>(find.byKey(const ValueKey('target-score'))).data,
         '92',
       );
+      expect(tester.takeException(), isNull);
+    });
+  });
+
+  group('SessionDetailScreen theming', () {
+    testWidgets('light theme keeps the score row readable', (tester) async {
+      await tester.pumpWidget(_testApp(brightness: Brightness.light));
+      await tester.pump();
+
+      final scoreLabel = find.text('SCORE');
+      expect(scoreLabel, findsOneWidget);
+      final style = tester.widget<Text>(scoreLabel).style!;
+      expect(style.color!.computeLuminance(), lessThan(0.5));
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('dark theme keeps the score row readable', (tester) async {
+      await tester.pumpWidget(_testApp(brightness: Brightness.dark));
+      await tester.pump();
+
+      final scoreLabel = find.text('SCORE');
+      expect(scoreLabel, findsOneWidget);
+      final style = tester.widget<Text>(scoreLabel).style!;
+      expect(style.color!.computeLuminance(), greaterThan(0.5));
+      expect(tester.takeException(), isNull);
+    });
+  });
+
+  group('SessionDetailScreen delete', () {
+    testWidgets('HAPUS deletes the session and closes the detail page', (
+      tester,
+    ) async {
+      final provider = _MockSessionProvider();
+      final observer = _RecordingNavigatorObserver();
+      final session = _session();
+      when(() => provider.deleteSession(any())).thenAnswer((_) async {});
+
+      await tester.pumpWidget(
+        _pushedApp(
+          session: session,
+          sessionProvider: provider,
+          observer: observer,
+        ),
+      );
+      await tester.pump();
+
+      await tester.tap(find.text('OPEN SESSION'));
+      await tester.pumpAndSettle();
+
+      // Open the delete dialog and confirm.
+      await tester.tap(find.byIcon(Icons.delete_outline));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('HAPUS'));
+      await tester.pumpAndSettle();
+
+      verify(() => provider.deleteSession(session)).called(1);
+      // The dialog and the detail page are both popped.
+      expect(observer.poppedRoutes, contains('session-detail'));
+      expect(find.byType(SessionDetailScreen), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+  });
+
+  group('SessionDetailScreen replay', () {
+    testWidgets('play button animates the trace and reset restores it', (
+      tester,
+    ) async {
+      await tester.pumpWidget(_testApp());
+      await tester.pump();
+
+      final slider = find.byType(Slider);
+      expect(slider, findsOneWidget);
+
+      double progress() => tester.widget<Slider>(slider).value;
+
+      expect(progress(), 1.0);
+
+      // Play: the controller animates from 0 to 1 over 2.5 s.
+      await tester.tap(find.byIcon(Icons.play_arrow));
+      await tester.pump();
+      expect(progress(), lessThan(1.0));
+      expect(progress(), greaterThanOrEqualTo(0.0));
+
+      // Pause stops the animation.
+      await tester.tap(find.byIcon(Icons.pause));
+      await tester.pump();
+      final paused = progress();
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(progress(), paused);
+
+      // Reset jumps back to the full trace.
+      await tester.tap(find.byIcon(Icons.refresh));
+      await tester.pump();
+      expect(progress(), 1.0);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('seeking the slider updates the replay progress', (
+      tester,
+    ) async {
+      await tester.pumpWidget(_testApp());
+      await tester.pump();
+
+      final slider = find.byType(Slider);
+      await tester.drag(slider, const Offset(-200, 0));
+      await tester.pump();
+
+      expect(tester.widget<Slider>(slider).value, lessThan(1.0));
       expect(tester.takeException(), isNull);
     });
   });

@@ -66,6 +66,19 @@ class StsysTheme {
   static Color mobileHeaderOf(BuildContext context, Color darkColor) =>
       isLight(context) ? const Color(0xFFF2F7F9) : darkColor;
 
+  /// Secondary accent. The dark palette uses the pale blue accent, which is
+  /// unreadable on a light surface, so light mode uses a deeper blue.
+  static Color secondaryOf(BuildContext context) =>
+      isLight(context) ? const Color(0xFF0B6FA4) : secondary;
+
+  /// Lowest surface — the page/background level behind cards.
+  static Color surfaceContainerLowestOf(BuildContext context) =>
+      isLight(context) ? const Color(0xFFF5F7FA) : surfaceContainerLowest;
+
+  /// Score chip / badge fill that must stay legible on a light surface.
+  static Color scoreChipFillOf(BuildContext context) =>
+      isLight(context) ? const Color(0xFFE8EDF1) : surfaceContainerHighest;
+
   static const Color primary = Color(0xFFFFB693);
   static const Color primaryContainer = Color(0xFFFF6B00);
   static const Color primaryFixed = Color(0xFFFFDBCC);

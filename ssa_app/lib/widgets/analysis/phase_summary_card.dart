@@ -33,7 +33,7 @@ class PhaseSummaryCard extends StatelessWidget {
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
       decoration: BoxDecoration(
-        color: StsysTheme.surfaceContainerLow,
+        color: StsysTheme.surfaceContainerLowOf(context),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Column(
@@ -69,12 +69,12 @@ class PhaseSummaryCard extends StatelessWidget {
                     children: [
                       Text(
                         'SHOT #${shotIndex + 1}'.toUpperCase(),
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontFamily: 'Inter',
                           fontSize: 10,
                           fontWeight: FontWeight.w700,
                           letterSpacing: 1.5,
-                          color: StsysTheme.secondary,
+                          color: StsysTheme.secondaryOf(context),
                         ),
                       ),
                       const SizedBox(height: 2),
@@ -84,7 +84,8 @@ class PhaseSummaryCard extends StatelessWidget {
                           fontFamily: 'Manrope',
                           fontSize: 12,
                           fontWeight: FontWeight.w800,
-                          color: StsysTheme.onSurface.withValues(alpha: 0.5),
+                          color: StsysTheme.onSurfaceOf(context)
+                              .withValues(alpha: 0.5),
                         ),
                       ),
                       const SizedBox(height: 6),
@@ -107,7 +108,7 @@ class PhaseSummaryCard extends StatelessWidget {
             child: Container(
               margin: const EdgeInsets.fromLTRB(12, 0, 12, 8),
               decoration: BoxDecoration(
-                color: StsysTheme.surfaceContainerLowest,
+                color: StsysTheme.surfaceContainerLowestOf(context),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: ClipRRect(

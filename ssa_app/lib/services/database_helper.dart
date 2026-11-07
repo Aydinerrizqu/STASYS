@@ -9,11 +9,30 @@ class DatabaseHelper {
   static final DatabaseHelper _instance = DatabaseHelper._internal();
   static Database? _database;
 
+  /// File name of the SQLite database inside the platform database folder.
+  ///
+  /// `flutter test` runs test files in parallel, and two files opening the
+  /// same SQLite file lock each other out (`database is locked`). Tests
+  /// therefore point this at a file name unique to the test file.
+  static String databaseFileName = 'stasys_sessions.db';
+
   factory DatabaseHelper() => _instance;
 
   /// Reset singleton state for testing only.
   static void resetForTesting() {
     _database = null;
+  }
+
+  /// Use a dedicated database file for testing only.
+  static void setDatabaseFileNameForTesting(String fileName) {
+    databaseFileName = fileName;
+    _database = null;
+  }
+
+  /// Replace the active database instance for testing only.
+  /// Lets a test wrap the database (e.g. to simulate platform limits).
+  static void setDatabaseForTesting(Database database) {
+    _database = database;
   }
 
   DatabaseHelper._internal();
@@ -26,7 +45,7 @@ class DatabaseHelper {
 
   Future<Database> _initDatabase() async {
     final dbPath = await getDatabasesPath();
-    final path = join(dbPath, 'stasys_sessions.db');
+    final path = join(dbPath, databaseFileName);
 
     return await openDatabase(
       path,

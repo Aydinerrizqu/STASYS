@@ -12,6 +12,24 @@ import 'database_helper.dart';
 class DatabaseService {
   final DatabaseHelper _dbHelper;
 
+  /// Session metadata columns. The raw gyro/accel BLOBs are deliberately
+  /// excluded: Android's SQLite cursor window can only hold ~2 MB per row,
+  /// and a session row can exceed that on its own.
+  static const List<String> _summaryColumns = [
+    'id',
+    'date',
+    'duration',
+    'firearm_type',
+    'training_mode',
+    'profile_name',
+    'training_preset',
+    'series_count',
+  ];
+
+  /// Size of a single BLOB chunk read. Each chunk is returned as its own
+  /// row, so no row can exceed the platform cursor-window limit.
+  static const int _blobChunkBytes = 256 * 1024;
+
   DatabaseService({DatabaseHelper? dbHelper})
     : _dbHelper = dbHelper ?? DatabaseHelper();
 
@@ -132,7 +150,11 @@ class DatabaseService {
   /// Load all sessions (sorted by date DESC) with shots.
   Future<List<SessionLog>> loadAllSessions() async {
     final db = await _dbHelper.database;
-    final sessionRows = await db.query('sessions', orderBy: 'date DESC');
+    final sessionRows = await db.query(
+      'sessions',
+      columns: _summaryColumns,
+      orderBy: 'date DESC',
+    );
 
     final result = <SessionLog>[];
     for (final row in sessionRows) {
@@ -147,9 +169,17 @@ class DatabaseService {
   /// Load a single session by ID with its shots.
   Future<SessionLog?> getSession(String id) async {
     final db = await _dbHelper.database;
-    final rows = await db.query('sessions', where: 'id = ?', whereArgs: [id]);
+    final rows = await db.query(
+      'sessions',
+      columns: _summaryColumns,
+      where: 'id = ?',
+      whereArgs: [id],
+    );
     if (rows.isEmpty) return null;
-    return await _sessionFromRow(rows.first);
+
+    final raw = await _readRawColumns(id);
+    final session = await _sessionFromRow(rows.first, raw: raw);
+    return session;
   }
 
   /// Delete a session and all its shots (CASCADE).
@@ -165,29 +195,97 @@ class DatabaseService {
   Future<Map<String, List<DataPoint>>> decodeRawSession(
     String sessionId,
   ) async {
-    final db = await _dbHelper.database;
-    final rows = await db.query(
-      'sessions',
-      where: 'id = ?',
-      whereArgs: [sessionId],
-    );
-    if (rows.isEmpty) return {};
-    final row = rows.first;
+    final raw = await _readRawColumns(sessionId);
+    if (raw.isEmpty) return {};
     return {
-      'gyroX': _decodeBlob(row['gyro_x']),
-      'gyroY': _decodeBlob(row['gyro_y']),
-      'gyroZ': _decodeBlob(row['gyro_z']),
-      'accelX': _decodeBlob(row['accel_x']),
-      'accelY': _decodeBlob(row['accel_y']),
-      'accelZ': _decodeBlob(row['accel_z']),
+      'gyroX': raw['gyroX'] ?? const [],
+      'gyroY': raw['gyroY'] ?? const [],
+      'gyroZ': raw['gyroZ'] ?? const [],
+      'accelX': raw['accelX'] ?? const [],
+      'accelY': raw['accelY'] ?? const [],
+      'accelZ': raw['accelZ'] ?? const [],
     };
+  }
+
+  // ==========================================
+  // Raw sensor columns (chunked reads)
+  // ==========================================
+
+  /// Read the six raw sensor BLOBs of a session.
+  ///
+  /// Each BLOB is read in chunks so that a single returned row never
+  /// exceeds the platform cursor-window limit (~2 MB on Android). Reading
+  /// the whole row at once fails with
+  /// `Row too big to fit into CursorWindow` for long sessions.
+  Future<Map<String, List<DataPoint>>> _readRawColumns(String sessionId) async {
+    final db = await _dbHelper.database;
+
+    final exists = await db.rawQuery(
+      'SELECT 1 FROM sessions WHERE id = ? LIMIT 1',
+      [sessionId],
+    );
+    if (exists.isEmpty) return {};
+
+    const columns = {
+      'gyroX': 'gyro_x',
+      'gyroY': 'gyro_y',
+      'gyroZ': 'gyro_z',
+      'accelX': 'accel_x',
+      'accelY': 'accel_y',
+      'accelZ': 'accel_z',
+    };
+
+    final result = <String, List<DataPoint>>{};
+    for (final entry in columns.entries) {
+      result[entry.key] = await _readBlobColumn(sessionId, entry.value);
+    }
+    return result;
+  }
+
+  /// Read one BLOB column in chunks and decode it into data points.
+  Future<List<DataPoint>> _readBlobColumn(
+    String sessionId,
+    String column,
+  ) async {
+    final db = await _dbHelper.database;
+
+    // Total length of the BLOB.
+    final lengthRows = await db.rawQuery(
+      'SELECT length($column) AS len FROM sessions WHERE id = ?',
+      [sessionId],
+    );
+    if (lengthRows.isEmpty) return [];
+    final total = (lengthRows.first['len'] as int?) ?? 0;
+    if (total <= 0) return [];
+
+    final bytes = BytesBuilder(copy: false);
+    for (var offset = 0; offset < total; offset += _blobChunkBytes) {
+      final chunkRows = await db.rawQuery(
+        'SELECT substr($column, ?, ?) AS chunk FROM sessions WHERE id = ?',
+        [offset + 1, _blobChunkBytes, sessionId],
+      );
+      if (chunkRows.isEmpty) break;
+      final chunk = chunkRows.first['chunk'];
+      if (chunk is Uint8List) {
+        bytes.add(chunk);
+      } else if (chunk is List<int>) {
+        bytes.add(Uint8List.fromList(chunk));
+      } else {
+        break;
+      }
+    }
+
+    return _decodeTimeSeries(bytes.toBytes());
   }
 
   // ==========================================
   // Row → SessionLog reconstruction
   // ==========================================
 
-  Future<SessionLog?> _sessionFromRow(Map<String, Object?> row) async {
+  Future<SessionLog?> _sessionFromRow(
+    Map<String, Object?> row, {
+    Map<String, List<DataPoint>>? raw,
+  }) async {
     try {
       final sessionId = row['id'] as String;
       final shots = await _loadShotsForSession(sessionId);
@@ -201,24 +299,17 @@ class DatabaseService {
         profileName: (row['profile_name'] as String?) ?? '',
         trainingPreset: (row['training_preset'] as String?) ?? '',
         seriesCount: (row['series_count'] as num?)?.toInt() ?? 0,
-        gyroX: _decodeBlob(row['gyro_x']),
-        gyroY: _decodeBlob(row['gyro_y']),
-        gyroZ: _decodeBlob(row['gyro_z']),
-        accelX: _decodeBlob(row['accel_x']),
-        accelY: _decodeBlob(row['accel_y']),
-        accelZ: _decodeBlob(row['accel_z']),
+        gyroX: raw?['gyroX'] ?? const [],
+        gyroY: raw?['gyroY'] ?? const [],
+        gyroZ: raw?['gyroZ'] ?? const [],
+        accelX: raw?['accelX'] ?? const [],
+        accelY: raw?['accelY'] ?? const [],
+        accelZ: raw?['accelZ'] ?? const [],
         shots: shots,
       );
     } catch (e) {
       return null;
     }
-  }
-
-  List<DataPoint> _decodeBlob(Object? blob) {
-    if (blob == null) return [];
-    if (blob is Uint8List) return _decodeTimeSeries(blob);
-    if (blob is List<int>) return _decodeTimeSeries(Uint8List.fromList(blob));
-    return [];
   }
 
   Future<List<ShotResult>> _loadShotsForSession(String sessionId) async {

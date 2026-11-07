@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../models/data_models.dart';
 import '../models/train_preset.dart';
+import '../theme/app_theme.dart';
 import 'shot_trace_geometry.dart';
 import 'target_replay_view.dart';
 
@@ -12,6 +13,39 @@ enum TrainTargetDisplay { start, activeTrace, seriesScatter }
 const _holdColor = Color(0xFFFF4444);
 const _pressColor = Color(0xFFFFFF44);
 const _recoilColor = Color(0xFF44FFFF);
+
+/// Rings 1-6 are painted on the page background, so their colour has to
+/// follow the active theme: the near-black of the light shell disappears
+/// completely on the dark shell.
+const Color _lightOuterRingColor = Color(0xFF1A1D21);
+const Color _darkOuterRingColor = Color(0xFFB7C0C8);
+const Color _lightCrosshairColor = Color(0xFF22272C);
+const Color _darkCrosshairColor = Color(0xFF8A939C);
+
+/// Ring-number painters for one theme. Cached per theme so repaint cycles
+/// (selection, replay progress) never allocate a [TextPainter].
+List<TextPainter> _buildRingLabels(Color outerRingColor) => List.generate(10, (
+  index,
+) {
+  final ringNumber = index + 1;
+  final lightLabel = ringNumber >= 7;
+  final painter = TextPainter(
+    text: TextSpan(
+      text: '$ringNumber',
+      style: TextStyle(
+        color: lightLabel ? Colors.white : outerRingColor,
+        fontSize: 12,
+        fontWeight: FontWeight.w500,
+      ),
+    ),
+    textDirection: TextDirection.ltr,
+  );
+  painter.layout();
+  return painter;
+}, growable: false);
+
+final List<TextPainter> _lightRingLabels = _buildRingLabels(_lightOuterRingColor);
+final List<TextPainter> _darkRingLabels = _buildRingLabels(_darkOuterRingColor);
 
 /// Responsive target surface shared by the ready (TRAIN-0) and active (TRAIN-1) states.
 class TrainTargetWidget extends StatelessWidget {
@@ -54,6 +88,22 @@ class TrainTargetWidget extends StatelessWidget {
         .map((shot) => _markerOffset(shot, center, maxR, size))
         .toList(growable: false);
   }
+
+  /// Stroke colour used for the outer scoring rings (1-6) and the crosshair.
+  ///
+  /// Rings 1-6 sit directly on the page background, so the stroke has to
+  /// contrast with it: near-black on the dark shell is invisible. Exposed so
+  /// tests can assert the contrast instead of relying on pixel snapshots.
+  static Color outerRingColorFor(Brightness brightness) =>
+      brightness == Brightness.light
+      ? _lightOuterRingColor
+      : _darkOuterRingColor;
+
+  /// Crosshair stroke colour for the given [brightness].
+  static Color crosshairColorFor(Brightness brightness) =>
+      brightness == Brightness.light
+      ? _lightCrosshairColor
+      : _darkCrosshairColor;
 
   static Offset _markerOffset(
     ShotResult shot,
@@ -180,6 +230,7 @@ class _TargetCanvas extends StatelessWidget {
       selectedShot: selectedShot,
       replayProgress: replayProgress,
       scatterShots: scatterShots,
+      isLight: StsysTheme.isLight(context),
     ),
     child: const SizedBox.expand(),
   );
@@ -192,36 +243,30 @@ class _TargetPainter extends CustomPainter {
   final double replayProgress;
   final List<ShotResult> scatterShots;
 
+  /// Whether the target is painted on the light shell. Rings 1-6 and the
+  /// crosshair use a light-on-dark stroke in dark mode so they stay visible.
+  final bool isLight;
+
   _TargetPainter({
     required this.mode,
     this.latestScore,
     this.selectedShot,
     required this.replayProgress,
     required this.scatterShots,
+    required this.isLight,
   });
 
   static const _bullColor = Color(0xFF000000);
-  static const _outerRingColor = Color(0xFF1A1D21);
   static const _innerRingColor = Colors.white;
-  static const _crosshairColor = Color(0xFF22272C);
 
-  static final List<TextPainter> _ringLabels = List.generate(10, (index) {
-    final ringNumber = index + 1;
-    final lightLabel = ringNumber >= 7;
-    final painter = TextPainter(
-      text: TextSpan(
-        text: '$ringNumber',
-        style: TextStyle(
-          color: lightLabel ? Colors.white : _outerRingColor,
-          fontSize: 12,
-          fontWeight: FontWeight.w500,
-        ),
-      ),
-      textDirection: TextDirection.ltr,
-    );
-    painter.layout();
-    return painter;
-  }, growable: false);
+  Color get _outerRingColor =>
+      isLight ? _lightOuterRingColor : _darkOuterRingColor;
+
+  Color get _crosshairColor =>
+      isLight ? _lightCrosshairColor : _darkCrosshairColor;
+
+  List<TextPainter> get _ringLabels =>
+      isLight ? _lightRingLabels : _darkRingLabels;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -434,5 +479,6 @@ class _TargetPainter extends CustomPainter {
       old.latestScore != latestScore ||
       old.selectedShot != selectedShot ||
       old.replayProgress != replayProgress ||
+      old.isLight != isLight ||
       !identical(old.scatterShots, scatterShots);
 }

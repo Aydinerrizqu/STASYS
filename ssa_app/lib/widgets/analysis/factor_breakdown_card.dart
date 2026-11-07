@@ -39,15 +39,15 @@ class FactorBreakdownCard extends StatelessWidget {
           const SizedBox(height: 6),
           Row(
             children: [
-              _metaChip(Icons.straighten,
+              _metaChip(context, Icons.straighten,
                   '${shot.travelDistance.toStringAsFixed(1)}°'),
               const SizedBox(width: 6),
-              _metaChip(Icons.bolt,
+              _metaChip(context, Icons.bolt,
                   'jerk ${shot.peakJerk.toStringAsFixed(1)}'),
               const SizedBox(width: 6),
-              _metaChip(Icons.gps_fixed, shot.firearmType),
+              _metaChip(context, Icons.gps_fixed, shot.firearmType),
               const SizedBox(width: 6),
-              _metaChip(Icons.center_focus_strong, shot.trainingMode),
+              _metaChip(context, Icons.center_focus_strong, shot.trainingMode),
             ],
           ),
         ],
@@ -89,17 +89,21 @@ class FactorBreakdownCard extends StatelessWidget {
     );
   }
 
-  Widget _metaChip(IconData icon, String text) {
+  Widget _metaChip(BuildContext context, IconData icon, String text) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
       decoration: BoxDecoration(
-        color: StsysTheme.surfaceContainerLowest,
+        color: StsysTheme.surfaceContainerLowestOf(context),
         borderRadius: BorderRadius.circular(4),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 10, color: StsysTheme.onSurface.withValues(alpha: 0.5)),
+          Icon(
+            icon,
+            size: 10,
+            color: StsysTheme.onSurfaceOf(context).withValues(alpha: 0.5),
+          ),
           const SizedBox(width: 3),
           Text(
             text,
@@ -108,7 +112,7 @@ class FactorBreakdownCard extends StatelessWidget {
               fontSize: 9,
               fontWeight: FontWeight.w700,
               letterSpacing: 0.5,
-              color: StsysTheme.onSurface.withValues(alpha: 0.7),
+              color: StsysTheme.onSurfaceOf(context).withValues(alpha: 0.7),
             ),
           ),
         ],

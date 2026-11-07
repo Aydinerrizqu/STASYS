@@ -112,7 +112,7 @@ class _HistoryScreenState extends State<HistoryScreen>
         ScaffoldMessenger.of(ctx).showSnackBar(
           SnackBar(
             content: Text('Export failed: $e'),
-            backgroundColor: StsysTheme.surfaceContainerHighOf(context),
+            backgroundColor: StsysTheme.surfaceContainerHighOf(ctx),
             behavior: SnackBarBehavior.floating,
           ),
         );
@@ -253,7 +253,7 @@ class _HistoryScreenState extends State<HistoryScreen>
                                         ),
                                         decoration: BoxDecoration(
                                           color: StsysTheme
-                                              .surfaceContainerHighest,
+                                              .scoreChipFillOf(context),
                                           borderRadius: BorderRadius.circular(
                                             20,
                                           ),
@@ -261,13 +261,15 @@ class _HistoryScreenState extends State<HistoryScreen>
                                         child: Text(
                                           session.firearmType.displayName
                                               .toUpperCase(),
+                                          key: const ValueKey(
+                                            'history-firearm-label',
+                                          ),
                                           style: TextStyle(
                                             fontFamily: 'Inter',
                                             fontSize: 10,
                                             fontWeight: FontWeight.w600,
                                             letterSpacing: 1,
-                                            color: StsysTheme.onSurfaceOf(context)
-                                                .withValues(alpha: 0.7),
+                                            color: StsysTheme.onSurfaceOf(context),
                                           ),
                                         ),
                                       ),
@@ -285,7 +287,7 @@ class _HistoryScreenState extends State<HistoryScreen>
                                         ),
                                         decoration: BoxDecoration(
                                           color: StsysTheme
-                                              .surfaceContainerHighest,
+                                              .scoreChipFillOf(context),
                                           borderRadius: BorderRadius.circular(
                                             8,
                                           ),
@@ -301,6 +303,9 @@ class _HistoryScreenState extends State<HistoryScreen>
                                             const SizedBox(width: 4),
                                             Text(
                                               '${session.shots.length}',
+                                              key: const ValueKey(
+                                                'history-shot-count',
+                                              ),
                                               style: TextStyle(
                                                 fontFamily: 'Manrope',
                                                 fontSize: 16,

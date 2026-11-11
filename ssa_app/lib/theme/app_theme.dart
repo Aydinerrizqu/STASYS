@@ -49,6 +49,13 @@ class StsysTheme {
       isLight(context) ? const Color(0xFF008FA3) : primary;
   static Color onPrimaryOf(BuildContext context) =>
       isLight(context) ? Colors.white : onPrimary;
+
+  /// Colour for text and icons drawn on top of the STASYS brand and tactical
+  /// gradients. Those gradients are fixed brand colours and do not change
+  /// with the theme, so the "on" colour has to stay fixed as well to keep
+  /// the contrast — a white label would vanish on the cyan half of the
+  /// brand gradient and on the orange tactical gradient.
+  static Color onGradientOf(BuildContext context) => onPrimary;
   static Color onSurfaceOf(BuildContext context) =>
       isLight(context) ? const Color(0xFF17202A) : onSurface;
   static Color errorOf(BuildContext context) =>
@@ -78,6 +85,20 @@ class StsysTheme {
   /// Score chip / badge fill that must stay legible on a light surface.
   static Color scoreChipFillOf(BuildContext context) =>
       isLight(context) ? const Color(0xFFE8EDF1) : surfaceContainerHighest;
+
+  /// Page background behind the shell — the Scaffold fill.
+  static Color backgroundOf(BuildContext context) =>
+      isLight(context) ? const Color(0xFFF5F7FA) : background;
+
+  /// Container tint used behind the active navigation item.
+  static Color primaryContainerOf(BuildContext context) =>
+      isLight(context) ? const Color(0xFF9DEBFA) : primaryContainer;
+
+  /// Tertiary accent for the statistic boxes. The dark palette uses a pale
+  /// blue that would disappear on the light shell, so light mode uses a
+  /// deeper tone of the same hue.
+  static Color tertiaryOf(BuildContext context) =>
+      isLight(context) ? const Color(0xFF2F5D8C) : tertiary;
 
   static const Color primary = Color(0xFFFFB693);
   static const Color primaryContainer = Color(0xFFFF6B00);
@@ -328,17 +349,26 @@ class StsysTheme {
 // ============================================
 class StsysText {
   // Headlines
+  // The colour lives in the `*Of(context)` variants below. The const
+  // variants keep the dark-palette colour and therefore only suit dark
+  // surfaces — on the light shell they would be unreadable.
   static const headline = TextStyle(
     fontFamily: 'Manrope',
     fontWeight: FontWeight.w900,
     color: StsysTheme.onSurface,
   );
 
+  static TextStyle headlineOf(BuildContext context) =>
+      headline.copyWith(color: StsysTheme.onSurfaceOf(context));
+
   static const headlineBold = TextStyle(
     fontFamily: 'Manrope',
     fontWeight: FontWeight.w800,
     color: StsysTheme.onSurface,
   );
+
+  static TextStyle headlineBoldOf(BuildContext context) =>
+      headlineBold.copyWith(color: StsysTheme.onSurfaceOf(context));
 
   // Body
   static const body = TextStyle(
@@ -356,6 +386,9 @@ class StsysText {
     color: StsysTheme.onSurface,
   );
 
+  static TextStyle bodyBoldOf(BuildContext context) =>
+      bodyBold.copyWith(color: StsysTheme.onSurfaceOf(context));
+
   // Labels (uppercase, tracking)
   static const label = TextStyle(
     fontFamily: 'Inter',
@@ -364,6 +397,9 @@ class StsysText {
     letterSpacing: 1.5,
     color: StsysTheme.onSurfaceVariant,
   );
+
+  static TextStyle labelOf(BuildContext context) =>
+      label.copyWith(color: StsysTheme.onSurfaceVariantOf(context));
 
   static TextStyle labelBoldOf(BuildContext context, Color color) =>
       labelBold.copyWith(color: color);
@@ -415,7 +451,7 @@ class SurfaceCard extends StatelessWidget {
     final card = Container(
       padding: padding ?? const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: backgroundColor ?? StsysTheme.surfaceContainerLow,
+        color: backgroundColor ?? StsysTheme.surfaceContainerLowOf(context),
         borderRadius: BorderRadius.circular(borderRadius),
         border: borderColor != null
             ? Border.all(color: borderColor!, width: borderWidth)
@@ -459,12 +495,13 @@ class TacticalButton extends StatelessWidget {
             padding ?? const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         decoration: BoxDecoration(
           gradient: isActive ? StsysTheme.tacticalGradient : null,
-          color: isActive ? null : StsysTheme.surfaceContainerHigh,
+          color: isActive ? null : StsysTheme.surfaceContainerHighOf(context),
           borderRadius: BorderRadius.circular(8),
           border: isActive
               ? null
               : Border.all(
-                  color: StsysTheme.outlineVariant.withValues(alpha: 0.2),
+                  color: StsysTheme.outlineVariantOf(context)
+                      .withValues(alpha: 0.2),
                   width: 1,
                 ),
         ),
@@ -476,8 +513,8 @@ class TacticalButton extends StatelessWidget {
               Icon(
                 icon,
                 color: isActive
-                    ? StsysTheme.onPrimary
-                    : StsysTheme.onSurface.withValues(alpha: 0.6),
+                    ? StsysTheme.onGradientOf(context)
+                    : StsysTheme.onSurfaceOf(context).withValues(alpha: 0.6),
                 size: 18,
               ),
               const SizedBox(width: 8),
@@ -490,8 +527,8 @@ class TacticalButton extends StatelessWidget {
                 fontSize: 12,
                 letterSpacing: 1,
                 color: isActive
-                    ? StsysTheme.onPrimary
-                    : StsysTheme.onSurface.withValues(alpha: 0.6),
+                    ? StsysTheme.onGradientOf(context)
+                    : StsysTheme.onSurfaceOf(context).withValues(alpha: 0.6),
               ),
             ),
           ],
@@ -518,21 +555,28 @@ class StatusBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // The status colours are semantic and shared between themes, but the
+    // muted variant has to follow the shell so it stays readable.
+    final primary = StsysTheme.primaryOf(context);
+    final cyan = StsysTheme.cyanOf(context);
+    final error = StsysTheme.errorOf(context);
+    final muted = StsysTheme.mobileMutedTextOf(context);
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
         color: isConnected
-            ? StsysTheme.primary.withValues(alpha: 0.15)
+            ? primary.withValues(alpha: 0.15)
             : (mutedDisconnected
-                  ? StsysTheme.cyan.withValues(alpha: 0.08)
-                  : StsysTheme.error.withValues(alpha: 0.15)),
+                  ? cyan.withValues(alpha: 0.08)
+                  : error.withValues(alpha: 0.15)),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
           color: isConnected
-              ? StsysTheme.primary.withValues(alpha: 0.3)
+              ? primary.withValues(alpha: 0.3)
               : (mutedDisconnected
-                    ? StsysTheme.cyan.withValues(alpha: 0.2)
-                    : StsysTheme.error.withValues(alpha: 0.3)),
+                    ? cyan.withValues(alpha: 0.2)
+                    : error.withValues(alpha: 0.3)),
           width: 1,
         ),
       ),
@@ -544,8 +588,8 @@ class StatusBadge extends StatelessWidget {
             height: 6,
             decoration: BoxDecoration(
               color: isConnected
-                  ? StsysTheme.primary
-                  : (mutedDisconnected ? StsysTheme.cyan : StsysTheme.error),
+                  ? primary
+                  : (mutedDisconnected ? cyan : error),
               shape: BoxShape.circle,
             ),
           ),
@@ -558,10 +602,8 @@ class StatusBadge extends StatelessWidget {
               fontWeight: FontWeight.w700,
               letterSpacing: 1.5,
               color: isConnected
-                  ? StsysTheme.primary
-                  : (mutedDisconnected
-                        ? StsysTheme.mobileMutedText
-                        : StsysTheme.error),
+                  ? primary
+                  : (mutedDisconnected ? muted : error),
             ),
           ),
         ],

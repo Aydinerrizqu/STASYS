@@ -27,6 +27,15 @@ class ReplayTracePainter extends CustomPainter {
   /// If null, no playhead is drawn. Default null.
   final int? frameIndex;
 
+  /// Theme colours are resolved by the caller: a CustomPainter has no
+  /// BuildContext, so it cannot look up the active theme itself. The
+  /// defaults keep the dark-palette look for callers that do not care.
+  final Color gridColor;
+  final Color ringColor;
+  final Color crosshairColor;
+  final Color traceColor;
+  final Color mutedTextColor;
+
   ReplayTracePainter({
     required this.trace,
     this.visibleFrames,
@@ -34,6 +43,11 @@ class ReplayTracePainter extends CustomPainter {
     required this.getScoreColor,
     this.targetDistanceM = 10.0,
     this.frameIndex,
+    this.gridColor = const Color(0xFF6B7280),
+    this.ringColor = const Color(0xFF6B7280),
+    this.crosshairColor = const Color(0xFF8BCEFF),
+    this.traceColor = const Color(0xFFFFB693),
+    this.mutedTextColor = const Color(0xFF6B7280),
   });
 
   List<ReplayFrame> get _frames => visibleFrames ?? trace.frames;
@@ -49,7 +63,6 @@ class ReplayTracePainter extends CustomPainter {
 
   // Pre-allocated paints (singleton-style)
   static final Paint _gridPaint = Paint()
-    ..color = const Color(0xFF6B7280)
     ..strokeWidth = 0.5;
 
   static final Paint _ringPaint = Paint()
@@ -76,7 +89,6 @@ class ReplayTracePainter extends CustomPainter {
     ..style = PaintingStyle.stroke;
 
   static final Paint _crosshairPaint = Paint()
-    ..color = const Color(0xFF8BCEFF)
     ..strokeWidth = 0.8;
 
   static final Paint _centerFillPaint = Paint()
@@ -85,6 +97,10 @@ class ReplayTracePainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
+    // The theme colours arrive from the caller, so they are applied here
+    // rather than baked into the (pre-allocated) paint objects.
+    _crosshairPaint.color = crosshairColor;
+
     final frames = _selectedFrames();
     if (frames.isEmpty) {
       _drawEmptyState(canvas, size);
@@ -116,8 +132,8 @@ class ReplayTracePainter extends CustomPainter {
       begin: Alignment.centerLeft,
       end: Alignment.centerRight,
       colors: [
-        const Color(0xFFFFB693).withValues(alpha: 0.15),
-        const Color(0xFFFFB693).withValues(alpha: 0.95),
+        traceColor.withValues(alpha: 0.15),
+        traceColor.withValues(alpha: 0.95),
       ],
     ).createShader(Rect.fromLTWH(0, 0, size.width, size.height));
 
@@ -173,13 +189,13 @@ class ReplayTracePainter extends CustomPainter {
       final py = cy + cursor.barrelY * scaleY;
 
       final cursorPaint = Paint()
-        ..color = const Color(0xFF8BCEFF)
+        ..color = crosshairColor
         ..strokeWidth = 1.2
         ..style = PaintingStyle.stroke;
       canvas.drawLine(Offset(px, 0), Offset(px, size.height), cursorPaint);
 
       final dotPaint = Paint()
-        ..color = const Color(0xFF8BCEFF)
+        ..color = crosshairColor
         ..style = PaintingStyle.fill;
       canvas.drawCircle(Offset(px, py), 4, dotPaint);
       canvas.drawCircle(
@@ -196,21 +212,21 @@ class ReplayTracePainter extends CustomPainter {
         px,
         py - 12,
         (cursor.tSeconds * 1000).round(),
-        const Color(0xFF8BCEFF),
+        crosshairColor,
       );
     }
   }
 
   void _drawEmptyState(Canvas canvas, Size size) {
     final tp = TextPainter(
-      text: const TextSpan(
+      text: TextSpan(
         text: 'NO TRACE DATA',
         style: TextStyle(
           fontFamily: 'Manrope',
           fontSize: 12,
           fontWeight: FontWeight.w800,
           letterSpacing: 2,
-          color: Color(0xFF6B7280),
+          color: mutedTextColor,
         ),
       ),
       textDirection: TextDirection.ltr,
@@ -222,7 +238,7 @@ class ReplayTracePainter extends CustomPainter {
   }
 
   void _drawGrid(Canvas canvas, Size size, double cx, double cy) {
-    _gridPaint.color = const Color(0xFF6B7280).withValues(alpha: 0.3);
+    _gridPaint.color = gridColor.withValues(alpha: 0.3);
     canvas.drawLine(Offset(cx, 0), Offset(cx, size.height), _gridPaint);
     canvas.drawLine(Offset(0, cy), Offset(size.width, cy), _gridPaint);
   }
@@ -234,7 +250,7 @@ class ReplayTracePainter extends CustomPainter {
     double maxRadiusX,
     double maxRadiusY,
   ) {
-    _ringPaint.color = const Color(0xFF6B7280).withValues(alpha: 0.15);
+    _ringPaint.color = ringColor.withValues(alpha: 0.15);
     for (final r in [0.25, 0.5, 0.75, 1.0]) {
       canvas.drawOval(
         Rect.fromCenter(
@@ -264,7 +280,7 @@ class ReplayTracePainter extends CustomPainter {
 
     // Draw 5 target rings (0.2, 0.4, 0.6, 0.8, 1.0 of full radius)
     final ringPaint = Paint()
-      ..color = const Color(0xFF6B7280).withValues(alpha: 0.25)
+      ..color = ringColor.withValues(alpha: 0.25)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 0.5;
     for (final r in [0.2, 0.4, 0.6, 0.8, 1.0]) {
@@ -332,6 +348,11 @@ class ReplayTracePainter extends CustomPainter {
   bool shouldRepaint(covariant ReplayTracePainter oldDelegate) {
     return oldDelegate.trace != trace ||
         oldDelegate.selectedShot != selectedShot ||
-        oldDelegate.frameIndex != frameIndex;
+        oldDelegate.frameIndex != frameIndex ||
+        oldDelegate.gridColor != gridColor ||
+        oldDelegate.ringColor != ringColor ||
+        oldDelegate.crosshairColor != crosshairColor ||
+        oldDelegate.traceColor != traceColor ||
+        oldDelegate.mutedTextColor != mutedTextColor;
   }
 }

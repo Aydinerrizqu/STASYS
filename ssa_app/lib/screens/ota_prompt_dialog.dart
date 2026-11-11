@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../theme/app_theme.dart';
 
 class OtaPromptDialog extends StatelessWidget {
   final String currentVersion;
@@ -17,7 +18,7 @@ class OtaPromptDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      backgroundColor: const Color(0xFF1A1A1A),
+      backgroundColor: StsysTheme.surfaceContainerHighOf(context),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
         side: const BorderSide(color: Color(0xFF2A2A2A), width: 1),
@@ -38,10 +39,10 @@ class OtaPromptDialog extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 12),
-          const Text(
+          Text(
             'Firmware Update',
             style: TextStyle(
-              color: Colors.white,
+              color: StsysTheme.onSurfaceOf(context),
               fontSize: 18,
               fontWeight: FontWeight.w600,
             ),
@@ -54,21 +55,34 @@ class OtaPromptDialog extends StatelessWidget {
         children: [
           Text(
             'Version $newVersion tersedia untuk STASYS kamu.',
-            style: const TextStyle(color: Color(0xFFAAAAAA), fontSize: 14),
+            style: TextStyle(color: StsysTheme.onSurfaceVariantOf(context), fontSize: 14),
           ),
           const SizedBox(height: 20),
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: const Color(0xFF0D0D0D),
+              color: StsysTheme.surfaceContainerLowestOf(context),
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: const Color(0xFF2A2A2A)),
+              border: Border.all(color: StsysTheme.outlineVariantOf(context)),
             ),
             child: Column(
               children: [
-                _versionRow('Current', currentVersion, const Color(0xFFFFB693)),
-                const Divider(color: Color(0xFF2A2A2A), height: 20),
-                _versionRow('New', newVersion, const Color(0xFF00D4FF)),
+                _versionRow(
+                  context,
+                  'Current',
+                  currentVersion,
+                  StsysTheme.primaryOf(context),
+                ),
+                Divider(
+                  color: StsysTheme.outlineVariantOf(context),
+                  height: 20,
+                ),
+                _versionRow(
+                  context,
+                  'New',
+                  newVersion,
+                  StsysTheme.cyanOf(context),
+                ),
               ],
             ),
           ),
@@ -82,7 +96,7 @@ class OtaPromptDialog extends StatelessWidget {
                 color: const Color(0xFFFF6B3D).withValues(alpha: 0.3),
               ),
             ),
-            child: const Row(
+            child: Row(
               children: [
                 Icon(
                   Icons.warning_amber_rounded,
@@ -93,7 +107,7 @@ class OtaPromptDialog extends StatelessWidget {
                 Expanded(
                   child: Text(
                     'Jangan putuskan koneksi Bluetooth saat update berlangsung.',
-                    style: TextStyle(color: Color(0xFFAAAAAA), fontSize: 12),
+                    style: TextStyle(color: StsysTheme.onSurfaceVariantOf(context), fontSize: 12),
                   ),
                 ),
               ],
@@ -106,7 +120,7 @@ class OtaPromptDialog extends StatelessWidget {
           TextButton(
             onPressed: onSkip,
             style: TextButton.styleFrom(
-              foregroundColor: const Color(0xFF666666),
+              foregroundColor: StsysTheme.onSurfaceVariantOf(context),
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
             ),
             child: const Text('Skip'),
@@ -128,13 +142,13 @@ class OtaPromptDialog extends StatelessWidget {
     );
   }
 
-  Widget _versionRow(String label, String version, Color color) {
+  Widget _versionRow(BuildContext context, String label, String version, Color color) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
         Text(
           label,
-          style: const TextStyle(color: Color(0xFF666666), fontSize: 13),
+          style: TextStyle(color: StsysTheme.onSurfaceVariantOf(context), fontSize: 13),
         ),
         Row(
           children: [

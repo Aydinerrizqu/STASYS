@@ -123,7 +123,7 @@ class _TargetReplayViewState extends State<TargetReplayView>
       child: Container(
         margin: EdgeInsets.all(compact ? 4 : 16),
         decoration: BoxDecoration(
-          color: StsysTheme.surfaceContainerLow,
+          color: StsysTheme.surfaceContainerLowOf(context),
           borderRadius: BorderRadius.circular(compact ? 8 : 12),
         ),
         child: Column(
@@ -138,7 +138,7 @@ class _TargetReplayViewState extends State<TargetReplayView>
                 0,
               ),
               decoration: BoxDecoration(
-                color: StsysTheme.surfaceContainerLowest,
+                color: StsysTheme.surfaceContainerLowestOf(context),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: ClipRRect(
@@ -155,6 +155,12 @@ class _TargetReplayViewState extends State<TargetReplayView>
                             trace: _trace,
                             progress: progress,
                             isPlaying: _isPlaying,
+                            ringFillHold:
+                                StsysTheme.surfaceContainerLowOf(context),
+                            ringFillPress:
+                                StsysTheme.surfaceContainerLowestOf(context),
+                            outlineVariant:
+                                StsysTheme.outlineVariantOf(context),
                           ),
                           size: Size.infinite,
                         ),
@@ -166,7 +172,7 @@ class _TargetReplayViewState extends State<TargetReplayView>
                               fontSize: 14,
                               fontWeight: FontWeight.w800,
                               letterSpacing: 2,
-                              color: StsysTheme.onSurface.withValues(
+                              color: StsysTheme.onSurfaceOf(context).withValues(
                                 alpha: 0.4,
                               ),
                             ),
@@ -194,7 +200,7 @@ class _TargetReplayViewState extends State<TargetReplayView>
                       fontSize: compact ? 9 : 12,
                       fontWeight: FontWeight.w700,
                       letterSpacing: 1,
-                      color: StsysTheme.onSurface,
+                      color: StsysTheme.onSurfaceOf(context),
                     ),
                   ),
                   const Spacer(),
@@ -220,7 +226,7 @@ class _TargetReplayViewState extends State<TargetReplayView>
                         fontSize: compact ? 8 : 10,
                         fontWeight: FontWeight.w600,
                         letterSpacing: 0.5,
-                        color: StsysTheme.onSurface.withValues(alpha: 0.5),
+                        color: StsysTheme.onSurfaceOf(context).withValues(alpha: 0.5),
                       ),
                     ),
                   ),
@@ -245,7 +251,7 @@ class _TargetReplayViewState extends State<TargetReplayView>
                           : null,
                       icon: Icon(
                         _isPlaying ? Icons.pause : Icons.play_arrow,
-                        color: StsysTheme.primary,
+                        color: StsysTheme.primaryOf(context),
                         size: compact ? 18 : 24,
                       ),
                       onPressed: _hasTrace
@@ -256,7 +262,7 @@ class _TargetReplayViewState extends State<TargetReplayView>
                     Expanded(
                       child: Slider(
                         value: progress,
-                        activeColor: StsysTheme.primary,
+                        activeColor: StsysTheme.primaryOf(context),
                         onChanged: _hasTrace ? _seek : null,
                       ),
                     ),
@@ -266,13 +272,13 @@ class _TargetReplayViewState extends State<TargetReplayView>
                         fontFamily: 'Manrope',
                         fontSize: 11,
                         fontWeight: FontWeight.w800,
-                        color: StsysTheme.onSurface.withValues(alpha: 0.5),
+                        color: StsysTheme.onSurfaceOf(context).withValues(alpha: 0.5),
                       ),
                     ),
                     IconButton(
                       icon: Icon(
                         Icons.refresh,
-                        color: StsysTheme.onSurface.withValues(alpha: 0.5),
+                        color: StsysTheme.onSurfaceOf(context).withValues(alpha: 0.5),
                         size: compact ? 16 : 20,
                       ),
                       onPressed: _hasTrace ? _reset : null,
@@ -293,27 +299,32 @@ class _TargetReplayPainter extends CustomPainter {
   final ShotTracePath trace;
   final double progress;
   final bool isPlaying;
+  /// Theme colours are resolved by the caller: a CustomPainter has no
+  /// BuildContext, so it cannot look up the active theme itself.
+  final Color ringFillHold;
+  final Color ringFillPress;
+  final Color outlineVariant;
 
-  const _TargetReplayPainter({
+  _TargetReplayPainter({
     required this.trace,
     required this.progress,
     required this.isPlaying,
+    required this.ringFillHold,
+    required this.ringFillPress,
+    required this.outlineVariant,
   });
 
   static final Paint _ringStroke = Paint()
     ..style = PaintingStyle.stroke
     ..strokeWidth = 0.5;
 
-  static final Paint _ringFillHold = Paint()
-    ..style = PaintingStyle.fill
-    ..color = StsysTheme.surfaceContainerLow;
+  final Paint _ringFillHold = Paint()
+    ..style = PaintingStyle.fill;
 
-  static final Paint _ringFillPress = Paint()
-    ..style = PaintingStyle.fill
-    ..color = StsysTheme.surfaceContainerLowest;
+  final Paint _ringFillPress = Paint()
+    ..style = PaintingStyle.fill;
 
-  static final Paint _crosshair = Paint()
-    ..color = StsysTheme.outlineVariant.withValues(alpha: 0.3)
+  final Paint _crosshair = Paint()
     ..strokeWidth = 0.5;
 
   static final Paint _curve = Paint()
@@ -333,6 +344,12 @@ class _TargetReplayPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
+    // The theme colours arrive from the caller, so they are applied here
+    // rather than baked into the (pre-allocated) paint objects.
+    _ringFillHold.color = ringFillHold;
+    _ringFillPress.color = ringFillPress;
+    _crosshair.color = outlineVariant.withValues(alpha: 0.3);
+
     final cx = size.width / 2;
     final cy = size.height / 2;
     _paintTarget(canvas, size, cx, cy);
@@ -410,7 +427,7 @@ class _TargetReplayPainter extends CustomPainter {
       );
       canvas.drawOval(rect, i.isOdd ? _ringFillPress : _ringFillHold);
     }
-    _ringStroke.color = StsysTheme.outlineVariant.withValues(alpha: 0.4);
+    _ringStroke.color = outlineVariant.withValues(alpha: 0.4);
     for (var i = 5; i >= 1; i--) {
       final rect = Rect.fromCenter(
         center: Offset(cx, cy),
@@ -455,6 +472,9 @@ class _TargetReplayPainter extends CustomPainter {
   bool shouldRepaint(covariant _TargetReplayPainter oldDelegate) {
     return !identical(oldDelegate.trace, trace) ||
         oldDelegate.progress != progress ||
-        oldDelegate.isPlaying != isPlaying;
+        oldDelegate.isPlaying != isPlaying ||
+        oldDelegate.ringFillHold != ringFillHold ||
+        oldDelegate.ringFillPress != ringFillPress ||
+        oldDelegate.outlineVariant != outlineVariant;
   }
 }

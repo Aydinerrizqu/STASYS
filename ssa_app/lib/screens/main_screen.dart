@@ -38,7 +38,7 @@ class MainScreenState extends State<MainScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: StsysTheme.background,
+      backgroundColor: StsysTheme.backgroundOf(context),
       appBar: _buildAppBar(),
       body: IndexedStack(
         index: _currentIndex,
@@ -50,7 +50,7 @@ class MainScreenState extends State<MainScreen> {
 
   PreferredSizeWidget _buildAppBar() {
     return AppBar(
-      backgroundColor: StsysTheme.background,
+      backgroundColor: StsysTheme.backgroundOf(context),
       elevation: 0,
       automaticallyImplyLeading: false,
       title: Row(
@@ -58,7 +58,7 @@ class MainScreenState extends State<MainScreen> {
           Container(
             padding: const EdgeInsets.all(6),
             decoration: BoxDecoration(
-              color: StsysTheme.primary.withValues(alpha: 0.15),
+              color: StsysTheme.primaryOf(context).withValues(alpha: 0.15),
               borderRadius: BorderRadius.circular(8),
             ),
             child: const Image(
@@ -69,13 +69,13 @@ class MainScreenState extends State<MainScreen> {
             ),
           ),
           const SizedBox(width: 10),
-          const Text(
+          Text(
             'STASYS',
             style: TextStyle(
               fontFamily: 'Manrope',
               fontWeight: FontWeight.w900,
               fontSize: 22,
-              color: StsysTheme.primary,
+              color: StsysTheme.primaryOf(context),
               letterSpacing: -0.5,
             ),
           ),
@@ -100,10 +100,10 @@ class MainScreenState extends State<MainScreen> {
   Widget _buildBottomNav() {
     return Container(
       decoration: BoxDecoration(
-        color: StsysTheme.background,
+        color: StsysTheme.backgroundOf(context),
         border: Border(
           top: BorderSide(
-            color: StsysTheme.onSurface.withValues(alpha: 0.08),
+            color: StsysTheme.onSurfaceOf(context).withValues(alpha: 0.08),
             width: 1,
           ),
         ),
@@ -168,7 +168,7 @@ class _NavButton extends StatelessWidget {
         ),
         decoration: BoxDecoration(
           color: isActive
-              ? StsysTheme.primaryContainer.withValues(alpha: 0.15)
+              ? StsysTheme.primaryContainerOf(context).withValues(alpha: 0.15)
               : Colors.transparent,
           borderRadius: BorderRadius.circular(12),
         ),
@@ -178,8 +178,8 @@ class _NavButton extends StatelessWidget {
             Icon(
               isActive ? item.activeIcon : item.icon,
               color: isActive
-                  ? StsysTheme.primary
-                  : StsysTheme.onSurface.withValues(alpha: 0.4),
+                  ? StsysTheme.primaryOf(context)
+                  : StsysTheme.onSurfaceOf(context).withValues(alpha: 0.4),
               size: 22,
             ),
             const SizedBox(height: 4),
@@ -191,8 +191,8 @@ class _NavButton extends StatelessWidget {
                 fontWeight: FontWeight.w700,
                 letterSpacing: 1.5,
                 color: isActive
-                    ? StsysTheme.primary
-                    : StsysTheme.onSurface.withValues(alpha: 0.4),
+                    ? StsysTheme.primaryOf(context)
+                    : StsysTheme.onSurfaceOf(context).withValues(alpha: 0.4),
               ),
             ),
           ],

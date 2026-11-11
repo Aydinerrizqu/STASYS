@@ -22,7 +22,11 @@ class HomeTab extends StatelessWidget {
             SliverToBoxAdapter(
               child: Consumer<SensorDataProvider>(
                 builder: (context, sensor, _) {
-                  return _buildStatsHeader(sessions, sensor.batteryLevel);
+                  return _buildStatsHeader(
+                    context,
+                    sessions,
+                    sensor.batteryLevel,
+                  );
                 },
               ),
             ),
@@ -31,7 +35,7 @@ class HomeTab extends StatelessWidget {
             if (sessions.isEmpty)
               SliverFillRemaining(
                 hasScrollBody: false,
-                child: _buildEmptyState(),
+                child: _buildEmptyState(context),
               )
             else
               SliverPadding(
@@ -65,7 +69,11 @@ class HomeTab extends StatelessWidget {
     );
   }
 
-  Widget _buildStatsHeader(List<SessionLog> sessions, int batteryLevel) {
+  Widget _buildStatsHeader(
+    BuildContext context,
+    List<SessionLog> sessions,
+    int batteryLevel,
+  ) {
     if (sessions.isEmpty) return const SizedBox.shrink();
 
     final totalSessions = sessions.length;
@@ -80,7 +88,7 @@ class HomeTab extends StatelessWidget {
       margin: const EdgeInsets.fromLTRB(16, 16, 16, 8),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: StsysTheme.surfaceContainerLow,
+        color: StsysTheme.surfaceContainerLowOf(context),
         borderRadius: BorderRadius.circular(16),
       ),
       child: Row(
@@ -88,29 +96,29 @@ class HomeTab extends StatelessWidget {
           _StatBox(
             label: 'SESSIONS',
             value: '$totalSessions',
-            color: StsysTheme.primary,
+            color: StsysTheme.primaryOf(context),
           ),
           Container(
             width: 1,
             height: 40,
-            color: StsysTheme.outlineVariant.withValues(alpha: 0.3),
+            color: StsysTheme.outlineVariantOf(context).withValues(alpha: 0.3),
             margin: const EdgeInsets.symmetric(horizontal: 12),
           ),
           _StatBox(
             label: 'AVG SCORE',
             value: avgScore.toStringAsFixed(1),
-            color: StsysTheme.secondary,
+            color: StsysTheme.secondaryOf(context),
           ),
           Container(
             width: 1,
             height: 40,
-            color: StsysTheme.outlineVariant.withValues(alpha: 0.3),
+            color: StsysTheme.outlineVariantOf(context).withValues(alpha: 0.3),
             margin: const EdgeInsets.symmetric(horizontal: 12),
           ),
           _StatBox(
             label: 'TOTAL MIN',
             value: '${(totalDuration / 60).toStringAsFixed(0)}',
-            color: StsysTheme.tertiary,
+            color: StsysTheme.tertiaryOf(context),
           ),
           const Spacer(),
           // Battery indicator
@@ -120,7 +128,7 @@ class HomeTab extends StatelessWidget {
     );
   }
 
-  Widget _buildEmptyState() {
+  Widget _buildEmptyState(BuildContext context) {
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -128,7 +136,7 @@ class HomeTab extends StatelessWidget {
           Icon(
             Icons.ads_click_outlined,
             size: 64,
-            color: StsysTheme.onSurface.withValues(alpha: 0.15),
+            color: StsysTheme.onSurfaceOf(context).withValues(alpha: 0.15),
           ),
           const SizedBox(height: 16),
           Text(
@@ -138,7 +146,7 @@ class HomeTab extends StatelessWidget {
               fontWeight: FontWeight.w800,
               fontSize: 16,
               letterSpacing: 2,
-              color: StsysTheme.onSurface.withValues(alpha: 0.3),
+              color: StsysTheme.onSurfaceOf(context).withValues(alpha: 0.3),
             ),
           ),
           const SizedBox(height: 8),
@@ -147,7 +155,7 @@ class HomeTab extends StatelessWidget {
             style: TextStyle(
               fontFamily: 'Inter',
               fontSize: 12,
-              color: StsysTheme.onSurfaceVariant.withValues(alpha: 0.5),
+              color: StsysTheme.onSurfaceVariantOf(context).withValues(alpha: 0.5),
             ),
           ),
         ],
@@ -177,7 +185,7 @@ class HomeTab extends StatelessWidget {
               style: TextStyle(
                 fontFamily: 'Manrope',
                 fontWeight: FontWeight.w700,
-                color: StsysTheme.onSurfaceVariant,
+                color: StsysTheme.onSurfaceVariantOf(ctx),
                 letterSpacing: 1,
               ),
             ),
@@ -230,7 +238,7 @@ class _StatBox extends StatelessWidget {
               fontSize: 9,
               fontWeight: FontWeight.w700,
               letterSpacing: 1.5,
-              color: StsysTheme.onSurfaceVariant,
+              color: StsysTheme.onSurfaceVariantOf(context),
             ),
           ),
           const SizedBox(height: 4),
@@ -299,7 +307,7 @@ class _SessionCardState extends State<_SessionCard> {
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: StsysTheme.surfaceContainerLow,
+                color: StsysTheme.surfaceContainerLowOf(context),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Row(
@@ -317,7 +325,7 @@ class _SessionCardState extends State<_SessionCard> {
                             fontSize: 10,
                             fontWeight: FontWeight.w700,
                             letterSpacing: 1,
-                            color: StsysTheme.primary,
+                            color: StsysTheme.primaryOf(context),
                           ),
                         ),
                         const SizedBox(height: 4),
@@ -327,7 +335,7 @@ class _SessionCardState extends State<_SessionCard> {
                             fontFamily: 'Manrope',
                             fontSize: 20,
                             fontWeight: FontWeight.w700,
-                            color: StsysTheme.onSurface,
+                            color: StsysTheme.onSurfaceOf(context),
                           ),
                         ),
                         const SizedBox(height: 4),
@@ -337,10 +345,10 @@ class _SessionCardState extends State<_SessionCard> {
                             vertical: 2,
                           ),
                           decoration: BoxDecoration(
-                            color: StsysTheme.surfaceContainerHighest,
+                            color: StsysTheme.surfaceContainerHighestOf(context),
                             borderRadius: BorderRadius.circular(20),
                             border: Border.all(
-                              color: StsysTheme.outlineVariant.withValues(alpha: 0.2),
+                              color: StsysTheme.outlineVariantOf(context).withValues(alpha: 0.2),
                             ),
                           ),
                           child: Text(
@@ -350,7 +358,7 @@ class _SessionCardState extends State<_SessionCard> {
                               fontSize: 10,
                               fontWeight: FontWeight.w600,
                               letterSpacing: 1,
-                              color: StsysTheme.onSurface.withValues(alpha: 0.7),
+                              color: StsysTheme.onSurfaceOf(context).withValues(alpha: 0.7),
                             ),
                           ),
                         ),
@@ -369,7 +377,7 @@ class _SessionCardState extends State<_SessionCard> {
                             vertical: 8,
                           ),
                           decoration: BoxDecoration(
-                            color: StsysTheme.surfaceContainerHighest,
+                            color: StsysTheme.surfaceContainerHighestOf(context),
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: Row(
@@ -378,7 +386,7 @@ class _SessionCardState extends State<_SessionCard> {
                               Icon(
                                 Icons.ads_click,
                                 size: 14,
-                                color: StsysTheme.primary,
+                                color: StsysTheme.primaryOf(context),
                               ),
                               const SizedBox(width: 4),
                               Text(
@@ -387,7 +395,7 @@ class _SessionCardState extends State<_SessionCard> {
                                   fontFamily: 'Manrope',
                                   fontSize: 16,
                                   fontWeight: FontWeight.w800,
-                                  color: StsysTheme.onSurface,
+                                  color: StsysTheme.onSurfaceOf(context),
                                 ),
                               ),
                             ],
@@ -420,7 +428,7 @@ class _SessionCardState extends State<_SessionCard> {
                             fontSize: 9,
                             fontWeight: FontWeight.w500,
                             letterSpacing: 1.5,
-                            color: StsysTheme.onSurfaceVariant.withValues(alpha: 0.5),
+                            color: StsysTheme.onSurfaceVariantOf(context).withValues(alpha: 0.5),
                           ),
                         ),
                       ],

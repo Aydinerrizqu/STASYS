@@ -72,7 +72,7 @@ class _AnalysisTabState extends State<AnalysisTab> {
             fontSize: 14,
             fontWeight: FontWeight.w800,
             letterSpacing: 2,
-            color: StsysTheme.onSurface.withValues(alpha: 0.2),
+            color: StsysTheme.onSurfaceOf(context).withValues(alpha: 0.2),
           ),
         ),
       );
@@ -87,7 +87,7 @@ class _AnalysisTabState extends State<AnalysisTab> {
             fontSize: 14,
             fontWeight: FontWeight.w800,
             letterSpacing: 2,
-            color: StsysTheme.onSurface.withValues(alpha: 0.2),
+            color: StsysTheme.onSurfaceOf(context).withValues(alpha: 0.2),
           ),
         ),
       );
@@ -163,7 +163,7 @@ class _ShotChipStrip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      color: StsysTheme.surfaceContainerLow,
+      color: StsysTheme.surfaceContainerLowOf(context),
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -177,14 +177,14 @@ class _ShotChipStrip extends StatelessWidget {
                   fontSize: 9,
                   fontWeight: FontWeight.w700,
                   letterSpacing: 2,
-                  color: StsysTheme.onSurfaceVariant,
+                  color: StsysTheme.onSurfaceVariantOf(context),
                 ),
               ),
               const Spacer(),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                 decoration: BoxDecoration(
-                  color: StsysTheme.secondary.withValues(alpha: 0.15),
+                  color: StsysTheme.secondaryOf(context).withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(20),
                 ),
                 child: Text(
@@ -193,7 +193,7 @@ class _ShotChipStrip extends StatelessWidget {
                     fontFamily: 'Manrope',
                     fontSize: 10,
                     fontWeight: FontWeight.w800,
-                    color: StsysTheme.secondary,
+                    color: StsysTheme.secondaryOf(context),
                   ),
                 ),
               ),
@@ -219,12 +219,12 @@ class _ShotChipStrip extends StatelessWidget {
                     decoration: BoxDecoration(
                       color: isSelected
                           ? color.withValues(alpha: 0.15)
-                          : StsysTheme.surfaceContainerLow,
+                          : StsysTheme.surfaceContainerLowOf(context),
                       borderRadius: BorderRadius.circular(10),
                       border: Border.all(
                         color: isSelected
                             ? color
-                            : StsysTheme.outlineVariant.withValues(alpha: 0.2),
+                            : StsysTheme.outlineVariantOf(context).withValues(alpha: 0.2),
                         width: isSelected ? 2 : 1,
                       ),
                     ),
@@ -238,7 +238,7 @@ class _ShotChipStrip extends StatelessWidget {
                             fontSize: 8,
                             fontWeight: FontWeight.w700,
                             letterSpacing: 1,
-                            color: StsysTheme.onSurface.withValues(alpha: 0.4),
+                            color: StsysTheme.onSurfaceOf(context).withValues(alpha: 0.4),
                           ),
                         ),
                         const SizedBox(height: 4),
@@ -257,7 +257,7 @@ class _ShotChipStrip extends StatelessWidget {
                           style: TextStyle(
                             fontFamily: 'Inter',
                             fontSize: 8,
-                            color: StsysTheme.onSurface.withValues(alpha: 0.4),
+                            color: StsysTheme.onSurfaceOf(context).withValues(alpha: 0.4),
                           ),
                         ),
                       ],

@@ -23,7 +23,7 @@ class TrackingModeView extends StatelessWidget {
         final mode = settings.firearmType;
 
         return Scaffold(
-          backgroundColor: StsysTheme.surfaceContainerLowest,
+          backgroundColor: StsysTheme.surfaceContainerLowestOf(context),
           body: SafeArea(
             child: Column(
               children: [
@@ -31,10 +31,10 @@ class TrackingModeView extends StatelessWidget {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
                   decoration: BoxDecoration(
-                    color: StsysTheme.surfaceContainerLow,
+                    color: StsysTheme.surfaceContainerLowOf(context),
                     border: Border(
                       bottom: BorderSide(
-                        color: StsysTheme.outlineVariant.withValues(alpha: 0.2),
+                        color: StsysTheme.outlineVariantOf(context).withValues(alpha: 0.2),
                       ),
                     ),
                   ),
@@ -45,7 +45,7 @@ class TrackingModeView extends StatelessWidget {
                         child: Container(
                           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                           decoration: BoxDecoration(
-                            color: StsysTheme.surfaceContainerHigh,
+                            color: StsysTheme.surfaceContainerHighOf(context),
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: Row(
@@ -54,7 +54,7 @@ class TrackingModeView extends StatelessWidget {
                               Icon(
                                 Icons.arrow_back,
                                 size: 16,
-                                color: StsysTheme.onSurface.withValues(alpha: 0.7),
+                                color: StsysTheme.onSurfaceOf(context).withValues(alpha: 0.7),
                               ),
                               const SizedBox(width: 4),
                               Text(
@@ -64,7 +64,7 @@ class TrackingModeView extends StatelessWidget {
                                   fontSize: 10,
                                   fontWeight: FontWeight.w700,
                                   letterSpacing: 1.5,
-                                  color: StsysTheme.onSurface.withValues(alpha: 0.7),
+                                  color: StsysTheme.onSurfaceOf(context).withValues(alpha: 0.7),
                                 ),
                               ),
                             ],
@@ -80,12 +80,12 @@ class TrackingModeView extends StatelessWidget {
                         ),
                         child: Text(
                           mode.displayName.toUpperCase(),
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontFamily: 'Manrope',
                             fontSize: 12,
                             fontWeight: FontWeight.w800,
                             letterSpacing: 1.5,
-                            color: StsysTheme.onPrimary,
+                            color: StsysTheme.onGradientOf(context),
                           ),
                         ),
                       ),
@@ -114,7 +114,7 @@ class TrackingModeView extends StatelessWidget {
                                     style: TextStyle(
                                       fontFamily: 'Manrope',
                                       fontWeight: FontWeight.w700,
-                                      color: StsysTheme.onSurfaceVariant,
+                                      color: StsysTheme.onSurfaceVariantOf(context),
                                     ),
                                   ),
                                 ),
@@ -128,7 +128,7 @@ class TrackingModeView extends StatelessWidget {
                                     style: TextStyle(
                                       fontFamily: 'Manrope',
                                       fontWeight: FontWeight.w800,
-                                      color: StsysTheme.primary,
+                                      color: StsysTheme.primaryOf(context),
                                     ),
                                   ),
                                 ),
@@ -139,7 +139,7 @@ class TrackingModeView extends StatelessWidget {
                         child: Container(
                           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                           decoration: BoxDecoration(
-                            color: StsysTheme.surfaceContainerHigh,
+                            color: StsysTheme.surfaceContainerHighOf(context),
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: Row(
@@ -148,7 +148,7 @@ class TrackingModeView extends StatelessWidget {
                               Icon(
                                 Icons.swap_horiz,
                                 size: 16,
-                                color: StsysTheme.primary,
+                                color: StsysTheme.primaryOf(context),
                               ),
                               const SizedBox(width: 4),
                               Text(
@@ -158,7 +158,7 @@ class TrackingModeView extends StatelessWidget {
                                   fontSize: 10,
                                   fontWeight: FontWeight.w700,
                                   letterSpacing: 1.5,
-                                  color: StsysTheme.primary,
+                                  color: StsysTheme.primaryOf(context),
                                 ),
                               ),
                             ],

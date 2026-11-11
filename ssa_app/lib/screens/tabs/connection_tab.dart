@@ -33,7 +33,7 @@ class ConnectionTab extends StatelessWidget {
                     child: _ActionBtn(
                       icon: Icons.search,
                       label: 'SCAN',
-                      color: StsysTheme.primary,
+                      color: StsysTheme.primaryOf(context),
                       isLoading: btProvider.isScanning,
                       onTap: btProvider.isScanning
                           ? null
@@ -45,7 +45,7 @@ class ConnectionTab extends StatelessWidget {
                     child: _ActionBtn(
                       icon: Icons.bluetooth_searching,
                       label: 'PAIRED',
-                      color: StsysTheme.secondary,
+                      color: StsysTheme.secondaryOf(context),
                       onTap: btProvider.getBondedDevices,
                     ),
                   ),
@@ -55,14 +55,14 @@ class ConnectionTab extends StatelessWidget {
               const SizedBox(height: 24),
 
               // Device List
-              const Text(
+              Text(
                 'AVAILABLE DEVICES',
                 style: TextStyle(
                   fontFamily: 'Inter',
                   fontSize: 10,
                   fontWeight: FontWeight.w700,
                   letterSpacing: 2,
-                  color: StsysTheme.onSurfaceVariant,
+                  color: StsysTheme.onSurfaceVariantOf(context),
                 ),
               ),
 
@@ -83,9 +83,9 @@ class ConnectionTab extends StatelessWidget {
                           SnackBar(
                             content: Text(
                               'Failed to connect',
-                              style: StsysText.body.copyWith(color: StsysTheme.onSurface),
+                              style: StsysText.body.copyWith(color: StsysTheme.onSurfaceOf(context)),
                             ),
-                            backgroundColor: StsysTheme.surfaceContainerHigh,
+                            backgroundColor: StsysTheme.surfaceContainerHighOf(context),
                           ),
                         );
                       }
@@ -119,13 +119,13 @@ class _ConnectionStatusCard extends StatelessWidget {
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: isConnected
-            ? StsysTheme.primary.withValues(alpha: 0.1)
-            : StsysTheme.error.withValues(alpha: 0.1),
+            ? StsysTheme.primaryOf(context).withValues(alpha: 0.1)
+            : StsysTheme.errorOf(context).withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
           color: isConnected
-              ? StsysTheme.primary.withValues(alpha: 0.3)
-              : StsysTheme.error.withValues(alpha: 0.3),
+              ? StsysTheme.primaryOf(context).withValues(alpha: 0.3)
+              : StsysTheme.errorOf(context).withValues(alpha: 0.3),
         ),
       ),
       child: Row(
@@ -134,15 +134,15 @@ class _ConnectionStatusCard extends StatelessWidget {
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
               color: isConnected
-                  ? StsysTheme.primary.withValues(alpha: 0.2)
-                  : StsysTheme.error.withValues(alpha: 0.2),
+                  ? StsysTheme.primaryOf(context).withValues(alpha: 0.2)
+                  : StsysTheme.errorOf(context).withValues(alpha: 0.2),
               borderRadius: BorderRadius.circular(12),
             ),
             child: Icon(
               isConnected
                   ? Icons.bluetooth_connected
                   : Icons.bluetooth_disabled,
-              color: isConnected ? StsysTheme.primary : StsysTheme.error,
+              color: isConnected ? StsysTheme.primaryOf(context) : StsysTheme.errorOf(context),
               size: 24,
             ),
           ),
@@ -158,7 +158,7 @@ class _ConnectionStatusCard extends StatelessWidget {
                     fontSize: 16,
                     fontWeight: FontWeight.w800,
                     color:
-                        isConnected ? StsysTheme.primary : StsysTheme.error,
+                        isConnected ? StsysTheme.primaryOf(context) : StsysTheme.errorOf(context),
                     letterSpacing: 0.5,
                   ),
                 ),
@@ -169,7 +169,7 @@ class _ConnectionStatusCard extends StatelessWidget {
                     style: TextStyle(
                       fontFamily: 'Inter',
                       fontSize: 11,
-                      color: StsysTheme.onSurfaceVariant.withValues(alpha: 0.6),
+                      color: StsysTheme.onSurfaceVariantOf(context).withValues(alpha: 0.6),
                       letterSpacing: 1,
                     ),
                   ),
@@ -181,7 +181,7 @@ class _ConnectionStatusCard extends StatelessWidget {
                     style: TextStyle(
                       fontFamily: 'Inter',
                       fontSize: 11,
-                      color: StsysTheme.onSurfaceVariant.withValues(alpha: 0.5),
+                      color: StsysTheme.onSurfaceVariantOf(context).withValues(alpha: 0.5),
                     ),
                   ),
                 ],
@@ -194,12 +194,12 @@ class _ConnectionStatusCard extends StatelessWidget {
               child: Container(
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
-                  color: StsysTheme.error.withValues(alpha: 0.15),
+                  color: StsysTheme.errorOf(context).withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: const Icon(
+                child: Icon(
                   Icons.bluetooth_disabled,
-                  color: StsysTheme.error,
+                  color: StsysTheme.errorOf(context),
                   size: 20,
                 ),
               ),
@@ -240,7 +240,7 @@ class _ActionBtn extends StatelessWidget {
                   end: Alignment.bottomCenter,
                 )
               : null,
-          color: enabled ? null : StsysTheme.surfaceContainerHigh,
+          color: enabled ? null : StsysTheme.surfaceContainerHighOf(context),
           borderRadius: BorderRadius.circular(12),
         ),
         child: Row(
@@ -252,7 +252,7 @@ class _ActionBtn extends StatelessWidget {
                 height: 18,
                 child: CircularProgressIndicator(
                   strokeWidth: 2,
-                  color: StsysTheme.onSurface.withValues(alpha: 0.4),
+                  color: StsysTheme.onSurfaceOf(context).withValues(alpha: 0.4),
                 ),
               )
             else
@@ -260,8 +260,8 @@ class _ActionBtn extends StatelessWidget {
                 icon,
                 size: 18,
                 color: enabled
-                    ? StsysTheme.onPrimary
-                    : StsysTheme.onSurface.withValues(alpha: 0.3),
+                    ? StsysTheme.onPrimaryOf(context)
+                    : StsysTheme.onSurfaceOf(context).withValues(alpha: 0.3),
               ),
             const SizedBox(width: 8),
             Text(
@@ -272,8 +272,8 @@ class _ActionBtn extends StatelessWidget {
                 fontSize: 12,
                 letterSpacing: 1.5,
                 color: enabled
-                    ? StsysTheme.onPrimary
-                    : StsysTheme.onSurface.withValues(alpha: 0.3),
+                    ? StsysTheme.onPrimaryOf(context)
+                    : StsysTheme.onSurfaceOf(context).withValues(alpha: 0.3),
               ),
             ),
           ],
@@ -303,12 +303,12 @@ class _DeviceCard extends StatelessWidget {
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           color: isConnected
-              ? StsysTheme.primary.withValues(alpha: 0.08)
-              : StsysTheme.surfaceContainerLow,
+              ? StsysTheme.primaryOf(context).withValues(alpha: 0.08)
+              : StsysTheme.surfaceContainerLowOf(context),
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
             color: isConnected
-                ? StsysTheme.primary.withValues(alpha: 0.3)
+                ? StsysTheme.primaryOf(context).withValues(alpha: 0.3)
                 : Colors.transparent,
           ),
         ),
@@ -318,15 +318,15 @@ class _DeviceCard extends StatelessWidget {
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
                 color: isConnected
-                    ? StsysTheme.primary.withValues(alpha: 0.2)
-                    : StsysTheme.surfaceContainerHigh,
+                    ? StsysTheme.primaryOf(context).withValues(alpha: 0.2)
+                    : StsysTheme.surfaceContainerHighOf(context),
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Icon(
                 Icons.bluetooth,
                 color: isConnected
-                    ? StsysTheme.primary
-                    : StsysTheme.secondary,
+                    ? StsysTheme.primaryOf(context)
+                    : StsysTheme.secondaryOf(context),
                 size: 20,
               ),
             ),
@@ -342,7 +342,7 @@ class _DeviceCard extends StatelessWidget {
                       fontSize: 15,
                       fontWeight:
                           isConnected ? FontWeight.w800 : FontWeight.w600,
-                      color: StsysTheme.onSurface,
+                      color: StsysTheme.onSurfaceOf(context),
                     ),
                   ),
                   const SizedBox(height: 2),
@@ -352,7 +352,7 @@ class _DeviceCard extends StatelessWidget {
                       fontFamily: 'Inter',
                       fontSize: 10,
                       letterSpacing: 1,
-                      color: StsysTheme.onSurfaceVariant.withValues(alpha: 0.5),
+                      color: StsysTheme.onSurfaceVariantOf(context).withValues(alpha: 0.5),
                     ),
                   ),
                 ],
@@ -365,7 +365,7 @@ class _DeviceCard extends StatelessWidget {
                   vertical: 4,
                 ),
                 decoration: BoxDecoration(
-                  color: StsysTheme.primary.withValues(alpha: 0.2),
+                  color: StsysTheme.primaryOf(context).withValues(alpha: 0.2),
                   borderRadius: BorderRadius.circular(20),
                 ),
                 child: Row(
@@ -374,7 +374,7 @@ class _DeviceCard extends StatelessWidget {
                     Icon(
                       Icons.check_circle,
                       size: 14,
-                      color: StsysTheme.primary,
+                      color: StsysTheme.primaryOf(context),
                     ),
                     const SizedBox(width: 4),
                     Text(
@@ -384,7 +384,7 @@ class _DeviceCard extends StatelessWidget {
                         fontSize: 9,
                         fontWeight: FontWeight.w800,
                         letterSpacing: 1.5,
-                        color: StsysTheme.primary,
+                        color: StsysTheme.primaryOf(context),
                       ),
                     ),
                   ],
@@ -394,7 +394,7 @@ class _DeviceCard extends StatelessWidget {
               Icon(
                 Icons.arrow_forward_ios,
                 size: 14,
-                color: StsysTheme.onSurfaceVariant.withValues(alpha: 0.3),
+                color: StsysTheme.onSurfaceVariantOf(context).withValues(alpha: 0.3),
               ),
           ],
         ),
@@ -413,7 +413,7 @@ class _EmptyDevicesState extends StatelessWidget {
           Icon(
             Icons.bluetooth_searching,
             size: 48,
-            color: StsysTheme.onSurfaceVariant.withValues(alpha: 0.2),
+            color: StsysTheme.onSurfaceVariantOf(context).withValues(alpha: 0.2),
           ),
           const SizedBox(height: 12),
           Text(
@@ -423,7 +423,7 @@ class _EmptyDevicesState extends StatelessWidget {
               fontSize: 12,
               fontWeight: FontWeight.w700,
               letterSpacing: 2,
-              color: StsysTheme.onSurfaceVariant.withValues(alpha: 0.4),
+              color: StsysTheme.onSurfaceVariantOf(context).withValues(alpha: 0.4),
             ),
           ),
           const SizedBox(height: 4),
@@ -432,7 +432,7 @@ class _EmptyDevicesState extends StatelessWidget {
             style: TextStyle(
               fontFamily: 'Inter',
               fontSize: 11,
-              color: StsysTheme.onSurfaceVariant.withValues(alpha: 0.3),
+              color: StsysTheme.onSurfaceVariantOf(context).withValues(alpha: 0.3),
             ),
             textAlign: TextAlign.center,
           ),

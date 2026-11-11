@@ -53,7 +53,7 @@ class SettingsTab extends StatelessWidget {
                     fontFamily: 'Inter',
                     fontSize: 10,
                     letterSpacing: 1.5,
-                    color: StsysTheme.onSurfaceVariant.withValues(alpha: 0.3),
+                    color: StsysTheme.onSurfaceVariantOf(context).withValues(alpha: 0.3),
                   ),
                 ),
               ),
@@ -74,12 +74,12 @@ class _SectionHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     return Text(
       text,
-      style: const TextStyle(
+      style: TextStyle(
         fontFamily: 'Inter',
         fontSize: 10,
         fontWeight: FontWeight.w700,
         letterSpacing: 2,
-        color: StsysTheme.onSurfaceVariant,
+        color: StsysTheme.onSurfaceVariantOf(context),
       ),
     );
   }
@@ -115,12 +115,12 @@ class _ModeGrid extends StatelessWidget {
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
               gradient: isActive ? StsysTheme.tacticalGradient : null,
-              color: isActive ? null : StsysTheme.surfaceContainerHigh,
+              color: isActive ? null : StsysTheme.surfaceContainerHighOf(context),
               borderRadius: BorderRadius.circular(12),
               border: isActive
                   ? null
                   : Border.all(
-                      color: StsysTheme.outlineVariant.withValues(alpha: 0.15),
+                      color: StsysTheme.outlineVariantOf(context).withValues(alpha: 0.15),
                     ),
             ),
             child: Column(
@@ -134,8 +134,8 @@ class _ModeGrid extends StatelessWidget {
                     fontSize: 18,
                     fontWeight: FontWeight.w900,
                     color: isActive
-                        ? StsysTheme.onPrimary
-                        : StsysTheme.onSurface,
+                        ? StsysTheme.onGradientOf(context)
+                        : StsysTheme.onSurfaceOf(context),
                   ),
                 ),
                 Text(
@@ -145,8 +145,8 @@ class _ModeGrid extends StatelessWidget {
                     fontSize: 9,
                     letterSpacing: 1,
                     color: isActive
-                        ? StsysTheme.onPrimary.withValues(alpha: 0.7)
-                        : StsysTheme.onSurfaceVariant,
+                        ? StsysTheme.onGradientOf(context).withValues(alpha: 0.7)
+                        : StsysTheme.onSurfaceVariantOf(context),
                   ),
                 ),
               ],
@@ -187,12 +187,12 @@ class _SpatialGrid extends StatelessWidget {
                   padding: const EdgeInsets.symmetric(vertical: 12),
                   decoration: BoxDecoration(
                     color: isActive
-                        ? StsysTheme.primary.withValues(alpha: 0.15)
-                        : StsysTheme.surfaceContainerHigh,
+                        ? StsysTheme.primaryOf(context).withValues(alpha: 0.15)
+                        : StsysTheme.surfaceContainerHighOf(context),
                     borderRadius: BorderRadius.circular(8),
                     border: Border.all(
                       color: isActive
-                          ? StsysTheme.primary.withValues(alpha: 0.3)
+                          ? StsysTheme.primaryOf(context).withValues(alpha: 0.3)
                           : Colors.transparent,
                     ),
                   ),
@@ -205,8 +205,8 @@ class _SpatialGrid extends StatelessWidget {
                         fontWeight: FontWeight.w800,
                         letterSpacing: 1,
                         color: isActive
-                            ? StsysTheme.primary
-                            : StsysTheme.onSurface.withValues(alpha: 0.5),
+                            ? StsysTheme.primaryOf(context)
+                            : StsysTheme.onSurfaceOf(context).withValues(alpha: 0.5),
                       ),
                     ),
                   ),
@@ -223,7 +223,7 @@ class _SpatialGrid extends StatelessWidget {
               child: Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: StsysTheme.surfaceContainerLow,
+                  color: StsysTheme.surfaceContainerLowOf(context),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Row(
@@ -235,7 +235,7 @@ class _SpatialGrid extends StatelessWidget {
                         fontSize: 9,
                         fontWeight: FontWeight.w700,
                         letterSpacing: 1.5,
-                        color: StsysTheme.onSurfaceVariant.withValues(alpha: 0.5),
+                        color: StsysTheme.onSurfaceVariantOf(context).withValues(alpha: 0.5),
                       ),
                     ),
                     const Spacer(),
@@ -258,7 +258,7 @@ class _SpatialGrid extends StatelessWidget {
               child: Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: StsysTheme.surfaceContainerLow,
+                  color: StsysTheme.surfaceContainerLowOf(context),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Column(
@@ -271,7 +271,7 @@ class _SpatialGrid extends StatelessWidget {
                         fontSize: 9,
                         fontWeight: FontWeight.w700,
                         letterSpacing: 1.5,
-                        color: StsysTheme.onSurfaceVariant.withValues(alpha: 0.5),
+                        color: StsysTheme.onSurfaceVariantOf(context).withValues(alpha: 0.5),
                       ),
                     ),
                     const SizedBox(height: 8),
@@ -283,10 +283,10 @@ class _SpatialGrid extends StatelessWidget {
                         width: double.infinity,
                         padding: const EdgeInsets.symmetric(vertical: 8),
                         decoration: BoxDecoration(
-                          color: StsysTheme.surfaceContainerHighest,
+                          color: StsysTheme.surfaceContainerHighestOf(context),
                           borderRadius: BorderRadius.circular(6),
                           border: Border.all(
-                            color: StsysTheme.outlineVariant.withValues(alpha: 0.3),
+                            color: StsysTheme.outlineVariantOf(context).withValues(alpha: 0.3),
                           ),
                         ),
                         child: Center(
@@ -297,7 +297,7 @@ class _SpatialGrid extends StatelessWidget {
                               fontSize: 10,
                               fontWeight: FontWeight.w800,
                               letterSpacing: 1,
-                              color: StsysTheme.onSurface.withValues(alpha: 0.7),
+                              color: StsysTheme.onSurfaceOf(context).withValues(alpha: 0.7),
                             ),
                           ),
                         ),
@@ -338,12 +338,12 @@ class _MiniToggle extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
             decoration: BoxDecoration(
               color: isActive
-                  ? StsysTheme.secondary.withValues(alpha: 0.2)
+                  ? StsysTheme.secondaryOf(context).withValues(alpha: 0.2)
                   : Colors.transparent,
               borderRadius: BorderRadius.circular(4),
               border: Border.all(
                 color: isActive
-                    ? StsysTheme.secondary.withValues(alpha: 0.3)
+                    ? StsysTheme.secondaryOf(context).withValues(alpha: 0.3)
                     : Colors.transparent,
               ),
             ),
@@ -354,8 +354,8 @@ class _MiniToggle extends StatelessWidget {
                 fontSize: 10,
                 fontWeight: FontWeight.w800,
                 color: isActive
-                    ? StsysTheme.secondary
-                    : StsysTheme.onSurfaceVariant.withValues(alpha: 0.5),
+                    ? StsysTheme.secondaryOf(context)
+                    : StsysTheme.onSurfaceVariantOf(context).withValues(alpha: 0.5),
               ),
             ),
           ),
@@ -374,7 +374,7 @@ class _GraphDurationSlider extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: StsysTheme.surfaceContainerLow,
+        color: StsysTheme.surfaceContainerLowOf(context),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Column(
@@ -389,7 +389,7 @@ class _GraphDurationSlider extends StatelessWidget {
                   fontSize: 10,
                   fontWeight: FontWeight.w700,
                   letterSpacing: 1.5,
-                  color: StsysTheme.onSurfaceVariant,
+                  color: StsysTheme.onSurfaceVariantOf(context),
                 ),
               ),
               const Spacer(),
@@ -399,16 +399,16 @@ class _GraphDurationSlider extends StatelessWidget {
                   vertical: 4,
                 ),
                 decoration: BoxDecoration(
-                  color: StsysTheme.primary.withValues(alpha: 0.15),
+                  color: StsysTheme.primaryOf(context).withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(20),
                 ),
                 child: Text(
                   '${settings.maxSamples}s',
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontFamily: 'Manrope',
                     fontSize: 12,
                     fontWeight: FontWeight.w800,
-                    color: StsysTheme.primary,
+                    color: StsysTheme.primaryOf(context),
                   ),
                 ),
               ),
@@ -417,10 +417,10 @@ class _GraphDurationSlider extends StatelessWidget {
           SliderTheme(
             data: SliderThemeData(
               trackHeight: 4,
-              thumbColor: StsysTheme.primary,
-              activeTrackColor: StsysTheme.primary,
-              inactiveTrackColor: StsysTheme.surfaceContainerHighest,
-              overlayColor: StsysTheme.primary.withValues(alpha: 0.2),
+              thumbColor: StsysTheme.primaryOf(context),
+              activeTrackColor: StsysTheme.primaryOf(context),
+              inactiveTrackColor: StsysTheme.surfaceContainerHighestOf(context),
+              overlayColor: StsysTheme.primaryOf(context).withValues(alpha: 0.2),
             ),
             child: Slider(
               value: settings.maxSamples.toDouble(),
@@ -438,7 +438,7 @@ class _GraphDurationSlider extends StatelessWidget {
                 style: TextStyle(
                   fontFamily: 'Inter',
                   fontSize: 10,
-                  color: StsysTheme.onSurfaceVariant.withValues(alpha: 0.4),
+                  color: StsysTheme.onSurfaceVariantOf(context).withValues(alpha: 0.4),
                 ),
               ),
               Text(
@@ -446,7 +446,7 @@ class _GraphDurationSlider extends StatelessWidget {
                 style: TextStyle(
                   fontFamily: 'Inter',
                   fontSize: 10,
-                  color: StsysTheme.onSurfaceVariant.withValues(alpha: 0.4),
+                  color: StsysTheme.onSurfaceVariantOf(context).withValues(alpha: 0.4),
                 ),
               ),
             ],
@@ -474,7 +474,7 @@ class _ScoringGuide extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: StsysTheme.surfaceContainerLow,
+        color: StsysTheme.surfaceContainerLowOf(context),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Column(
@@ -500,7 +500,7 @@ class _ScoringGuide extends StatelessWidget {
                           fontSize: 11,
                           fontWeight: FontWeight.w700,
                           letterSpacing: 1,
-                          color: StsysTheme.onSurface,
+                          color: StsysTheme.onSurfaceOf(context),
                         ),
                       ),
                     ),
@@ -510,14 +510,14 @@ class _ScoringGuide extends StatelessWidget {
                         fontFamily: 'Manrope',
                         fontSize: 11,
                         fontWeight: FontWeight.w700,
-                        color: StsysTheme.onSurfaceVariant.withValues(alpha: 0.4),
+                        color: StsysTheme.onSurfaceVariantOf(context).withValues(alpha: 0.4),
                       ),
                     ),
                   ],
                 ),
               )),
           const SizedBox(height: 8),
-          Divider(color: StsysTheme.outlineVariant.withValues(alpha: 0.3), thickness: 1),
+          Divider(color: StsysTheme.outlineVariantOf(context).withValues(alpha: 0.3), thickness: 1),
           const SizedBox(height: 8),
           Text(
             'Difficulty: ${settings.firearmType.displayName} • ${settings.trainingMode.displayName}',
@@ -525,7 +525,7 @@ class _ScoringGuide extends StatelessWidget {
               fontFamily: 'Inter',
               fontSize: 10,
               letterSpacing: 1,
-              color: StsysTheme.onSurfaceVariant.withValues(alpha: 0.5),
+              color: StsysTheme.onSurfaceVariantOf(context).withValues(alpha: 0.5),
             ),
           ),
         ],

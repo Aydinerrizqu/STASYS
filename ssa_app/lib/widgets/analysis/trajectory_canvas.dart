@@ -53,9 +53,9 @@ class TrajectoryCanvas extends StatelessWidget {
                   ),
                 ),
                 const Spacer(),
-                _legendChip('PATH', const Color(0xFFFFB693)),
+                _legendChip(context, 'PATH', const Color(0xFFFFB693)),
                 const SizedBox(width: 6),
-                _legendChip('HIT', const Color(0xFF4CAF50)),
+                _legendChip(context, 'HIT', const Color(0xFF4CAF50)),
                 const SizedBox(width: 12),
                 Text(
                   '${targetDistanceM.toStringAsFixed(0)}m',
@@ -94,6 +94,12 @@ class TrajectoryCanvas extends StatelessWidget {
                             getScoreColor: getScoreColor,
                             targetDistanceM: targetDistanceM,
                             frameIndex: frameIndex,
+                            gridColor: StsysTheme.outlineVariantOf(context),
+                            ringColor: StsysTheme.outlineVariantOf(context),
+                            crosshairColor: StsysTheme.secondaryOf(context),
+                            traceColor: StsysTheme.primaryOf(context),
+                            mutedTextColor:
+                                StsysTheme.onSurfaceVariantOf(context),
                           ),
                           size: Size.infinite,
                         ),
@@ -147,7 +153,7 @@ class TrajectoryCanvas extends StatelessWidget {
     }
   }
 
-  Widget _legendChip(String label, Color color) {
+  Widget _legendChip(BuildContext context, String label, Color color) {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -167,7 +173,7 @@ class TrajectoryCanvas extends StatelessWidget {
             fontSize: 8,
             fontWeight: FontWeight.w700,
             letterSpacing: 1,
-            color: StsysTheme.onSurface.withValues(alpha: 0.5),
+            color: StsysTheme.onSurfaceOf(context).withValues(alpha: 0.5),
           ),
         ),
       ],

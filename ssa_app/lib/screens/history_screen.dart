@@ -160,10 +160,10 @@ class _HistoryScreenState extends State<HistoryScreen>
                           padding: const EdgeInsets.only(right: 20),
                           margin: const EdgeInsets.only(bottom: 12),
                           decoration: BoxDecoration(
-                            color: StsysTheme.error.withValues(alpha: 0.2),
+                            color: StsysTheme.errorOf(context).withValues(alpha: 0.2),
                             borderRadius: BorderRadius.circular(12),
                           ),
-                          child: Icon(Icons.delete, color: StsysTheme.error),
+                          child: Icon(Icons.delete, color: StsysTheme.errorOf(context)),
                         ),
                         confirmDismiss: (_) async {
                           return await showDialog<bool>(
@@ -416,7 +416,7 @@ class _HistoryScreenState extends State<HistoryScreen>
                                             child: Container(
                                               padding: const EdgeInsets.all(4),
                                               decoration: BoxDecoration(
-                                                color: StsysTheme.secondary
+                                                color: StsysTheme.secondaryOf(context)
                                                     .withValues(alpha: 0.15),
                                                 borderRadius:
                                                     BorderRadius.circular(6),
@@ -424,7 +424,7 @@ class _HistoryScreenState extends State<HistoryScreen>
                                               child: Icon(
                                                 Icons.timeline,
                                                 size: 14,
-                                                color: StsysTheme.secondary,
+                                                color: StsysTheme.secondaryOf(context),
                                               ),
                                             ),
                                           ),
@@ -567,7 +567,7 @@ class _HistoryScreenState extends State<HistoryScreen>
                   child: Icon(
                     Icons.delete_sweep,
                     size: 20,
-                    color: StsysTheme.error.withValues(alpha: 0.7),
+                    color: StsysTheme.errorOf(context).withValues(alpha: 0.7),
                   ),
                 ),
               );

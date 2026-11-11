@@ -134,7 +134,7 @@ class _ReplayShotWidgetState extends State<ReplayShotWidget>
     return Container(
       margin: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: StsysTheme.surfaceContainerLow,
+        color: StsysTheme.surfaceContainerLowOf(context),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Column(
@@ -171,12 +171,12 @@ class _ReplayShotWidgetState extends State<ReplayShotWidget>
                     children: [
                       Text(
                         'SHOT #${widget.shotIndex + 1} — REPLAY'.toUpperCase(),
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontFamily: 'Inter',
                           fontSize: 9,
                           fontWeight: FontWeight.w700,
                           letterSpacing: 1.5,
-                          color: StsysTheme.secondary,
+                          color: StsysTheme.secondaryOf(context),
                         ),
                       ),
                       const SizedBox(height: 4),
@@ -199,7 +199,7 @@ class _ReplayShotWidgetState extends State<ReplayShotWidget>
                     IconButton(
                       icon: Icon(
                         _isPlaying ? Icons.stop : Icons.play_arrow,
-                        color: StsysTheme.secondary,
+                        color: StsysTheme.secondaryOf(context),
                         size: 24,
                       ),
                       onPressed: _isPlaying ? _stop : _play,
@@ -208,7 +208,7 @@ class _ReplayShotWidgetState extends State<ReplayShotWidget>
                     IconButton(
                       icon: Icon(
                         Icons.refresh,
-                        color: StsysTheme.onSurface.withValues(alpha: 0.5),
+                        color: StsysTheme.onSurfaceOf(context).withValues(alpha: 0.5),
                         size: 20,
                       ),
                       onPressed: () => _stop(),
@@ -225,7 +225,7 @@ class _ReplayShotWidgetState extends State<ReplayShotWidget>
             child: Container(
               margin: const EdgeInsets.fromLTRB(12, 0, 12, 8),
               decoration: BoxDecoration(
-                color: StsysTheme.surfaceContainerLowest,
+                color: StsysTheme.surfaceContainerLowestOf(context),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: ClipRRect(
@@ -258,7 +258,7 @@ class _ReplayShotWidgetState extends State<ReplayShotWidget>
                       : (_dotX != 0.0 || _dotY != 0.0 ? 1.0 : 0.0),
                   minHeight: 4,
                   borderRadius: BorderRadius.circular(2),
-                  backgroundColor: StsysTheme.surfaceContainerHighest,
+                  backgroundColor: StsysTheme.surfaceContainerHighestOf(context),
                   valueColor: AlwaysStoppedAnimation(
                     color.withValues(alpha: 0.8),
                   ),

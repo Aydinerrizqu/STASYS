@@ -53,14 +53,14 @@ class _GraphTabState extends State<GraphTab> with SingleTickerProviderStateMixin
 
         // Tab Bar
         Container(
-          color: StsysTheme.surfaceContainerLow,
+          color: StsysTheme.surfaceContainerLowOf(context),
           child: TabBar(
             controller: _tabController,
-            indicatorColor: StsysTheme.primary,
+            indicatorColor: StsysTheme.primaryOf(context),
             indicatorWeight: 3,
-            labelColor: StsysTheme.primary,
-            unselectedLabelColor: StsysTheme.onSurface.withValues(alpha: 0.5),
-            dividerColor: StsysTheme.outlineVariant.withValues(alpha: 0.3),
+            labelColor: StsysTheme.primaryOf(context),
+            unselectedLabelColor: StsysTheme.onSurfaceOf(context).withValues(alpha: 0.5),
+            dividerColor: StsysTheme.outlineVariantOf(context).withValues(alpha: 0.3),
             labelStyle: const TextStyle(
               fontFamily: 'Manrope',
               fontSize: 12,
@@ -86,7 +86,7 @@ class _GraphTabState extends State<GraphTab> with SingleTickerProviderStateMixin
             children: [
               // TRACE TAB
               Container(
-                color: StsysTheme.surfaceContainerLowest,
+                color: StsysTheme.surfaceContainerLowestOf(context),
                 padding: const EdgeInsets.all(16),
                 child: Column(
                   children: [
@@ -99,10 +99,10 @@ class _GraphTabState extends State<GraphTab> with SingleTickerProviderStateMixin
                             vertical: 4,
                           ),
                           decoration: BoxDecoration(
-                            color: StsysTheme.primary.withValues(alpha: 0.15),
+                            color: StsysTheme.primaryOf(context).withValues(alpha: 0.15),
                             borderRadius: BorderRadius.circular(20),
                             border: Border.all(
-                              color: StsysTheme.primary.withValues(alpha: 0.3),
+                              color: StsysTheme.primaryOf(context).withValues(alpha: 0.3),
                             ),
                           ),
                           child: Row(
@@ -112,19 +112,19 @@ class _GraphTabState extends State<GraphTab> with SingleTickerProviderStateMixin
                                 width: 6,
                                 height: 6,
                                 decoration: BoxDecoration(
-                                  color: StsysTheme.primary,
+                                  color: StsysTheme.primaryOf(context),
                                   shape: BoxShape.circle,
                                 ),
                               ),
                               const SizedBox(width: 6),
-                              const Text(
+                              Text(
                                 'LIVE STREAM',
                                 style: TextStyle(
                                   fontFamily: 'Manrope',
                                   fontSize: 10,
                                   fontWeight: FontWeight.w800,
                                   letterSpacing: 1.5,
-                                  color: StsysTheme.primary,
+                                  color: StsysTheme.primaryOf(context),
                                 ),
                               ),
                             ],
@@ -138,7 +138,7 @@ class _GraphTabState extends State<GraphTab> with SingleTickerProviderStateMixin
                               style: TextStyle(
                                 fontFamily: 'Inter',
                                 fontSize: 10,
-                                color: StsysTheme.onSurface.withValues(alpha: 0.3),
+                                color: StsysTheme.onSurfaceOf(context).withValues(alpha: 0.3),
                               ),
                             );
                           },
@@ -150,10 +150,10 @@ class _GraphTabState extends State<GraphTab> with SingleTickerProviderStateMixin
                     Expanded(
                       child: Container(
                         decoration: BoxDecoration(
-                          color: StsysTheme.surfaceContainerLowest,
+                          color: StsysTheme.surfaceContainerLowestOf(context),
                           borderRadius: BorderRadius.circular(16),
                           border: Border.all(
-                            color: StsysTheme.outlineVariant.withValues(alpha: 0.15),
+                            color: StsysTheme.outlineVariantOf(context).withValues(alpha: 0.15),
                           ),
                         ),
                         child: ClipRRect(
@@ -187,7 +187,7 @@ class _GraphTabState extends State<GraphTab> with SingleTickerProviderStateMixin
           builder: (context, btProvider, child) {
             return Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-              color: StsysTheme.surfaceContainerLowest,
+              color: StsysTheme.surfaceContainerLowestOf(context),
               child: Row(
                 children: [
                   Expanded(
@@ -197,8 +197,8 @@ class _GraphTabState extends State<GraphTab> with SingleTickerProviderStateMixin
                           : Icons.fiber_manual_record,
                       label: sensorData.isRecording ? 'STOP' : 'RECORD',
                       color: sensorData.isRecording
-                          ? StsysTheme.error
-                          : StsysTheme.primary,
+                          ? StsysTheme.errorOf(context)
+                          : StsysTheme.primaryOf(context),
                       enabled: btProvider.isConnected &&
                           btProvider.isAuthenticated,
                       onTap: () => sensorData.toggleRecording(),
@@ -209,7 +209,7 @@ class _GraphTabState extends State<GraphTab> with SingleTickerProviderStateMixin
                     child: _ControlButton(
                       icon: Icons.tune,
                       label: 'CALIBRATE',
-                      color: StsysTheme.secondary,
+                      color: StsysTheme.secondaryOf(context),
                       enabled: btProvider.isConnected &&
                           btProvider.isAuthenticated &&
                           !sensorData.isCalibrating,
@@ -382,7 +382,7 @@ class _PostShotTabState extends State<_PostShotTab> {
         final shots = sensor.sessionShots;
         if (shots.isEmpty) {
           return Container(
-            color: StsysTheme.surfaceContainerLowest,
+            color: StsysTheme.surfaceContainerLowestOf(context),
             child: Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -390,7 +390,7 @@ class _PostShotTabState extends State<_PostShotTab> {
                   Icon(
                     Icons.ads_click_outlined,
                     size: 48,
-                    color: StsysTheme.onSurface.withValues(alpha: 0.1),
+                    color: StsysTheme.onSurfaceOf(context).withValues(alpha: 0.1),
                   ),
                   const SizedBox(height: 8),
                   Text(
@@ -400,7 +400,7 @@ class _PostShotTabState extends State<_PostShotTab> {
                       fontSize: 14,
                       fontWeight: FontWeight.w800,
                       letterSpacing: 2,
-                      color: StsysTheme.onSurface.withValues(alpha: 0.3),
+                      color: StsysTheme.onSurfaceOf(context).withValues(alpha: 0.3),
                     ),
                   ),
                 ],
@@ -427,7 +427,7 @@ class _PostShotTabState extends State<_PostShotTab> {
             Expanded(
               flex: 2,
               child: Container(
-                color: StsysTheme.surfaceContainerLowest,
+                color: StsysTheme.surfaceContainerLowestOf(context),
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: Column(
                   children: [
@@ -443,10 +443,10 @@ class _PostShotTabState extends State<_PostShotTab> {
                               vertical: 6,
                             ),
                             decoration: BoxDecoration(
-                              color: StsysTheme.primary.withValues(alpha: 0.15),
+                              color: StsysTheme.primaryOf(context).withValues(alpha: 0.15),
                               borderRadius: BorderRadius.circular(20),
                               border: Border.all(
-                                color: StsysTheme.primary.withValues(alpha: 0.3),
+                                color: StsysTheme.primaryOf(context).withValues(alpha: 0.3),
                               ),
                             ),
                             child: Row(
@@ -455,7 +455,7 @@ class _PostShotTabState extends State<_PostShotTab> {
                                 Icon(
                                   Icons.live_tv,
                                   size: 12,
-                                  color: StsysTheme.primary,
+                                  color: StsysTheme.primaryOf(context),
                                 ),
                                 const SizedBox(width: 4),
                                 Text(
@@ -465,7 +465,7 @@ class _PostShotTabState extends State<_PostShotTab> {
                                     fontSize: 10,
                                     fontWeight: FontWeight.w800,
                                     letterSpacing: 1,
-                                    color: StsysTheme.primary,
+                                    color: StsysTheme.primaryOf(context),
                                   ),
                                 ),
                               ],
@@ -515,7 +515,7 @@ class _LatestShotPanel extends StatelessWidget {
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
       decoration: BoxDecoration(
-        color: StsysTheme.surfaceContainerLow,
+        color: StsysTheme.surfaceContainerLowOf(context),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Column(
@@ -554,12 +554,12 @@ class _LatestShotPanel extends StatelessWidget {
                     children: [
                       Text(
                         'SHOT #${shotIndex + 1}'.toUpperCase(),
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontFamily: 'Inter',
                           fontSize: 10,
                           fontWeight: FontWeight.w700,
                           letterSpacing: 1.5,
-                          color: StsysTheme.primary,
+                          color: StsysTheme.primaryOf(context),
                         ),
                       ),
                       const SizedBox(height: 2),
@@ -569,7 +569,7 @@ class _LatestShotPanel extends StatelessWidget {
                           fontFamily: 'Manrope',
                           fontSize: 12,
                           fontWeight: FontWeight.w800,
-                          color: StsysTheme.onSurface.withValues(alpha: 0.5),
+                          color: StsysTheme.onSurfaceOf(context).withValues(alpha: 0.5),
                         ),
                       ),
                       const SizedBox(height: 6),
@@ -606,14 +606,17 @@ class _LatestShotPanel extends StatelessWidget {
             child: Container(
               margin: const EdgeInsets.fromLTRB(12, 0, 12, 8),
               decoration: BoxDecoration(
-                color: StsysTheme.surfaceContainerLowest,
+                color: StsysTheme.surfaceContainerLowestOf(context),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(8),
                 child: RepaintBoundary(
                   child: CustomPaint(
-                    painter: _ThreePhaseChartPainter(shot: shot),
+                    painter: _ThreePhaseChartPainter(
+                      shot: shot,
+                      outlineVariant: StsysTheme.outlineVariantOf(context),
+                    ),
                     size: Size.infinite,
                   ),
                 ),
@@ -709,8 +712,14 @@ class _LatestShotPanel extends StatelessWidget {
 // ============================================
 class _ThreePhaseChartPainter extends CustomPainter {
   final ShotResult shot;
+  /// Theme colours are resolved by the caller: a CustomPainter has no
+  /// BuildContext, so it cannot look up the active theme itself.
+  final Color outlineVariant;
 
-  _ThreePhaseChartPainter({required this.shot});
+  _ThreePhaseChartPainter({
+    required this.shot,
+    required this.outlineVariant,
+  });
 
   // --- PRE-ALLOCATED STATIC PAINT/TextPainter ---
   static const Color _holdColor = Color(0xFFFF4444);
@@ -718,7 +727,6 @@ class _ThreePhaseChartPainter extends CustomPainter {
   static const Color _recoilColor = Color(0xFF44FFFF);
 
   static final Paint _gridPaint = Paint()
-    ..color = StsysTheme.outlineVariant.withValues(alpha: 0.3)
     ..strokeWidth = 0.5;
 
   static final Paint _hitFill = Paint()
@@ -782,6 +790,10 @@ class _ThreePhaseChartPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
+    // The theme colour arrives from the caller, so it is applied here rather
+    // than baked into the (pre-allocated) paint objects.
+    _gridPaint.color = outlineVariant.withValues(alpha: 0.3);
+
     final cx = size.width / 2;
     final cy = size.height / 2;
 
@@ -803,7 +815,7 @@ class _ThreePhaseChartPainter extends CustomPainter {
     canvas.drawLine(Offset(0, cy), Offset(size.width, cy), _gridPaint);
 
     // Rings
-    _ringPaint.color = StsysTheme.outlineVariant.withValues(alpha: 0.15);
+    _ringPaint.color = outlineVariant.withValues(alpha: 0.15);
     for (final r in [0.25, 0.5, 0.75, 1.0]) {
       canvas.drawOval(
         Rect.fromCenter(
@@ -845,7 +857,8 @@ class _ThreePhaseChartPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _ThreePhaseChartPainter oldDelegate) {
-    return oldDelegate.shot != shot;
+    return oldDelegate.shot != shot ||
+        oldDelegate.outlineVariant != outlineVariant;
   }
 }
 
@@ -886,7 +899,7 @@ class _ControlButton extends StatelessWidget {
                   end: Alignment.bottomCenter,
                 )
               : null,
-          color: enabled ? null : StsysTheme.surfaceContainerHigh,
+          color: enabled ? null : StsysTheme.surfaceContainerHighOf(context),
           borderRadius: BorderRadius.circular(8),
         ),
         child: Row(
@@ -898,7 +911,7 @@ class _ControlButton extends StatelessWidget {
                 height: 14,
                 child: CircularProgressIndicator(
                   strokeWidth: 2,
-                  color: StsysTheme.onPrimary,
+                  color: StsysTheme.onPrimaryOf(context),
                 ),
               )
             else
@@ -906,8 +919,8 @@ class _ControlButton extends StatelessWidget {
                 icon,
                 size: 16,
                 color: enabled
-                    ? StsysTheme.onPrimary
-                    : StsysTheme.onSurface.withValues(alpha: 0.3),
+                    ? StsysTheme.onPrimaryOf(context)
+                    : StsysTheme.onSurfaceOf(context).withValues(alpha: 0.3),
               ),
             const SizedBox(width: 6),
             Text(
@@ -918,8 +931,8 @@ class _ControlButton extends StatelessWidget {
                 fontWeight: FontWeight.w800,
                 letterSpacing: 1,
                 color: enabled
-                    ? StsysTheme.onPrimary
-                    : StsysTheme.onSurface.withValues(alpha: 0.3),
+                    ? StsysTheme.onPrimaryOf(context)
+                    : StsysTheme.onSurfaceOf(context).withValues(alpha: 0.3),
               ),
             ),
           ],

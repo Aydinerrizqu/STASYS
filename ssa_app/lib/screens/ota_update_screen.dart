@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../theme/app_theme.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../providers/ota_provider.dart';
@@ -26,17 +27,20 @@ class _OtaUpdateScreenState extends State<OtaUpdateScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF131313),
+      backgroundColor: StsysTheme.backgroundOf(context),
       appBar: AppBar(
-        backgroundColor: const Color(0xFF131313),
+        backgroundColor: StsysTheme.backgroundOf(context),
         elevation: 0,
-        title: const Text(
+        title: Text(
           'Firmware Update',
-          style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+          style: TextStyle(
+            color: StsysTheme.onSurfaceOf(context),
+            fontWeight: FontWeight.w600,
+          ),
         ),
         centerTitle: true,
         leading: IconButton(
-          icon: const Icon(Icons.close, color: Colors.white),
+          icon: Icon(Icons.close, color: StsysTheme.onSurfaceOf(context)),
           onPressed: () {
             context.read<OtaProvider>().reset();
             context.go('/connection');
@@ -64,7 +68,7 @@ class _OtaUpdateScreenState extends State<OtaUpdateScreen> {
                         child: CircularProgressIndicator(
                           value: null,
                           strokeWidth: 10,
-                          backgroundColor: const Color(0xFF2A2A2A),
+                          backgroundColor: StsysTheme.surfaceContainerHighOf(context),
                           valueColor: const AlwaysStoppedAnimation(Color(0xFF2A2A2A)),
                         ),
                       ),
@@ -94,8 +98,8 @@ class _OtaUpdateScreenState extends State<OtaUpdateScreen> {
                           if (ota.totalChunks > 0)
                             Text(
                               '${ota.sentChunks}/${ota.totalChunks} chunks',
-                              style: const TextStyle(
-                                color: Color(0xFF666666),
+                              style: TextStyle(
+                                color: StsysTheme.onSurfaceVariantOf(context),
                                 fontSize: 11,
                               ),
                             ),
@@ -108,7 +112,7 @@ class _OtaUpdateScreenState extends State<OtaUpdateScreen> {
                 // Status message
                 Text(
                   ota.statusMessage,
-                  style: const TextStyle(color: Color(0xFFAAAAAA), fontSize: 16),
+                  style: TextStyle(color: StsysTheme.onSurfaceVariantOf(context), fontSize: 16),
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 32),
@@ -137,12 +141,12 @@ class _OtaUpdateScreenState extends State<OtaUpdateScreen> {
                     ),
                     child: Column(
                       children: [
-                        const Icon(Icons.error_outline, color: Colors.red, size: 32),
+                        Icon(Icons.error_outline, color: Colors.red, size: 32),
                         const SizedBox(height: 8),
-                        const Text(
+                        Text(
                           'Update Gagal',
                           style: TextStyle(
-                            color: Colors.white,
+                            color: StsysTheme.onSurfaceOf(context),
                             fontSize: 16,
                             fontWeight: FontWeight.w600,
                           ),
@@ -150,7 +154,7 @@ class _OtaUpdateScreenState extends State<OtaUpdateScreen> {
                         const SizedBox(height: 4),
                         Text(
                           ota.errorMessage,
-                          style: const TextStyle(color: Color(0xFFAAAAAA), fontSize: 13),
+                          style: TextStyle(color: StsysTheme.onSurfaceVariantOf(context), fontSize: 13),
                           textAlign: TextAlign.center,
                         ),
                       ],
@@ -163,8 +167,8 @@ class _OtaUpdateScreenState extends State<OtaUpdateScreen> {
                         child: OutlinedButton(
                           onPressed: () => context.go('/connection'),
                           style: OutlinedButton.styleFrom(
-                            foregroundColor: const Color(0xFF666666),
-                            side: const BorderSide(color: Color(0xFF2A2A2A)),
+                            foregroundColor: StsysTheme.onSurfaceVariantOf(context),
+                            side: BorderSide(color: StsysTheme.outlineVariantOf(context)),
                             padding: const EdgeInsets.symmetric(vertical: 14),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(8),
@@ -205,14 +209,14 @@ class _OtaUpdateScreenState extends State<OtaUpdateScreen> {
                         color: Colors.green.withValues(alpha: 0.3),
                       ),
                     ),
-                    child: const Column(
+                    child: Column(
                       children: [
                         Icon(Icons.check_circle, color: Colors.green, size: 32),
                         SizedBox(height: 8),
                         Text(
                           'Update Berhasil!',
                           style: TextStyle(
-                            color: Colors.white,
+                            color: StsysTheme.onSurfaceOf(context),
                             fontSize: 16,
                             fontWeight: FontWeight.w600,
                           ),
@@ -220,7 +224,7 @@ class _OtaUpdateScreenState extends State<OtaUpdateScreen> {
                         SizedBox(height: 4),
                         Text(
                           'Firmware berhasil di-update. Koneksi ulang...',
-                          style: TextStyle(color: Color(0xFFAAAAAA), fontSize: 13),
+                          style: TextStyle(color: StsysTheme.onSurfaceVariantOf(context), fontSize: 13),
                           textAlign: TextAlign.center,
                         ),
                       ],

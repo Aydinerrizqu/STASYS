@@ -273,16 +273,16 @@ class _MuzzleTraceWidgetState extends State<MuzzleTraceWidget>
                       vertical: 4,
                     ),
                     decoration: BoxDecoration(
-                      color: StsysTheme.surfaceContainerHighest,
+                      color: StsysTheme.surfaceContainerHighestOf(context),
                       borderRadius: BorderRadius.circular(20),
                     ),
                     child: Text(
                       '$_shotCount shots',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontFamily: 'Manrope',
                         fontSize: 11,
                         fontWeight: FontWeight.w700,
-                        color: StsysTheme.onSurface,
+                        color: StsysTheme.onSurfaceOf(context),
                       ),
                     ),
                   ),
@@ -292,10 +292,10 @@ class _MuzzleTraceWidgetState extends State<MuzzleTraceWidget>
               Expanded(
                 child: Container(
                   decoration: BoxDecoration(
-                    color: StsysTheme.surfaceContainerLowest,
+                    color: StsysTheme.surfaceContainerLowestOf(context),
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(
-                      color: StsysTheme.outlineVariant.withValues(alpha: 0.2),
+                      color: StsysTheme.outlineVariantOf(context).withValues(alpha: 0.2),
                     ),
                   ),
                   child: ClipRRect(

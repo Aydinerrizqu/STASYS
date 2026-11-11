@@ -353,7 +353,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               _showDeviceList
                                   ? Icons.close
                                   : Icons.bluetooth_searching,
-                              color: StsysTheme.onPrimaryOf(context),
+                              color: StsysTheme.onGradientOf(context),
                               size: 18,
                             ),
                             const SizedBox(width: 8),
@@ -368,7 +368,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                 fontSize: 12,
                                 fontWeight: FontWeight.w800,
                                 letterSpacing: 1,
-                                color: StsysTheme.onPrimaryOf(context),
+                                color: StsysTheme.onGradientOf(context),
                               ),
                             ),
                           ],
@@ -386,10 +386,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           vertical: 12,
                         ),
                         decoration: BoxDecoration(
-                          color: StsysTheme.error.withValues(alpha: 0.1),
+                          color: StsysTheme.errorOf(context).withValues(alpha: 0.1),
                           borderRadius: BorderRadius.circular(8),
                           border: Border.all(
-                            color: StsysTheme.error.withValues(alpha: 0.3),
+                            color: StsysTheme.errorOf(context).withValues(alpha: 0.3),
                           ),
                         ),
                         child: Text(
@@ -399,7 +399,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             fontSize: 12,
                             fontWeight: FontWeight.w800,
                             letterSpacing: 1,
-                            color: StsysTheme.error,
+                            color: StsysTheme.errorOf(context),
                           ),
                         ),
                       ),
@@ -677,7 +677,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     fontWeight: FontWeight.w800,
                     letterSpacing: 1,
                     color: isSelected
-                        ? StsysTheme.onPrimaryOf(context)
+                        ? StsysTheme.onGradientOf(context)
                         : StsysTheme.onSurfaceOf(context).withValues(alpha: 0.7),
                   ),
                 ),
@@ -724,7 +724,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     fontWeight: FontWeight.w800,
                     letterSpacing: 1,
                     color: isSelected
-                        ? StsysTheme.onPrimaryOf(context)
+                        ? StsysTheme.onGradientOf(context)
                         : StsysTheme.onSurfaceOf(context).withValues(alpha: 0.7),
                   ),
                 ),

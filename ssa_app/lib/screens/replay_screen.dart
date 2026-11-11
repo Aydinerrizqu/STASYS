@@ -145,7 +145,7 @@ class _ReplayScreenState extends State<ReplayScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: StsysTheme.surfaceContainerLowest,
+      backgroundColor: StsysTheme.surfaceContainerLowestOf(context),
       body: SafeArea(
         child: FutureBuilder<_ReplayResult?>(
           future: _future,
@@ -300,8 +300,8 @@ class _ReplayScreenState extends State<ReplayScreen> {
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           decoration: BoxDecoration(
-            color: StsysTheme.surfaceContainerLow,
-            border: Border(bottom: BorderSide(color: StsysTheme.outlineVariant.withValues(alpha: 0.2))),
+            color: StsysTheme.surfaceContainerLowOf(context),
+            border: Border(bottom: BorderSide(color: StsysTheme.outlineVariantOf(context).withValues(alpha: 0.2))),
           ),
           child: Row(
             children: [
@@ -310,10 +310,10 @@ class _ReplayScreenState extends State<ReplayScreen> {
                 child: Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: StsysTheme.surfaceContainerHigh,
+                    color: StsysTheme.surfaceContainerHighOf(context),
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child: Icon(Icons.arrow_back, size: 20, color: StsysTheme.onSurface.withValues(alpha: 0.7)),
+                  child: Icon(Icons.arrow_back, size: 20, color: StsysTheme.onSurfaceOf(context).withValues(alpha: 0.7)),
                 ),
               ),
               const SizedBox(width: 12),
@@ -324,7 +324,7 @@ class _ReplayScreenState extends State<ReplayScreen> {
                     fontFamily: 'Inter',
                     fontSize: 12,
                     fontWeight: FontWeight.w700,
-                    color: StsysTheme.onSurface.withValues(alpha: 0.5),
+                    color: StsysTheme.onSurfaceOf(context).withValues(alpha: 0.5),
                   ),
                 ),
               ),
@@ -337,7 +337,7 @@ class _ReplayScreenState extends State<ReplayScreen> {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(Icons.trending_flat, size: 48, color: StsysTheme.onSurface.withValues(alpha: 0.15)),
+                Icon(Icons.trending_flat, size: 48, color: StsysTheme.onSurfaceOf(context).withValues(alpha: 0.15)),
                 const SizedBox(height: 12),
                 Text(
                   'NO IMU DATA AVAILABLE',
@@ -346,7 +346,7 @@ class _ReplayScreenState extends State<ReplayScreen> {
                     fontSize: 14,
                     fontWeight: FontWeight.w800,
                     letterSpacing: 2,
-                    color: StsysTheme.onSurface.withValues(alpha: 0.4),
+                    color: StsysTheme.onSurfaceOf(context).withValues(alpha: 0.4),
                   ),
                 ),
                 const SizedBox(height: 4),
@@ -358,7 +358,7 @@ class _ReplayScreenState extends State<ReplayScreen> {
                     style: TextStyle(
                       fontFamily: 'Manrope',
                       fontSize: 11,
-                      color: StsysTheme.onSurface.withValues(alpha: 0.3),
+                      color: StsysTheme.onSurfaceOf(context).withValues(alpha: 0.3),
                     ),
                   ),
                 ),
@@ -381,10 +381,10 @@ class _ReplayScreenState extends State<ReplayScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
-        color: StsysTheme.surfaceContainerLow,
+        color: StsysTheme.surfaceContainerLowOf(context),
         border: Border(
           bottom: BorderSide(
-            color: StsysTheme.outlineVariant.withValues(alpha: 0.2),
+            color: StsysTheme.outlineVariantOf(context).withValues(alpha: 0.2),
           ),
         ),
       ),
@@ -395,13 +395,13 @@ class _ReplayScreenState extends State<ReplayScreen> {
             child: Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: StsysTheme.surfaceContainerHigh,
+                color: StsysTheme.surfaceContainerHighOf(context),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Icon(
                 Icons.arrow_back,
                 size: 20,
-                color: StsysTheme.onSurface.withValues(alpha: 0.7),
+                color: StsysTheme.onSurfaceOf(context).withValues(alpha: 0.7),
               ),
             ),
           ),
@@ -417,7 +417,7 @@ class _ReplayScreenState extends State<ReplayScreen> {
                     fontSize: 9,
                     fontWeight: FontWeight.w700,
                     letterSpacing: 1.5,
-                    color: StsysTheme.secondary,
+                    color: StsysTheme.secondaryOf(context),
                   ),
                 ),
                 const SizedBox(height: 2),
@@ -429,7 +429,7 @@ class _ReplayScreenState extends State<ReplayScreen> {
                     fontWeight: FontWeight.w800,
                     color: trace.hasShots
                         ? _scoreColor(avgScore)
-                        : StsysTheme.onSurface.withValues(alpha: 0.4),
+                        : StsysTheme.onSurfaceOf(context).withValues(alpha: 0.4),
                   ),
                 ),
               ],
@@ -440,13 +440,13 @@ class _ReplayScreenState extends State<ReplayScreen> {
             child: Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: StsysTheme.secondary.withValues(alpha: 0.12),
+                color: StsysTheme.secondaryOf(context).withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Icon(
                 Icons.info_outline,
                 size: 20,
-                color: StsysTheme.secondary,
+                color: StsysTheme.secondaryOf(context),
               ),
             ),
           ),
@@ -459,16 +459,16 @@ class _ReplayScreenState extends State<ReplayScreen> {
     showDialog(
       context: ctx,
       builder: (ctx) => AlertDialog(
-        backgroundColor: StsysTheme.surfaceContainerHigh,
+        backgroundColor: StsysTheme.surfaceContainerHighOf(context),
         title: Text(
           'ABOUT REPLAY',
-          style: StsysText.labelBold.copyWith(color: StsysTheme.secondary),
+          style: StsysText.labelBold.copyWith(color: StsysTheme.secondaryOf(context)),
         ),
         content: Text(
           'The barrel trace and shot breakdown are reconstructed from '
           'the original raw sensor data using the offline replay engine. '
           'Results should match what was scored live.',
-          style: StsysText.body,
+          style: StsysText.bodyOf(ctx),
         ),
         actions: [
           TextButton(
@@ -478,7 +478,7 @@ class _ReplayScreenState extends State<ReplayScreen> {
               style: TextStyle(
                 fontFamily: 'Manrope',
                 fontWeight: FontWeight.w800,
-                color: StsysTheme.secondary,
+                color: StsysTheme.secondaryOf(context),
               ),
             ),
           ),
@@ -494,7 +494,7 @@ class _ReplayScreenState extends State<ReplayScreen> {
     return Container(
       margin: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: StsysTheme.surfaceContainerLow,
+        color: StsysTheme.surfaceContainerLowOf(context),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Column(
@@ -510,7 +510,7 @@ class _ReplayScreenState extends State<ReplayScreen> {
                     fontSize: 9,
                     fontWeight: FontWeight.w700,
                     letterSpacing: 2,
-                    color: StsysTheme.onSurfaceVariant,
+                    color: StsysTheme.onSurfaceVariantOf(context),
                   ),
                 ),
                 const Spacer(),
@@ -524,7 +524,7 @@ class _ReplayScreenState extends State<ReplayScreen> {
             child: Container(
               margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
               decoration: BoxDecoration(
-                color: StsysTheme.surfaceContainerLowest,
+                color: StsysTheme.surfaceContainerLowestOf(context),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: ClipRRect(
@@ -564,7 +564,7 @@ class _ReplayScreenState extends State<ReplayScreen> {
             fontSize: 8,
             fontWeight: FontWeight.w700,
             letterSpacing: 1,
-            color: StsysTheme.onSurface.withValues(alpha: 0.5),
+            color: StsysTheme.onSurfaceOf(context).withValues(alpha: 0.5),
           ),
         ),
       ],
@@ -580,7 +580,7 @@ class _ReplayScreenState extends State<ReplayScreen> {
           fontSize: 14,
           fontWeight: FontWeight.w800,
           letterSpacing: 2,
-          color: StsysTheme.onSurface.withValues(alpha: 0.2),
+          color: StsysTheme.onSurfaceOf(context).withValues(alpha: 0.2),
         ),
       ),
     );
@@ -595,7 +595,7 @@ class _ReplayScreenState extends State<ReplayScreen> {
           fontSize: 14,
           fontWeight: FontWeight.w800,
           letterSpacing: 2,
-          color: StsysTheme.onSurface.withValues(alpha: 0.2),
+          color: StsysTheme.onSurfaceOf(context).withValues(alpha: 0.2),
         ),
       ),
     );
@@ -606,7 +606,7 @@ class _ReplayScreenState extends State<ReplayScreen> {
   // ============================================
   Widget _buildShotChips(ReplayTrace trace) {
     return Container(
-      color: StsysTheme.surfaceContainerLow,
+      color: StsysTheme.surfaceContainerLowOf(context),
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -620,14 +620,14 @@ class _ReplayScreenState extends State<ReplayScreen> {
                   fontSize: 9,
                   fontWeight: FontWeight.w700,
                   letterSpacing: 2,
-                  color: StsysTheme.onSurfaceVariant,
+                  color: StsysTheme.onSurfaceVariantOf(context),
                 ),
               ),
               const Spacer(),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                 decoration: BoxDecoration(
-                  color: StsysTheme.secondary.withValues(alpha: 0.15),
+                  color: StsysTheme.secondaryOf(context).withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(20),
                 ),
                 child: Text(
@@ -636,7 +636,7 @@ class _ReplayScreenState extends State<ReplayScreen> {
                     fontFamily: 'Manrope',
                     fontSize: 10,
                     fontWeight: FontWeight.w800,
-                    color: StsysTheme.secondary,
+                    color: StsysTheme.secondaryOf(context),
                   ),
                 ),
               ),
@@ -662,12 +662,12 @@ class _ReplayScreenState extends State<ReplayScreen> {
                     decoration: BoxDecoration(
                       color: isSelected
                           ? color.withValues(alpha: 0.15)
-                          : StsysTheme.surfaceContainerLow,
+                          : StsysTheme.surfaceContainerLowOf(context),
                       borderRadius: BorderRadius.circular(10),
                       border: Border.all(
                         color: isSelected
                             ? color
-                            : StsysTheme.outlineVariant.withValues(alpha: 0.2),
+                            : StsysTheme.outlineVariantOf(context).withValues(alpha: 0.2),
                         width: isSelected ? 2 : 1,
                       ),
                     ),
@@ -681,7 +681,7 @@ class _ReplayScreenState extends State<ReplayScreen> {
                             fontSize: 8,
                             fontWeight: FontWeight.w700,
                             letterSpacing: 1,
-                            color: StsysTheme.onSurface.withValues(alpha: 0.4),
+                            color: StsysTheme.onSurfaceOf(context).withValues(alpha: 0.4),
                           ),
                         ),
                         const SizedBox(height: 4),
@@ -700,7 +700,7 @@ class _ReplayScreenState extends State<ReplayScreen> {
                           style: TextStyle(
                             fontFamily: 'Inter',
                             fontSize: 8,
-                            color: StsysTheme.onSurface.withValues(alpha: 0.4),
+                            color: StsysTheme.onSurfaceOf(context).withValues(alpha: 0.4),
                           ),
                         ),
                       ],
@@ -768,12 +768,12 @@ class _ErrorView extends StatelessWidget {
                 child: Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: StsysTheme.surfaceContainerHigh,
+                    color: StsysTheme.surfaceContainerHighOf(context),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Icon(Icons.arrow_back,
                       size: 20,
-                      color: StsysTheme.onSurface.withValues(alpha: 0.7)),
+                      color: StsysTheme.onSurfaceOf(context).withValues(alpha: 0.7)),
                 ),
               ),
             ],
@@ -785,7 +785,7 @@ class _ErrorView extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Icon(Icons.error_outline,
-                    size: 48, color: StsysTheme.error.withValues(alpha: 0.5)),
+                    size: 48, color: StsysTheme.errorOf(context).withValues(alpha: 0.5)),
                 const SizedBox(height: 12),
                 Text(
                   'SESSION NOT FOUND',
@@ -794,7 +794,7 @@ class _ErrorView extends StatelessWidget {
                     fontSize: 14,
                     fontWeight: FontWeight.w800,
                     letterSpacing: 2,
-                    color: StsysTheme.onSurface.withValues(alpha: 0.4),
+                    color: StsysTheme.onSurfaceOf(context).withValues(alpha: 0.4),
                   ),
                 ),
               ],

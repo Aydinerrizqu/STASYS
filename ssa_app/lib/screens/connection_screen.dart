@@ -108,9 +108,9 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
         await _checkFirmwareUpdate(context);
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
+          SnackBar(
             content: Text('Connection failed.'),
-            backgroundColor: StsysTheme.error,
+            backgroundColor: StsysTheme.errorOf(context),
             duration: Duration(seconds: 6),
           ),
         );
@@ -219,7 +219,7 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Firmware check error: $e'),
-          backgroundColor: StsysTheme.error,
+          backgroundColor: StsysTheme.errorOf(context),
           duration: const Duration(seconds: 6),
         ),
       );

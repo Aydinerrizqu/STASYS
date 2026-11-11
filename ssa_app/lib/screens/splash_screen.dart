@@ -55,7 +55,7 @@ class _SplashScreenState extends State<SplashScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: StsysTheme.surfaceContainerLowest,
+      backgroundColor: StsysTheme.surfaceContainerLowestOf(context),
       body: Center(
         child: AnimatedBuilder(
           animation: _controller,
@@ -80,20 +80,20 @@ class _SplashScreenState extends State<SplashScreen>
                   gradient: StsysTheme.tacticalGradient,
                   boxShadow: [
                     BoxShadow(
-                      color: StsysTheme.primary.withValues(alpha: 0.3),
+                      color: StsysTheme.primaryOf(context).withValues(alpha: 0.3),
                       blurRadius: 40,
                       spreadRadius: 5,
                     ),
                   ],
                 ),
-                child: const Center(
+                child: Center(
                   child: Text(
                     'S',
                     style: TextStyle(
                       fontFamily: 'Manrope',
                       fontSize: 64,
                       fontWeight: FontWeight.w900,
-                      color: StsysTheme.onPrimary,
+                      color: StsysTheme.onGradientOf(context),
                       letterSpacing: -2,
                     ),
                   ),
@@ -124,7 +124,7 @@ class _SplashScreenState extends State<SplashScreen>
                   fontSize: 10,
                   fontWeight: FontWeight.w600,
                   letterSpacing: 3,
-                  color: StsysTheme.onSurface.withValues(alpha: 0.4),
+                  color: StsysTheme.onSurfaceOf(context).withValues(alpha: 0.4),
                 ),
               ),
               const SizedBox(height: 48),
@@ -134,7 +134,7 @@ class _SplashScreenState extends State<SplashScreen>
                 height: 24,
                 child: CircularProgressIndicator(
                   strokeWidth: 2,
-                  color: StsysTheme.primary.withValues(alpha: 0.5),
+                  color: StsysTheme.primaryOf(context).withValues(alpha: 0.5),
                 ),
               ),
             ],

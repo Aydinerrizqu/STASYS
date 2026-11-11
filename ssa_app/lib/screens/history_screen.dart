@@ -316,6 +316,58 @@ class _HistoryScreenState extends State<HistoryScreen>
                                           ],
                                         ),
                                       ),
+                                      // Series badge — only when the session
+                                      // holds more than one series.
+                                      if (session.seriesNumbers.length > 1)
+                                        Container(
+                                          margin: const EdgeInsets.only(top: 6),
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 12,
+                                            vertical: 6,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: StsysTheme
+                                                .scoreChipFillOf(context),
+                                            borderRadius:
+                                                BorderRadius.circular(8),
+                                          ),
+                                          child: FittedBox(
+                                            // The badge lives in a narrow
+                                            // column of the session card. A long
+                                            // count ("10 SERIES") would push the
+                                            // row past the column width, so the
+                                            // badge scales down instead of
+                                            // overflowing.
+                                            fit: BoxFit.scaleDown,
+                                            child: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Icon(
+                                                  Icons.view_day_outlined,
+                                                  size: 14,
+                                                  color: StsysTheme.cyanOf(
+                                                    context,
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 4),
+                                                Text(
+                                                  '${session.seriesNumbers.length} SERIES',
+                                                  key: const ValueKey(
+                                                    'history-series-count',
+                                                  ),
+                                                  style: TextStyle(
+                                                    fontFamily: 'Manrope',
+                                                    fontSize: 10,
+                                                    fontWeight: FontWeight.w800,
+                                                    letterSpacing: 1,
+                                                    color: StsysTheme
+                                                        .onSurfaceOf(context),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ),
                                     ],
                                   ),
                                 ),

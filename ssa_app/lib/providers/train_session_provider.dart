@@ -6,9 +6,22 @@ import '../models/data_models.dart';
 enum TrainSessionState { choices, readySeries, activeSeries, reviewSeries, reviewSession }
 
 class TrainSessionProvider extends ChangeNotifier {
+  /// Monotonic counter that keeps the session id unique even when two
+  /// sessions start inside the same clock tick.
+  ///
+  /// The system clock of Windows has a granularity of about one millisecond,
+  /// so two `DateTime.now()` calls in quick succession return the very same
+  /// microsecond value. The timestamp alone would then hand out the same id
+  /// twice and the second session would overwrite the first one.
+  static int _sessionCounter = 0;
+
   TrainSessionState _state = TrainSessionState.choices;
   TrainPreset? _preset;
   Profile? _profile;
+  /// Stable DB id for every series saved before END SESSION.
+  String? _trainingSessionId;
+  /// Timestamp of the running session — the `date` written to the session row.
+  DateTime? _sessionStartedAt;
   int _seriesCount = 0;
   List<ShotResult> _currentSeries = [];
   List<ShotResult> _allShots = [];
@@ -20,6 +33,14 @@ class TrainSessionProvider extends ChangeNotifier {
 
   Profile? get activeProfile => _profile;
   int get seriesCount => _seriesCount;
+  String? get trainingSessionId => _trainingSessionId;
+  DateTime? get sessionStartedAt => _sessionStartedAt;
+
+  /// Number of the series that is currently running (1-based).
+  ///
+  /// In [TrainSessionState.readySeries] no series is running yet, so this is
+  /// the number of the series that will start next.
+  int get currentSeriesNumber => _seriesCount;
   List<ShotResult> get currentSeriesShots => List.unmodifiable(_currentSeries);
   List<ShotResult> get allSeriesShots => List.unmodifiable(_allShots);
 
@@ -32,6 +53,12 @@ class TrainSessionProvider extends ChangeNotifier {
     if (_state != TrainSessionState.choices) return;
     _preset = preset;
     _profile = profile;
+    // Microseconds, not milliseconds, plus a counter: the system clock can
+    // repeat the same microsecond value, and two sessions started in that
+    // window would otherwise share an id and overwrite each other.
+    _trainingSessionId =
+        'SESSION_${DateTime.now().microsecondsSinceEpoch}_${_sessionCounter++}';
+    _sessionStartedAt = DateTime.now();
     _state = TrainSessionState.readySeries;
     notifyListeners();
   }
@@ -47,6 +74,8 @@ class TrainSessionProvider extends ChangeNotifier {
     _state = TrainSessionState.choices;
     _preset = null;
     _profile = null;
+    _trainingSessionId = null;
+    _sessionStartedAt = null;
     _seriesCount = 0;
     _allShots = [];
     _currentSeries = [];
@@ -94,6 +123,8 @@ class TrainSessionProvider extends ChangeNotifier {
         : TrainSessionState.choices;
     _preset = null;
     _profile = null;
+    _trainingSessionId = null;
+    _sessionStartedAt = null;
     _seriesCount = 0;
     _allShots = [];
     _currentSeries = [];
@@ -122,7 +153,14 @@ class TrainSessionProvider extends ChangeNotifier {
 
   void onShotDetected(ShotResult shot) {
     if (_state != TrainSessionState.activeSeries) return;
-    _currentSeries = [..._currentSeries, shot];
+    // The shot is detected in the isolate, which does not know the number of
+    // the running series. Stamp it here — but only when the number is wrong,
+    // so a shot that already carries the right number keeps its identity
+    // (the UI compares shots by identity, not by value).
+    final stamped = shot.seriesNumber == _seriesCount
+        ? shot
+        : shot.copyWith(seriesNumber: _seriesCount);
+    _currentSeries = [..._currentSeries, stamped];
     _selectedShotIndex = _currentSeries.length - 1;
     notifyListeners();
   }

@@ -203,11 +203,10 @@ void main() {
         final loaded = await service.getSession('HUGE_SESSION');
 
         expect(loaded, isNotNull);
-        expect(loaded!.hasRawData, isTrue);
-        expect(loaded.gyroX, hasLength(30000));
-        expect(loaded.accelZ, hasLength(30000));
-        expect(loaded.gyroX.last.y, closeTo((29999 % 7) / 7, 1e-6));
-        expect(loaded.shots, hasLength(1));
+        expect(loaded!.shots, hasLength(1));
+        // getSession does not read the raw BLOBs any more — the raw data is
+        // read per series (see the decodeRawSession test below).
+        expect(loaded.hasRawData, isFalse);
       },
     );
 

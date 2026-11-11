@@ -2,7 +2,6 @@
 // File: services/export_service.dart
 // ============================================
 import 'dart:io';
-import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
@@ -35,7 +34,7 @@ class ExportService {
         '${session.shots.length},'
         '${session.profileName},'
         '${session.trainingPreset},'
-        '${session.seriesCount}',
+        '${session.seriesNumbers.length}',
       );
     }
 
@@ -44,7 +43,8 @@ class ExportService {
     // --- SHOT DETAILS ---
     buffer.writeln('# SHOTS');
     buffer.writeln(
-      'session_date,firearm_type,training_mode,shot_timestamp,'
+      'session_date,firearm_type,training_mode,series_number,'
+      'shot_timestamp,'
       'total_score,hold_score,press_score,recoil_score,'
       'elevation_score,windage_score,travel_distance,peak_jerk',
     );
@@ -55,6 +55,7 @@ class ExportService {
           '${dateFormat.format(session.date)},'
           '${session.firearmType.name},'
           '${session.trainingMode.name},'
+          '${shot.seriesNumber},'
           '${dateFormat.format(shot.timestamp)},'
           '${shot.totalScore.toStringAsFixed(2)},'
           '${shot.holdScore.toStringAsFixed(2)},'

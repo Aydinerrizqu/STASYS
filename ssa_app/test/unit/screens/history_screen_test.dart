@@ -12,7 +12,11 @@ class _MockSessionProvider extends Mock implements SessionProvider {}
 
 class _MockSettingsProvider extends Mock implements SettingsProvider {}
 
-ShotResult _shot({required DateTime timestamp, required double score}) {
+ShotResult _shot({
+  required DateTime timestamp,
+  required double score,
+  int seriesNumber = 1,
+}) {
   return ShotResult(
     timestamp: timestamp,
     totalScore: score,
@@ -25,6 +29,7 @@ ShotResult _shot({required DateTime timestamp, required double score}) {
     peakJerk: 1.0,
     firearmType: FirearmType.pistol,
     trainingMode: TrainingMode.dryFire,
+    seriesNumber: seriesNumber,
   );
 }
 
@@ -43,6 +48,28 @@ SessionLog _session() => SessionLog(
   shots: [
     _shot(timestamp: DateTime(2026, 8, 23, 14, 30), score: 80),
     _shot(timestamp: DateTime(2026, 8, 23, 14, 31), score: 92),
+  ],
+);
+
+SessionLog _multiSeriesSession() => SessionLog(
+  id: 'history-multi-series',
+  date: DateTime(2026, 8, 23, 14, 30),
+  duration: 120,
+  gyroX: const [],
+  gyroY: const [],
+  gyroZ: const [],
+  accelX: const [],
+  accelY: const [],
+  accelZ: const [],
+  firearmType: FirearmType.pistol,
+  trainingMode: TrainingMode.dryFire,
+  shots: [
+    _shot(timestamp: DateTime(2026, 8, 23, 14, 30), score: 80),
+    _shot(
+      timestamp: DateTime(2026, 8, 23, 14, 31),
+      score: 92,
+      seriesNumber: 2,
+    ),
   ],
 );
 
@@ -204,6 +231,29 @@ void main() {
         greaterThanOrEqualTo(4.5),
         reason: 'firearm label must stay readable in dark theme',
       );
+    });
+
+    testWidgets('shows a series badge for a multi-series session', (
+      tester,
+    ) async {
+      when(() => sessions.sessions).thenReturn([_multiSeriesSession()]);
+      await tester.pumpWidget(_app(sessions, settings));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const ValueKey('history-series-count')),
+        findsOneWidget,
+      );
+      expect(find.text('2 SERIES'), findsOneWidget);
+    });
+
+    testWidgets('hides the series badge for a single-series session', (
+      tester,
+    ) async {
+      await tester.pumpWidget(_app(sessions, settings));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const ValueKey('history-series-count')), findsNothing);
     });
   });
 }

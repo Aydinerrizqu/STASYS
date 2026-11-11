@@ -12,7 +12,11 @@ import 'package:ssa_app/widgets/analysis_tab.dart';
 import 'package:ssa_app/widgets/replay_shot_widget.dart';
 import 'package:ssa_app/widgets/shot_replay_controls.dart';
 
-ShotResult _shot({required DateTime timestamp, required double score}) {
+ShotResult _shot({
+  required DateTime timestamp,
+  required double score,
+  int seriesNumber = 1,
+}) {
   return ShotResult(
     timestamp: timestamp,
     totalScore: score,
@@ -25,6 +29,7 @@ ShotResult _shot({required DateTime timestamp, required double score}) {
     peakJerk: 1.0,
     firearmType: FirearmType.pistol,
     trainingMode: TrainingMode.dryFire,
+    seriesNumber: seriesNumber,
     holdX: const [0.0, 0.001],
     holdY: const [0.0, 0.001],
     pressX: const [0.001, 0.002],
@@ -48,6 +53,57 @@ SessionLog _session() {
     shots: [
       _shot(timestamp: DateTime(2026, 8, 23, 12), score: 80),
       _shot(timestamp: DateTime(2026, 8, 23, 12, 1), score: 92),
+    ],
+  );
+}
+
+/// A session with two series: series 1 owns two shots, series 2 owns one.
+SessionLog _multiSeriesSession() {
+  return SessionLog(
+    id: 'multi-series-default',
+    date: DateTime(2026, 8, 23),
+    duration: 5,
+    gyroX: const [],
+    gyroY: const [],
+    gyroZ: const [],
+    accelX: const [],
+    accelY: const [],
+    accelZ: const [],
+    shots: [
+      _shot(timestamp: DateTime(2026, 8, 23, 12), score: 80, seriesNumber: 1),
+      _shot(
+        timestamp: DateTime(2026, 8, 23, 12, 1),
+        score: 88,
+        seriesNumber: 1,
+      ),
+      _shot(
+        timestamp: DateTime(2026, 8, 23, 12, 2),
+        score: 92,
+        seriesNumber: 2,
+      ),
+    ],
+  );
+}
+
+/// A session whose series numbers have a gap: series 2 owns no shot.
+SessionLog _seriesWithGapSession() {
+  return SessionLog(
+    id: 'series-gap',
+    date: DateTime(2026, 8, 23),
+    duration: 5,
+    gyroX: const [],
+    gyroY: const [],
+    gyroZ: const [],
+    accelX: const [],
+    accelY: const [],
+    accelZ: const [],
+    shots: [
+      _shot(timestamp: DateTime(2026, 8, 23, 12), score: 80, seriesNumber: 1),
+      _shot(
+        timestamp: DateTime(2026, 8, 23, 12, 2),
+        score: 92,
+        seriesNumber: 3,
+      ),
     ],
   );
 }
@@ -239,6 +295,153 @@ void main() {
         tester.widget<Text>(find.byKey(const ValueKey('target-score'))).data,
         '92',
       );
+      expect(tester.takeException(), isNull);
+    });
+  });
+
+  group('SessionDetailScreen multi-series', () {
+    testWidgets('shows series chips and filters shots by series', (tester) async {
+      final session = SessionLog(
+        id: 'multi-series',
+        date: DateTime(2026, 8, 23),
+        duration: 5,
+        gyroX: const [],
+        gyroY: const [],
+        gyroZ: const [],
+        accelX: const [],
+        accelY: const [],
+        accelZ: const [],
+        seriesCount: 2,
+        shots: [
+          ShotResult(
+            timestamp: DateTime(2026, 8, 23, 12),
+            totalScore: 80,
+            holdScore: 79,
+            pressScore: 78,
+            recoilScore: 77,
+            elevationScore: 76,
+            windageScore: 75,
+            travelDistance: 0.1,
+            peakJerk: 1.0,
+            firearmType: FirearmType.pistol,
+            trainingMode: TrainingMode.dryFire,
+            seriesNumber: 1,
+            holdX: const [0.0, 0.001],
+            holdY: const [0.0, 0.001],
+            pressX: const [0.001, 0.002],
+            pressY: const [0.001, 0.002],
+            recoilX: const [0.002, 0.003],
+            recoilY: const [0.002, 0.003],
+          ),
+          ShotResult(
+            timestamp: DateTime(2026, 8, 23, 12, 1),
+            totalScore: 92,
+            holdScore: 91,
+            pressScore: 90,
+            recoilScore: 89,
+            elevationScore: 88,
+            windageScore: 87,
+            travelDistance: 0.1,
+            peakJerk: 1.0,
+            firearmType: FirearmType.pistol,
+            trainingMode: TrainingMode.dryFire,
+            seriesNumber: 2,
+            holdX: const [0.0, 0.001],
+            holdY: const [0.0, 0.001],
+            pressX: const [0.001, 0.002],
+            pressY: const [0.001, 0.002],
+            recoilX: const [0.002, 0.003],
+            recoilY: const [0.002, 0.003],
+          ),
+        ],
+      );
+
+      await tester.pumpWidget(_testApp(session: session));
+      await tester.pump();
+
+      expect(find.byKey(const ValueKey('series-chip-1')), findsOneWidget);
+      expect(find.byKey(const ValueKey('series-chip-2')), findsOneWidget);
+      expect(find.byKey(const ValueKey('shot-chip-0')), findsOneWidget);
+
+      await tester.tap(find.byKey(const ValueKey('series-chip-1')));
+      await tester.pump();
+
+      expect(
+        tester.widget<Text>(find.byKey(const ValueKey('target-score'))).data,
+        '80',
+      );
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('opens on the last series by default', (tester) async {
+      await tester.pumpWidget(_testApp(session: _multiSeriesSession()));
+      await tester.pump();
+
+      // Series 2 holds the shot with the score 92.
+      expect(
+        tester.widget<Text>(find.byKey(const ValueKey('target-score'))).data,
+        '92',
+      );
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('the header statistics follow the selected series', (
+      tester,
+    ) async {
+      await tester.pumpWidget(_testApp(session: _multiSeriesSession()));
+      await tester.pump();
+
+      // Series 2: one shot with a score of 92.
+      expect(
+        tester.widget<Text>(
+          find.byKey(const ValueKey('session-detail-header-stats')),
+        ).data,
+        '1 shots — 92.0 avg',
+      );
+
+      await tester.tap(find.byKey(const ValueKey('series-chip-1')));
+      await tester.pump();
+
+      // Series 1: two shots, scores 80 and 88 → average 84.
+      expect(
+        tester.widget<Text>(
+          find.byKey(const ValueKey('session-detail-header-stats')),
+        ).data,
+        '2 shots — 84.0 avg',
+      );
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('only the shots of the selected series are listed', (
+      tester,
+    ) async {
+      await tester.pumpWidget(_testApp(session: _multiSeriesSession()));
+      await tester.pump();
+
+      // Series 2 is selected: its single shot is the only chip.
+      expect(find.byKey(const ValueKey('shot-chip-0')), findsOneWidget);
+      expect(find.byKey(const ValueKey('shot-chip-1')), findsNothing);
+
+      await tester.tap(find.byKey(const ValueKey('series-chip-1')));
+      await tester.pump();
+
+      // Series 1 owns two shots.
+      expect(find.byKey(const ValueKey('shot-chip-0')), findsOneWidget);
+      expect(find.byKey(const ValueKey('shot-chip-1')), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('a series without shots is not offered as a chip', (
+      tester,
+    ) async {
+      await tester.pumpWidget(_testApp(session: _seriesWithGapSession()));
+      await tester.pump();
+
+      // Series 2 owns no shot, so it stays hidden even though the numbers
+      // have a gap.
+      expect(find.byKey(const ValueKey('series-chip-1')), findsOneWidget);
+      expect(find.byKey(const ValueKey('series-chip-3')), findsOneWidget);
+      expect(find.byKey(const ValueKey('series-chip-2')), findsNothing);
       expect(tester.takeException(), isNull);
     });
   });

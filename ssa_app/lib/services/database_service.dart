@@ -97,54 +97,254 @@ class DatabaseService {
   // ==========================================
 
   /// Save a complete session (with shots) to DB.
+  ///
+  /// Legacy entry point: every shot of [session] is written and the raw
+  /// data is stored as series 1. New code should use
+  /// [upsertSessionWithSeries], which keeps one raw blob per series.
   Future<void> saveSession(SessionLog session) async {
     final db = await _dbHelper.database;
     await db.transaction((txn) async {
-      // Insert session
-      await txn.insert('sessions', {
-        'id': session.id,
-        'date': session.date.millisecondsSinceEpoch,
-        'duration': session.duration,
-        'firearm_type': session.firearmType.name,
-        'training_mode': session.trainingMode.name,
-        'profile_name': session.profileName,
-        'training_preset': session.trainingPreset,
-        'series_count': session.seriesCount,
-        'gyro_x': _encodeTimeSeries(session.gyroX),
-        'gyro_y': _encodeTimeSeries(session.gyroY),
-        'gyro_z': _encodeTimeSeries(session.gyroZ),
-        'accel_x': _encodeTimeSeries(session.accelX),
-        'accel_y': _encodeTimeSeries(session.accelY),
-        'accel_z': _encodeTimeSeries(session.accelZ),
-      }, conflictAlgorithm: ConflictAlgorithm.replace);
+      await _upsertSessionRow(
+        txn,
+        sessionId: session.id,
+        date: session.date,
+        firearmType: session.firearmType,
+        trainingMode: session.trainingMode,
+        profileName: session.profileName,
+        trainingPreset: session.trainingPreset,
+      );
 
-      // Insert shots (batch)
-      final batch = txn.batch();
-      for (final shot in session.shots) {
-        batch.insert('shots', {
-          'session_id': session.id,
-          'timestamp': shot.timestamp.millisecondsSinceEpoch,
-          'total_score': shot.totalScore,
-          'hold_score': shot.holdScore,
-          'press_score': shot.pressScore,
-          'recoil_score': shot.recoilScore,
-          'elevation_score': shot.elevationScore,
-          'windage_score': shot.windageScore,
-          'travel_distance': shot.travelDistance,
-          'peak_jerk': shot.peakJerk,
-          'firearm_type': shot.firearmType.name,
-          'training_mode': shot.trainingMode.name,
-          'series_number': shot.seriesNumber,
-          'hold_x': _encodeDoubleList(shot.holdX),
-          'hold_y': _encodeDoubleList(shot.holdY),
-          'press_x': _encodeDoubleList(shot.pressX),
-          'press_y': _encodeDoubleList(shot.pressY),
-          'recoil_x': _encodeDoubleList(shot.recoilX),
-          'recoil_y': _encodeDoubleList(shot.recoilY),
-        }, conflictAlgorithm: ConflictAlgorithm.replace);
-      }
-      await batch.commit(noResult: true);
+      // Replace shot rows so re-saving the same session id (multi-series)
+      // does not duplicate bullets.
+      await txn.delete(
+        'shots',
+        where: 'session_id = ?',
+        whereArgs: [session.id],
+      );
+
+      await _insertShots(txn, session.id, session.shots);
+
+      await _writeSeriesRaw(
+        txn,
+        sessionId: session.id,
+        seriesNumber: 1,
+        duration: session.duration,
+        gyroX: session.gyroX,
+        gyroY: session.gyroY,
+        gyroZ: session.gyroZ,
+        accelX: session.accelX,
+        accelY: session.accelY,
+        accelZ: session.accelZ,
+      );
+
+      final seriesCount = await _countSeries(txn, session.id);
+      await txn.rawUpdate(
+        'UPDATE sessions SET '
+        'duration = (SELECT COALESCE(SUM(duration), 0) FROM session_series '
+        'WHERE session_id = ?), '
+        'series_count = ? '
+        'WHERE id = ?',
+        [session.id, seriesCount, session.id],
+      );
     });
+  }
+
+  /// Save one series inside a session.
+  ///
+  /// The session row is created on the first call and updated afterwards.
+  /// Shots of [seriesNumber] are replaced, so re-saving the same series never
+  /// duplicates bullets. [duration] is the cumulative duration of the whole
+  /// session, [seriesDuration] the duration of this series alone.
+  ///
+  /// The raw sensor data of the series is stored in `session_series`, which
+  /// lets the offline replay reconstruct the trace of any single series.
+  Future<void> upsertSessionWithSeries({
+    required String sessionId,
+    required int seriesNumber,
+    required DateTime date,
+    required double seriesDuration,
+    required List<ShotResult> shots,
+    FirearmType firearmType = FirearmType.pistol,
+    TrainingMode trainingMode = TrainingMode.dryFire,
+    String profileName = '',
+    String trainingPreset = '',
+    List<DataPoint> gyroX = const [],
+    List<DataPoint> gyroY = const [],
+    List<DataPoint> gyroZ = const [],
+    List<DataPoint> accelX = const [],
+    List<DataPoint> accelY = const [],
+    List<DataPoint> accelZ = const [],
+  }) async {
+    final db = await _dbHelper.database;
+    await db.transaction((txn) async {
+      // The session row must exist before its shots are inserted: foreign
+      // keys are enforced.
+      await _upsertSessionRow(
+        txn,
+        sessionId: sessionId,
+        date: date,
+        firearmType: firearmType,
+        trainingMode: trainingMode,
+        profileName: profileName,
+        trainingPreset: trainingPreset,
+      );
+
+      // Replace the shots of this series only — other series stay untouched.
+      await txn.delete(
+        'shots',
+        where: 'session_id = ? AND series_number = ?',
+        whereArgs: [sessionId, seriesNumber],
+      );
+      await _insertShots(txn, sessionId, shots);
+
+      if (shots.isEmpty) {
+        // A series without shots is not stored at all: it would only add its
+        // duration to the session while staying invisible in the UI.
+        await txn.delete(
+          'session_series',
+          where: 'session_id = ? AND series_number = ?',
+          whereArgs: [sessionId, seriesNumber],
+        );
+      } else {
+        await _writeSeriesRaw(
+          txn,
+          sessionId: sessionId,
+          seriesNumber: seriesNumber,
+          duration: seriesDuration,
+          gyroX: gyroX,
+          gyroY: gyroY,
+          gyroZ: gyroZ,
+          accelX: accelX,
+          accelY: accelY,
+          accelZ: accelZ,
+        );
+      }
+
+      // The session duration is the sum of its series, so saving a series
+      // twice never counts its duration twice. series_count is derived from
+      // the stored shots, which keeps it identical to the number of series
+      // the UI shows.
+      final seriesCount = await _countSeries(txn, sessionId);
+      await txn.rawUpdate(
+        'UPDATE sessions SET '
+        'duration = (SELECT COALESCE(SUM(duration), 0) FROM session_series '
+        'WHERE session_id = ?), '
+        'series_count = ? '
+        'WHERE id = ?',
+        [sessionId, seriesCount, sessionId],
+      );
+    });
+  }
+
+  /// Insert the session row, or update it when it already exists.
+  ///
+  /// An UPDATE is used instead of `INSERT OR REPLACE` on purpose: replace
+  /// deletes the old row first, and `ON DELETE CASCADE` would take the
+  /// shots and the raw series data with it.
+  Future<void> _upsertSessionRow(
+    DatabaseExecutor txn, {
+    required String sessionId,
+    required DateTime date,
+    required FirearmType firearmType,
+    required TrainingMode trainingMode,
+    required String profileName,
+    required String trainingPreset,
+  }) async {
+    final updated = await txn.update(
+      'sessions',
+      {
+        'firearm_type': firearmType.name,
+        'training_mode': trainingMode.name,
+        'profile_name': profileName,
+        'training_preset': trainingPreset,
+      },
+      where: 'id = ?',
+      whereArgs: [sessionId],
+    );
+    if (updated > 0) return;
+
+    await txn.insert('sessions', {
+      'id': sessionId,
+      'date': date.millisecondsSinceEpoch,
+      'duration': 0,
+      'firearm_type': firearmType.name,
+      'training_mode': trainingMode.name,
+      'profile_name': profileName,
+      'training_preset': trainingPreset,
+      'series_count': 0,
+    });
+  }
+
+  Future<void> _insertShots(
+    DatabaseExecutor txn,
+    String sessionId,
+    List<ShotResult> shots,
+  ) async {
+    if (shots.isEmpty) return;
+    final batch = txn.batch();
+    for (final shot in shots) {
+      batch.insert('shots', {
+        'session_id': sessionId,
+        'timestamp': shot.timestamp.millisecondsSinceEpoch,
+        'total_score': shot.totalScore,
+        'hold_score': shot.holdScore,
+        'press_score': shot.pressScore,
+        'recoil_score': shot.recoilScore,
+        'elevation_score': shot.elevationScore,
+        'windage_score': shot.windageScore,
+        'travel_distance': shot.travelDistance,
+        'peak_jerk': shot.peakJerk,
+        'firearm_type': shot.firearmType.name,
+        'training_mode': shot.trainingMode.name,
+        'series_number': shot.seriesNumber,
+        'hold_x': _encodeDoubleList(shot.holdX),
+        'hold_y': _encodeDoubleList(shot.holdY),
+        'press_x': _encodeDoubleList(shot.pressX),
+        'press_y': _encodeDoubleList(shot.pressY),
+        'recoil_x': _encodeDoubleList(shot.recoilX),
+        'recoil_y': _encodeDoubleList(shot.recoilY),
+      }, conflictAlgorithm: ConflictAlgorithm.replace);
+    }
+    await batch.commit(noResult: true);
+  }
+
+  /// Number of distinct series that own shots in this session.
+  Future<int> _countSeries(DatabaseExecutor txn, String sessionId) async {
+    final rows = await txn.rawQuery(
+      'SELECT COUNT(DISTINCT series_number) AS count FROM shots '
+      'WHERE session_id = ?',
+      [sessionId],
+    );
+    return (rows.first['count'] as int?) ?? 0;
+  }
+
+  /// Store the raw sensor data of one series.
+  ///
+  /// `session_series` has a UNIQUE (session_id, series_number) constraint,
+  /// so the replace is scoped to this series only.
+  Future<void> _writeSeriesRaw(
+    DatabaseExecutor txn, {
+    required String sessionId,
+    required int seriesNumber,
+    required double duration,
+    required List<DataPoint> gyroX,
+    required List<DataPoint> gyroY,
+    required List<DataPoint> gyroZ,
+    required List<DataPoint> accelX,
+    required List<DataPoint> accelY,
+    required List<DataPoint> accelZ,
+  }) async {
+    await txn.insert('session_series', {
+      'session_id': sessionId,
+      'series_number': seriesNumber,
+      'duration': duration,
+      'gyro_x': _encodeTimeSeries(gyroX),
+      'gyro_y': _encodeTimeSeries(gyroY),
+      'gyro_z': _encodeTimeSeries(gyroZ),
+      'accel_x': _encodeTimeSeries(accelX),
+      'accel_y': _encodeTimeSeries(accelY),
+      'accel_z': _encodeTimeSeries(accelZ),
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
   /// Load all sessions (sorted by date DESC) with shots.
@@ -167,6 +367,10 @@ class DatabaseService {
   }
 
   /// Load a single session by ID with its shots.
+  ///
+  /// The raw sensor data is deliberately not loaded here: a session can hold
+  /// several series, each with its own raw data, so there is no single raw
+  /// blob for the session. Use [getSeriesRaw] for that.
   Future<SessionLog?> getSession(String id) async {
     final db = await _dbHelper.database;
     final rows = await db.query(
@@ -177,9 +381,22 @@ class DatabaseService {
     );
     if (rows.isEmpty) return null;
 
-    final raw = await _readRawColumns(id);
-    final session = await _sessionFromRow(rows.first, raw: raw);
-    return session;
+    return _sessionFromRow(rows.first);
+  }
+
+  /// Load the shots of one series of a session.
+  Future<List<ShotResult>> getShotsForSeries(
+    String sessionId,
+    int seriesNumber,
+  ) async {
+    final db = await _dbHelper.database;
+    final rows = await db.query(
+      'shots',
+      where: 'session_id = ? AND series_number = ?',
+      whereArgs: [sessionId, seriesNumber],
+      orderBy: 'timestamp ASC',
+    );
+    return rows.map(_shotFromRow).whereType<ShotResult>().toList();
   }
 
   /// Delete a session and all its shots (CASCADE).
@@ -190,11 +407,18 @@ class DatabaseService {
 
   /// Decode the raw sensor time series for a session from the DB.
   /// Returns a map with keys 'gyroX/Y/Z' and 'accelX/Y/Z'.
-  /// Each value is the decoded List<DataPoint>.
+  /// Each value is the decoded list of data points.
   /// Returns an empty map if the session doesn't exist.
+  ///
+  /// Reads series 1 of the session. Falls back to the legacy BLOB columns of
+  /// `sessions` when the session has no `session_series` row.
   Future<Map<String, List<DataPoint>>> decodeRawSession(
     String sessionId,
   ) async {
+    final seriesRaw = await getSeriesRaw(sessionId);
+    if (seriesRaw.isNotEmpty) {
+      return seriesRaw[1] ?? seriesRaw.values.first;
+    }
     final raw = await _readRawColumns(sessionId);
     if (raw.isEmpty) return {};
     return {
@@ -205,6 +429,50 @@ class DatabaseService {
       'accelY': raw['accelY'] ?? const [],
       'accelZ': raw['accelZ'] ?? const [],
     };
+  }
+
+  /// Raw sensor data of every series of a session, keyed by series number.
+  ///
+  /// Sessions saved before the schema v3 migration have no `session_series`
+  /// row; for those the legacy BLOB columns of `sessions` are returned as
+  /// series 1 so old sessions stay replayable.
+  Future<Map<int, Map<String, List<DataPoint>>>> getSeriesRaw(
+    String sessionId,
+  ) async {
+    final db = await _dbHelper.database;
+
+    final rows = await db.query(
+      'session_series',
+      columns: ['series_number'],
+      where: 'session_id = ?',
+      whereArgs: [sessionId],
+      orderBy: 'series_number ASC',
+    );
+    if (rows.isEmpty) {
+      final legacy = await _readRawColumns(sessionId);
+      // A legacy session without raw data owns no series data at all.
+      if (!legacy.values.any((series) => series.isNotEmpty)) return {};
+      return {
+        1: {
+          'gyroX': legacy['gyroX'] ?? const [],
+          'gyroY': legacy['gyroY'] ?? const [],
+          'gyroZ': legacy['gyroZ'] ?? const [],
+          'accelX': legacy['accelX'] ?? const [],
+          'accelY': legacy['accelY'] ?? const [],
+          'accelZ': legacy['accelZ'] ?? const [],
+        },
+      };
+    }
+
+    final result = <int, Map<String, List<DataPoint>>>{};
+    for (final row in rows) {
+      final seriesNumber = (row['series_number'] as num).toInt();
+      result[seriesNumber] = await _readSeriesRawColumns(
+        sessionId,
+        seriesNumber,
+      );
+    }
+    return result;
   }
 
   // ==========================================
@@ -238,6 +506,31 @@ class DatabaseService {
     final result = <String, List<DataPoint>>{};
     for (final entry in columns.entries) {
       result[entry.key] = await _readBlobColumn(sessionId, entry.value);
+    }
+    return result;
+  }
+
+  /// Read the six raw sensor BLOBs of one series of a session.
+  Future<Map<String, List<DataPoint>>> _readSeriesRawColumns(
+    String sessionId,
+    int seriesNumber,
+  ) async {
+    const columns = {
+      'gyroX': 'gyro_x',
+      'gyroY': 'gyro_y',
+      'gyroZ': 'gyro_z',
+      'accelX': 'accel_x',
+      'accelY': 'accel_y',
+      'accelZ': 'accel_z',
+    };
+
+    final result = <String, List<DataPoint>>{};
+    for (final entry in columns.entries) {
+      result[entry.key] = await _readSeriesBlobColumn(
+        sessionId,
+        seriesNumber,
+        entry.value,
+      );
     }
     return result;
   }
@@ -278,14 +571,49 @@ class DatabaseService {
     return _decodeTimeSeries(bytes.toBytes());
   }
 
+  /// Read one BLOB column of a series in chunks and decode it.
+  Future<List<DataPoint>> _readSeriesBlobColumn(
+    String sessionId,
+    int seriesNumber,
+    String column,
+  ) async {
+    final db = await _dbHelper.database;
+
+    final lengthRows = await db.rawQuery(
+      'SELECT length($column) AS len FROM session_series '
+      'WHERE session_id = ? AND series_number = ?',
+      [sessionId, seriesNumber],
+    );
+    if (lengthRows.isEmpty) return [];
+    final total = (lengthRows.first['len'] as int?) ?? 0;
+    if (total <= 0) return [];
+
+    final bytes = BytesBuilder(copy: false);
+    for (var offset = 0; offset < total; offset += _blobChunkBytes) {
+      final chunkRows = await db.rawQuery(
+        'SELECT substr($column, ?, ?) AS chunk FROM session_series '
+        'WHERE session_id = ? AND series_number = ?',
+        [offset + 1, _blobChunkBytes, sessionId, seriesNumber],
+      );
+      if (chunkRows.isEmpty) break;
+      final chunk = chunkRows.first['chunk'];
+      if (chunk is Uint8List) {
+        bytes.add(chunk);
+      } else if (chunk is List<int>) {
+        bytes.add(Uint8List.fromList(chunk));
+      } else {
+        break;
+      }
+    }
+
+    return _decodeTimeSeries(bytes.toBytes());
+  }
+
   // ==========================================
   // Row → SessionLog reconstruction
   // ==========================================
 
-  Future<SessionLog?> _sessionFromRow(
-    Map<String, Object?> row, {
-    Map<String, List<DataPoint>>? raw,
-  }) async {
+  Future<SessionLog?> _sessionFromRow(Map<String, Object?> row) async {
     try {
       final sessionId = row['id'] as String;
       final shots = await _loadShotsForSession(sessionId);
@@ -299,12 +627,12 @@ class DatabaseService {
         profileName: (row['profile_name'] as String?) ?? '',
         trainingPreset: (row['training_preset'] as String?) ?? '',
         seriesCount: (row['series_count'] as num?)?.toInt() ?? 0,
-        gyroX: raw?['gyroX'] ?? const [],
-        gyroY: raw?['gyroY'] ?? const [],
-        gyroZ: raw?['gyroZ'] ?? const [],
-        accelX: raw?['accelX'] ?? const [],
-        accelY: raw?['accelY'] ?? const [],
-        accelZ: raw?['accelZ'] ?? const [],
+        gyroX: const [],
+        gyroY: const [],
+        gyroZ: const [],
+        accelX: const [],
+        accelY: const [],
+        accelZ: const [],
         shots: shots,
       );
     } catch (e) {

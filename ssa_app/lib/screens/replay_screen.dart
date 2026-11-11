@@ -6,6 +6,7 @@
 // 3-phase breakdown.
 
 import 'package:flutter/material.dart';
+import '../models/data_models.dart';
 import '../providers/session_logger.dart';
 import '../services/database_service.dart';
 import '../services/trajectory/replay_engine.dart';
@@ -29,6 +30,11 @@ class _ReplayScreenState extends State<ReplayScreen> {
   late Future<_ReplayResult?> _future;
   ReplayShot? _selectedShot;
   int _frameIndex = 0;
+  int? _selectedSeries;
+
+  /// The trace of the selected series. It lives in the state (and not in the
+  /// FutureBuilder result) so switching series can replace it.
+  ReplayTrace? _trace;
 
   @override
   void initState() {
@@ -37,19 +43,84 @@ class _ReplayScreenState extends State<ReplayScreen> {
   }
 
   Future<_ReplayResult?> _load() async {
-    final session = await DatabaseService().getSession(widget.sessionId);
+    final service = DatabaseService();
+    final session = await service.getSession(widget.sessionId);
     if (session == null) return null;
-    final trace = ReplayEngine().replay(session);
-    if (trace.hasShots) {
-      _selectedShot = trace.shots.first;
-      _frameIndex = trace.shots.first.breakIndex.clamp(
-        0,
-        trace.frames.length - 1,
-      );
-    } else if (trace.frames.isNotEmpty) {
-      _frameIndex = trace.frames.length - 1;
-    }
-    return _ReplayResult(session: session, trace: trace);
+
+    // The raw data lives per series, so the replay shows one series at a
+    // time. The last series is the most recent one and therefore the
+    // default.
+    final seriesRaw = await service.getSeriesRaw(widget.sessionId);
+    final seriesNumbers = session.seriesNumbers;
+    final selectedSeries = seriesNumbers.isEmpty
+        ? null
+        : seriesNumbers.last;
+    _selectedSeries = selectedSeries;
+
+    final trace = _buildTrace(session, seriesRaw, selectedSeries);
+    _trace = trace;
+    _selectedShot = trace.hasShots ? trace.shots.first : null;
+    _frameIndex = trace.hasShots
+        ? trace.shots.first.breakIndex.clamp(0, trace.frames.length - 1)
+        : (trace.frames.isEmpty ? 0 : trace.frames.length - 1);
+
+    return _ReplayResult(
+      session: session,
+      seriesNumbers: seriesNumbers,
+    );
+  }
+
+  /// Run the replay engine over the raw data of one series.
+  ///
+  /// ReplayEngine works on a SessionLog, so a temporary one is built that
+  /// holds the raw data and the shots of the selected series only.
+  ReplayTrace _buildTrace(
+    SessionLog session,
+    Map<int, Map<String, List<DataPoint>>> seriesRaw,
+    int? seriesNumber,
+  ) {
+    final raw = seriesNumber == null
+        ? const <String, List<DataPoint>>{}
+        : (seriesRaw[seriesNumber] ?? const <String, List<DataPoint>>{});
+    final seriesShots = seriesNumber == null
+        ? session.shots
+        : session.shotsForSeries(seriesNumber);
+
+    return ReplayEngine().replay(
+      SessionLog(
+        id: session.id,
+        date: session.date,
+        duration: session.duration,
+        gyroX: raw['gyroX'] ?? const [],
+        gyroY: raw['gyroY'] ?? const [],
+        gyroZ: raw['gyroZ'] ?? const [],
+        accelX: raw['accelX'] ?? const [],
+        accelY: raw['accelY'] ?? const [],
+        accelZ: raw['accelZ'] ?? const [],
+        firearmType: session.firearmType,
+        trainingMode: session.trainingMode,
+        shots: seriesShots,
+      ),
+    );
+  }
+
+  /// Rebuild the trace for another series of the same session.
+  Future<void> _selectSeries(int series) async {
+    final service = DatabaseService();
+    final session = await service.getSession(widget.sessionId);
+    if (session == null) return;
+
+    final seriesRaw = await service.getSeriesRaw(widget.sessionId);
+    final trace = _buildTrace(session, seriesRaw, series);
+    if (!mounted) return;
+    setState(() {
+      _selectedSeries = series;
+      _trace = trace;
+      _selectedShot = trace.hasShots ? trace.shots.first : null;
+      _frameIndex = trace.hasShots
+          ? trace.shots.first.breakIndex.clamp(0, trace.frames.length - 1)
+          : (trace.frames.isEmpty ? 0 : trace.frames.length - 1);
+    });
   }
 
   Color _scoreColor(double score) {
@@ -95,20 +166,25 @@ class _ReplayScreenState extends State<ReplayScreen> {
 
   Widget _buildBody(_ReplayResult result) {
     final session = result.session;
-    final trace = result.trace;
+    final trace = _trace;
+    if (trace == null) {
+      return _buildNoRawDataView();
+    }
     final avgScore = trace.shots.isEmpty
         ? 0.0
         : trace.shots.map((s) => s.totalScore).reduce((a, b) => a + b) /
             trace.shots.length;
 
     // If no raw IMU data was ever recorded, show a clear message.
-    if (!session.hasRawData) {
+    if (!trace.hasShots && trace.frames.isEmpty) {
       return _buildNoRawDataView();
     }
 
     return Column(
       children: [
         _buildHeader(session, trace, avgScore),
+        if (result.seriesNumbers.length > 1)
+          _buildSeriesStrip(result.seriesNumbers),
         if (trace.hasShots)
           Expanded(
             flex: 2,
@@ -145,6 +221,75 @@ class _ReplayScreenState extends State<ReplayScreen> {
             child: _buildShotChips(trace),
           ),
       ],
+    );
+  }
+
+  /// Series selector — only shown when the session holds several series.
+  Widget _buildSeriesStrip(List<int> seriesNumbers) {
+    return Container(
+      color: StsysTheme.surfaceContainerLowOf(context),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'SERIES',
+            style: TextStyle(
+              fontFamily: 'Inter',
+              fontSize: 9,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 2,
+              color: StsysTheme.onSurfaceVariantOf(context),
+            ),
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            height: 36,
+            child: ListView.builder(
+              scrollDirection: Axis.horizontal,
+              itemCount: seriesNumbers.length,
+              itemBuilder: (context, index) {
+                final series = seriesNumbers[index];
+                final isSelected = _selectedSeries == series;
+                return GestureDetector(
+                  key: ValueKey('replay-series-chip-$series'),
+                  onTap: () => _selectSeries(series),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    margin: const EdgeInsets.only(right: 8),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
+                    decoration: BoxDecoration(
+                      color: isSelected
+                          ? StsysTheme.secondaryOf(context).withValues(alpha: 0.15)
+                          : StsysTheme.surfaceContainerHighOf(context),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: isSelected
+                            ? StsysTheme.secondaryOf(context)
+                            : StsysTheme.outlineVariantOf(context).withValues(alpha: 0.2),
+                      ),
+                    ),
+                    child: Text(
+                      'SERIES $series',
+                      style: TextStyle(
+                        fontFamily: 'Manrope',
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                        color: isSelected
+                            ? StsysTheme.secondaryOf(context)
+                            : StsysTheme.onSurfaceOf(context),
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -666,7 +811,10 @@ class _ErrorView extends StatelessWidget {
 // ============================================
 class _ReplayResult {
   final SessionLog session;
-  final ReplayTrace trace;
+  final List<int> seriesNumbers;
 
-  const _ReplayResult({required this.session, required this.trace});
+  const _ReplayResult({
+    required this.session,
+    this.seriesNumbers = const [],
+  });
 }

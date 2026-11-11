@@ -1128,9 +1128,10 @@ class SensorDataIsolate {
 
   void _startRecording() {
     _isRecording = true;
-    _sessionShots.clear();
-    // NOTE: Don't clear session data — user may have previous data they want to keep
-    // _clearSessionData() called only on explicit clear or new session start
+    // The raw buffer belongs to ONE series: a new series must start from an
+    // empty buffer, otherwise the raw data of a series that ended without a
+    // shot would leak into the next one.
+    _clearSessionData();
     _mainSendPort.send(SensorDataMessage('recording_started'));
   }
 

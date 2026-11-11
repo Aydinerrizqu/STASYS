@@ -49,7 +49,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 2,
+      version: 3,
       onCreate: _onCreate,
       onUpgrade: onUpgrade,
       onConfigure: _onConfigure,
@@ -115,6 +115,38 @@ class DatabaseHelper {
     );
     await db.execute('CREATE INDEX idx_shots_session ON shots(session_id)');
     await db.execute('CREATE INDEX idx_shots_score ON shots(total_score DESC)');
+
+    await _createSessionSeriesTable(db);
+  }
+
+  /// Raw gyro/accel time series, stored per series.
+  ///
+  /// A training session can hold several series, so the raw data of one
+  /// session is no longer a single blob — it lives here, one row per series.
+  /// The UNIQUE constraint is required: without it SQLite never replaces an
+  /// existing row on `INSERT OR REPLACE`, and every END SERIES would append
+  /// a duplicate row.
+  Future<void> _createSessionSeriesTable(DatabaseExecutor db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS session_series (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id TEXT NOT NULL,
+        series_number INTEGER NOT NULL,
+        duration REAL NOT NULL DEFAULT 0,
+        gyro_x BLOB,
+        gyro_y BLOB,
+        gyro_z BLOB,
+        accel_x BLOB,
+        accel_y BLOB,
+        accel_z BLOB,
+        FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE,
+        UNIQUE (session_id, series_number)
+      )
+    ''');
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_session_series '
+      'ON session_series(session_id, series_number)',
+    );
   }
 
   Future<void> onUpgrade(Database db, int oldVersion, int newVersion) async {
@@ -131,6 +163,23 @@ class DatabaseHelper {
       await db.execute(
         'ALTER TABLE shots ADD COLUMN series_number INTEGER NOT NULL DEFAULT 1',
       );
+    }
+
+    if (oldVersion < 3) {
+      await _createSessionSeriesTable(db);
+
+      // Copy the raw data of legacy sessions into series 1 so old sessions
+      // stay replayable. INSERT OR IGNORE keeps the migration idempotent.
+      await db.execute('''
+        INSERT OR IGNORE INTO session_series (
+          session_id, series_number, duration,
+          gyro_x, gyro_y, gyro_z, accel_x, accel_y, accel_z
+        )
+        SELECT id, 1, duration,
+               gyro_x, gyro_y, gyro_z, accel_x, accel_y, accel_z
+        FROM sessions
+        WHERE gyro_x IS NOT NULL
+      ''');
     }
   }
 

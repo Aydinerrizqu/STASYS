@@ -67,6 +67,9 @@ void main() {
     when(
       () => sensor.saveCurrentSession(
         shots: any(named: 'shots'),
+        sessionId: any(named: 'sessionId'),
+        seriesNumber: any(named: 'seriesNumber'),
+        sessionDate: any(named: 'sessionDate'),
         profileName: any(named: 'profileName'),
         trainingPreset: any(named: 'trainingPreset'),
         seriesCount: any(named: 'seriesCount'),
@@ -76,7 +79,7 @@ void main() {
     ).thenAnswer((_) async {});
   });
 
-  testWidgets('series review shows only OK and confirm returns to START', (
+  testWidgets('series review shows OK and END SESSION, confirm returns to START', (
     tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(390, 844));
@@ -107,7 +110,9 @@ void main() {
     expect(playingTarget.replayProgress, lessThan(1.0));
     expect(playingTarget.display, TrainTargetDisplay.activeTrace);
     expect(find.text('END SERIES'), findsNothing);
-    expect(find.text('END SESSION'), findsNothing);
+    // END SESSION is available in the series review: the session can be
+    // closed without starting another series.
+    expect(find.text('END SESSION'), findsOneWidget);
     expect(find.text('START'), findsNothing);
 
     await tester.tap(find.text('OK'));
@@ -203,7 +208,8 @@ void main() {
     expect(find.text('SESSION REVIEW'), findsOneWidget);
     expect(find.text('OK'), findsOneWidget);
     expect(find.text('END SERIES'), findsNothing);
-    expect(find.text('END SESSION'), findsNothing);
+    // END SESSION is available in the session review as well.
+    expect(find.text('END SESSION'), findsOneWidget);
     expect(find.text('SHOT 2  90'), findsOneWidget);
     expect(find.byType(ShotReplayPanel), findsOneWidget);
 
@@ -261,6 +267,9 @@ void main() {
     when(
       () => sensor.saveCurrentSession(
         shots: any(named: 'shots'),
+        sessionId: any(named: 'sessionId'),
+        seriesNumber: any(named: 'seriesNumber'),
+        sessionDate: any(named: 'sessionDate'),
         profileName: any(named: 'profileName'),
         trainingPreset: any(named: 'trainingPreset'),
         seriesCount: any(named: 'seriesCount'),
@@ -291,6 +300,9 @@ void main() {
     verify(
       () => sensor.saveCurrentSession(
         shots: any(named: 'shots'),
+        sessionId: any(named: 'sessionId'),
+        seriesNumber: any(named: 'seriesNumber'),
+        sessionDate: any(named: 'sessionDate'),
         profileName: any(named: 'profileName'),
         trainingPreset: any(named: 'trainingPreset'),
         seriesCount: any(named: 'seriesCount'),

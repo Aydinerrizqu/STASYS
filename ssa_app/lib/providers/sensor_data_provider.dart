@@ -407,7 +407,18 @@ class SensorDataProvider extends ChangeNotifier {
     _isRecording = true;
     _recordingStartTime = DateTime.now();
     _recordingDuration = Duration.zero;
-    
+
+    // The raw buffer belongs to ONE series. Clearing it here — the single
+    // point where a new series starts — keeps the raw data of the previous
+    // series from leaking into the new one.
+    _sessionGyroX = null;
+    _sessionGyroY = null;
+    _sessionGyroZ = null;
+    _sessionAccelX = null;
+    _sessionAccelY = null;
+    _sessionAccelZ = null;
+    _sessionShots.clear();
+    _isolateSendPort?.send(SensorDataMessage('clear_session'));
     _isolateSendPort?.send(SensorDataMessage('start_recording'));
     
     // Timer untuk update durasi
@@ -448,9 +459,20 @@ class SensorDataProvider extends ChangeNotifier {
     _isolateSendPort?.send(SensorDataMessage('reset_axis'));
   }
 
-  /// Save session - request data dari isolate dulu
+  /// Save the current series into its training session.
+  ///
+  /// [sessionId] identifies the whole training session — every series of that
+  /// session shares it, so History shows one card per session. [seriesNumber]
+  /// tells which series inside the session is being written.
+  ///
+  /// The raw sensor data of the buffer belongs to this series only; it is
+  /// stored per series so the offline replay can rebuild the trace of any
+  /// single series.
   Future<void> saveCurrentSession({
     List<ShotResult>? shots,
+    String? sessionId,
+    int seriesNumber = 1,
+    DateTime? sessionDate,
     String profileName = '',
     String trainingPreset = '',
     int seriesCount = 0,
@@ -473,67 +495,108 @@ class SensorDataProvider extends ChangeNotifier {
         "sessionShots=${_sessionShots.length}");
 
     try {
-      // If buffers are empty, wait for isolate to send fresh session_data.
-      // The main listener (line ~217) will call _handleSessionData and then
-      // complete _sessionFetchCompleter.  We do NOT add a second listener —
-      // that throws 'Bad state: Stream is already listened to'.
+      // Demo buffers live on the UI thread; hardware buffers come from the isolate.
       if (_sessionGyroX == null || _sessionGyroX!.isEmpty) {
-        debugPrint("[SAVE] Buffers empty — requesting fresh data from isolate");
-        _sessionFetchCompleter = Completer<void>();
-        _isolateSendPort?.send(SensorDataMessage('get_session_data'));
-
-        try {
-          await _sessionFetchCompleter!.future.timeout(
-            const Duration(seconds: 5),
-            onTimeout: () {
-              throw TimeoutException(
-                  'Failed to get session data from isolate within 5s. '
-                  'isolateReady=${_isolateSendPort != null}');
-            },
+        if (_isDemoMode) {
+          _sessionGyroX ??= [];
+          _sessionGyroY ??= [];
+          _sessionGyroZ ??= [];
+          _sessionAccelX ??= [];
+          _sessionAccelY ??= [];
+          _sessionAccelZ ??= [];
+        } else {
+          // If buffers are empty, wait for isolate to send fresh session_data.
+          // The main listener (line ~217) will call _handleSessionData and then
+          // complete _sessionFetchCompleter.  We do NOT add a second listener —
+          // that throws 'Bad state: Stream is already listened to'.
+          debugPrint(
+            "[SAVE] Buffers empty — requesting fresh data from isolate",
           );
-        } finally {
-          // Always clear the completer reference so any stray 'session_data'
-          // arriving late does not try to complete it again.
-          _sessionFetchCompleter = null;
-        }
+          _sessionFetchCompleter = Completer<void>();
+          _isolateSendPort?.send(SensorDataMessage('get_session_data'));
 
-        debugPrint("[SAVE] After fetch: gyroX_len=${_sessionGyroX?.length ?? 0} "
-            "sessionDataReady=${_sessionGyroX != null}");
+          try {
+            await _sessionFetchCompleter!.future.timeout(
+              const Duration(seconds: 5),
+              onTimeout: () {
+                throw TimeoutException(
+                  'Failed to get session data from isolate within 5s. '
+                  'isolateReady=${_isolateSendPort != null}',
+                );
+              },
+            );
+          } finally {
+            // Always clear the completer reference so any stray 'session_data'
+            // arriving late does not try to complete it again.
+            _sessionFetchCompleter = null;
+          }
+
+          debugPrint(
+            "[SAVE] After fetch: gyroX_len=${_sessionGyroX?.length ?? 0} "
+            "sessionDataReady=${_sessionGyroX != null}",
+          );
+        }
       }
 
-      if (_sessionGyroX == null || _sessionGyroX!.isEmpty) {
-        debugPrint("[SAVE] ABORT: no gyro data after fetch. "
-            "Isolate may not have buffered any data during recording.");
-        throw Exception('No session data available — isolate returned empty buffers');
+      if (!_isDemoMode &&
+          (_sessionGyroX == null || _sessionGyroX!.isEmpty)) {
+        debugPrint(
+          "[SAVE] ABORT: no gyro data after fetch. "
+          "Isolate may not have buffered any data during recording.",
+        );
+        throw Exception(
+          'No session data available — isolate returned empty buffers',
+        );
       }
 
       debugPrint("[SAVE] Saving session. "
-          "gyroX=${_sessionGyroX!.length} accelX=${_sessionAccelX!.length} "
-          "shots=${_sessionShots.length}");
+          "gyroX=${_sessionGyroX?.length ?? 0} accelX=${_sessionAccelX?.length ?? 0} "
+          "shots=${(shots ?? _sessionShots).length}");
 
-      final sessionId = "SESSION_${DateTime.now().millisecondsSinceEpoch}";
-      final resolvedFirearmType = firearmType ?? _settingsProvider?.firearmType ?? FirearmType.pistol;
-      final resolvedTrainingMode = trainingMode ?? _settingsProvider?.trainingMode ?? TrainingMode.dryFire;
+      final resolvedId = sessionId?.isNotEmpty == true
+          ? sessionId!
+          : 'SESSION_${DateTime.now().millisecondsSinceEpoch}';
+      final resolvedFirearmType = firearmType ??
+          _settingsProvider?.firearmType ??
+          FirearmType.pistol;
+      final resolvedTrainingMode = trainingMode ??
+          _settingsProvider?.trainingMode ??
+          TrainingMode.dryFire;
 
-      final log = SessionLog(
-        id: sessionId,
-        date: DateTime.now(),
-        duration: _recordingDuration.inMilliseconds / 1000.0,
-        gyroX: List.from(_sessionGyroX!),
-        gyroY: List.from(_sessionGyroY!),
-        gyroZ: List.from(_sessionGyroZ!),
-        accelX: List.from(_sessionAccelX!),
-        accelY: List.from(_sessionAccelY!),
-        accelZ: List.from(_sessionAccelZ!),
-        firearmType: resolvedFirearmType,
-        trainingMode: resolvedTrainingMode,
-        shots: List.from(shots ?? _sessionShots),
-        profileName: profileName,
-        trainingPreset: trainingPreset,
-        seriesCount: seriesCount,
+      SessionLog? existing;
+      if (sessionId != null && sessionId.isNotEmpty) {
+        existing = await _sessionLogger.getSession(sessionId);
+      }
+
+      // Only the shots of this series are written; the other series of the
+      // session stay untouched in the DB.
+      final seriesShots = List<ShotResult>.from(shots ?? _sessionShots)
+          .map((s) => s.copyWith(seriesNumber: seriesNumber))
+          .toList();
+
+      final seriesDuration = _recordingDuration.inMilliseconds / 1000.0;
+
+      await _sessionLogger.upsertSessionWithSeries(
+        sessionId: resolvedId,
+        seriesNumber: seriesNumber,
+        date: sessionDate ?? existing?.date ?? DateTime.now(),
+        seriesDuration: seriesDuration,
+        shots: seriesShots,
+        firearmType: existing?.firearmType ?? resolvedFirearmType,
+        trainingMode: existing?.trainingMode ?? resolvedTrainingMode,
+        profileName: profileName.isNotEmpty
+            ? profileName
+            : (existing?.profileName ?? ''),
+        trainingPreset: trainingPreset.isNotEmpty
+            ? trainingPreset
+            : (existing?.trainingPreset ?? ''),
+        gyroX: List<DataPoint>.from(_sessionGyroX ?? const []),
+        gyroY: List<DataPoint>.from(_sessionGyroY ?? const []),
+        gyroZ: List<DataPoint>.from(_sessionGyroZ ?? const []),
+        accelX: List<DataPoint>.from(_sessionAccelX ?? const []),
+        accelY: List<DataPoint>.from(_sessionAccelY ?? const []),
+        accelZ: List<DataPoint>.from(_sessionAccelZ ?? const []),
       );
-
-      await _sessionLogger.saveSession(log);
 
       // Clear session data
       _sessionGyroX = null;

@@ -162,6 +162,33 @@ class ShotResult {
     if (list == null) return null;
     return (list as List).map((e) => (e as num).toDouble()).toList();
   }
+
+  /// Copy of this shot with a different series number.
+  ///
+  /// Used to stamp shots with the series they belong to when they are
+  /// attached to a training series (the isolate does not know the series).
+  ShotResult copyWith({int? seriesNumber}) {
+    return ShotResult(
+      timestamp: timestamp,
+      totalScore: totalScore,
+      holdScore: holdScore,
+      pressScore: pressScore,
+      recoilScore: recoilScore,
+      elevationScore: elevationScore,
+      windageScore: windageScore,
+      travelDistance: travelDistance,
+      peakJerk: peakJerk,
+      firearmType: firearmType,
+      trainingMode: trainingMode,
+      seriesNumber: seriesNumber ?? this.seriesNumber,
+      holdX: holdX,
+      holdY: holdY,
+      pressX: pressX,
+      pressY: pressY,
+      recoilX: recoilX,
+      recoilY: recoilY,
+    );
+  }
 }
 
 // --- DataPoint & SessionData ---

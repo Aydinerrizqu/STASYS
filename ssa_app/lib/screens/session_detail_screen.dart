@@ -22,6 +22,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
     with SingleTickerProviderStateMixin {
   ShotResult? _selectedShot;
   int? _selectedShotIndex;
+  int? _selectedSeriesNumber;
 
   /// Drives the trace playback of the selected shot. Same behaviour as the
   /// Train screen: the value maps to the target's `replayProgress`.
@@ -48,9 +49,16 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
         )..addListener(() {
           if (mounted) setState(() {});
         });
-    if (widget.session.shots.isNotEmpty) {
-      _selectedShot = widget.session.shots.last;
-      _selectedShotIndex = widget.session.shots.length - 1;
+    final numbers = _seriesNumbers;
+    if (numbers.length <= 1) {
+      _selectedSeriesNumber = null;
+    } else {
+      _selectedSeriesNumber = numbers.last;
+    }
+    final shots = _visibleShots;
+    if (shots.isNotEmpty) {
+      _selectedShot = shots.last;
+      _selectedShotIndex = shots.length - 1;
     }
   }
 
@@ -58,15 +66,47 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
   void didUpdateWidget(covariant SessionDetailScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.session != widget.session) {
-      final shots = widget.session.shots;
+      final numbers = _seriesNumbers;
+      _selectedSeriesNumber = numbers.length <= 1 ? null : numbers.last;
+      final shots = _visibleShots;
       _selectedShot = shots.isEmpty ? null : shots.last;
       _selectedShotIndex = shots.isEmpty ? null : shots.length - 1;
       _replayController.value = 1.0;
     }
   }
 
+  List<int> get _seriesNumbers => widget.session.seriesNumbers;
+
+  List<ShotResult> get _visibleShots {
+    final selected = _selectedSeriesNumber;
+    if (selected == null) return widget.session.shots;
+    return widget.session.shots
+        .where((shot) => shot.seriesNumber == selected)
+        .toList();
+  }
+
+  double _averageForShots(List<ShotResult> shots) {
+    if (shots.isEmpty) return 0;
+    return shots.map((s) => s.totalScore).reduce((a, b) => a + b) / shots.length;
+  }
+
+  void _selectSeries(int? seriesNumber) {
+    final shots = seriesNumber == null
+        ? widget.session.shots
+        : widget.session.shots
+            .where((s) => s.seriesNumber == seriesNumber)
+            .toList();
+    setState(() {
+      _selectedSeriesNumber = seriesNumber;
+      _selectedShot = shots.isEmpty ? null : shots.last;
+      _selectedShotIndex = shots.isEmpty ? null : shots.length - 1;
+    });
+    _replayController.value = 1.0;
+  }
+
   void _selectShot(ShotResult shot) {
-    final idx = widget.session.shots.indexOf(shot);
+    final shots = _visibleShots;
+    final idx = shots.indexOf(shot);
     setState(() {
       _selectedShot = shot;
       _selectedShotIndex = idx;
@@ -109,7 +149,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
       children: [
         _TargetScoreRow(
           shotScore: shot.totalScore,
-          averageScore: widget.session.averageScore,
+          averageScore: _averageForShots(_visibleShots),
           scoreColor: _getScoreColor(shot.totalScore),
         ),
         SizedBox(
@@ -152,7 +192,10 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
   @override
   Widget build(BuildContext context) {
     final session = widget.session;
-    final avgScore = session.averageScore;
+    // The header follows the selected series: the shot count and the average
+    // describe that series only.
+    final visibleShots = _visibleShots;
+    final avgScore = _averageForShots(visibleShots);
 
     return Scaffold(
       backgroundColor: StsysTheme.surfaceContainerLowestOf(context),
@@ -210,7 +253,8 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          '${session.shots.length} shots — ${avgScore.toStringAsFixed(1)} avg',
+                          '${visibleShots.length} shots — ${avgScore.toStringAsFixed(1)} avg',
+                          key: const ValueKey('session-detail-header-stats'),
                           style: TextStyle(
                             fontFamily: 'Manrope',
                             fontSize: 12,
@@ -252,7 +296,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    if (session.shots.isEmpty)
+                    if (visibleShots.isEmpty)
                       const SizedBox(
                         height: 240,
                         child: Center(
@@ -264,7 +308,8 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
                       )
                     else ...[
                       _buildTargetBody(),
-                      _buildShotChipStrip(session.shots),
+                      if (_seriesNumbers.length > 1) _buildSeriesChipStrip(),
+                      _buildShotChipStrip(visibleShots),
                     ],
                   ],
                 ),
@@ -272,6 +317,81 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildSeriesChipStrip() {
+    final seriesNumbers = _seriesNumbers;
+    return Container(
+      color: StsysTheme.surfaceContainerLowOf(context),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'SERIES',
+            style: TextStyle(
+              fontFamily: 'Inter',
+              fontSize: 9,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 2,
+              color: StsysTheme.onSurfaceVariantOf(context),
+            ),
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            height: 36,
+            child: ListView.builder(
+              scrollDirection: Axis.horizontal,
+              itemCount: seriesNumbers.length,
+              itemBuilder: (context, index) {
+                final series = seriesNumbers[index];
+                final isSelected = _selectedSeriesNumber == series;
+                final seriesShots = widget.session.shots
+                    .where((s) => s.seriesNumber == series)
+                    .toList();
+                final label = 'SERIES $series  (${seriesShots.length})';
+
+                return GestureDetector(
+                  key: ValueKey('series-chip-$series'),
+                  onTap: () => _selectSeries(series),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    margin: const EdgeInsets.only(right: 8),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
+                    decoration: BoxDecoration(
+                      color: isSelected
+                          ? StsysTheme.primaryOf(context).withValues(alpha: 0.15)
+                          : StsysTheme.scoreChipFillOf(context),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: isSelected
+                            ? StsysTheme.primaryOf(context)
+                            : StsysTheme.outlineVariantOf(context)
+                                .withValues(alpha: 0.2),
+                      ),
+                    ),
+                    child: Text(
+                      label,
+                      style: TextStyle(
+                        fontFamily: 'Manrope',
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                        color: isSelected
+                            ? StsysTheme.primaryOf(context)
+                            : StsysTheme.onSurfaceOf(context),
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -25,6 +25,7 @@ void main() {
       expect(provider.state, TrainSessionState.readySeries);
       expect(provider.selectedPreset, testPreset);
       expect(provider.activeProfile, testProfile);
+      expect(provider.trainingSessionId, startsWith('SESSION_'));
     });
 
     test('selectPreset is no-op when not in choices state', () {
@@ -47,6 +48,7 @@ void main() {
       expect(provider.selectedPreset, isNull);
       expect(provider.activeProfile, isNull);
       expect(provider.seriesCount, 0);
+      expect(provider.trainingSessionId, isNull);
       expect(provider.currentSeriesShots, isEmpty);
       expect(provider.allSeriesShots, isEmpty);
     });
@@ -214,14 +216,16 @@ void main() {
 
       provider.confirmReview();
       provider.startSeries();
-      provider.onShotDetected(first);
-      provider.onShotDetected(second);
+      final sessionFirst = _makeShot(totalScore: 80, seriesNumber: 2);
+      final sessionSecond = _makeShot(totalScore: 90, seriesNumber: 2);
+      provider.onShotDetected(sessionFirst);
+      provider.onShotDetected(sessionSecond);
       provider.endSession();
 
       expect(provider.selectedShotIndex, 1);
       provider.selectShot(0);
       expect(provider.selectedShotIndex, 0);
-      expect(provider.lastSeriesShots[provider.selectedShotIndex!], same(first));
+      expect(provider.lastSeriesShots[provider.selectedShotIndex!], same(sessionFirst));
     });
 
     test('selectShot is no-op when outside a populated active or review state', () {
@@ -287,7 +291,9 @@ void main() {
       provider.confirmReview();
 
       provider.startSeries();
-      final second = _makeShot(totalScore: 90);
+      // The shot carries the number of the running series, so the provider
+      // keeps it as it is (it only stamps shots whose number is wrong).
+      final second = _makeShot(totalScore: 90, seriesNumber: 2);
       provider.onShotDetected(second);
       provider.endSeries();
 
@@ -390,9 +396,85 @@ void main() {
       expect(provider.state, TrainSessionState.activeSeries);
     });
   });
+
+  group('TrainSessionProvider session identity and series numbering', () {
+    test('every series of one session shares the same session id', () {
+      provider.selectPreset(preset: testPreset, profile: testProfile);
+      final sessionId = provider.trainingSessionId;
+
+      provider.startSeries();
+      provider.endSeries();
+      provider.confirmReview();
+      provider.startSeries();
+
+      // Series 2 belongs to the same session as series 1.
+      expect(provider.trainingSessionId, sessionId);
+    });
+
+    test('the next session gets a new session id', () {
+      provider.selectPreset(preset: testPreset, profile: testProfile);
+      final firstSessionId = provider.trainingSessionId;
+
+      provider.startSeries();
+      provider.onShotDetected(_makeShot(totalScore: 90));
+      provider.endSession();
+      provider.confirmReview();
+
+      provider.selectPreset(preset: testPreset, profile: testProfile);
+
+      expect(provider.trainingSessionId, isNot(firstSessionId));
+    });
+
+    test('endSession clears the session identity', () {
+      provider.selectPreset(preset: testPreset, profile: testProfile);
+      provider.startSeries();
+      provider.onShotDetected(_makeShot(totalScore: 90));
+
+      provider.endSession();
+
+      expect(provider.trainingSessionId, isNull);
+      expect(provider.sessionStartedAt, isNull);
+    });
+
+    test('onShotDetected stamps the running series number', () {
+      provider.selectPreset(preset: testPreset, profile: testProfile);
+
+      provider.startSeries();
+      provider.onShotDetected(_makeShot(totalScore: 80));
+      expect(provider.currentSeriesShots.first.seriesNumber, 1);
+
+      provider.endSeries();
+      provider.confirmReview();
+
+      provider.startSeries();
+      provider.onShotDetected(_makeShot(totalScore: 85));
+      expect(provider.currentSeriesShots.first.seriesNumber, 2);
+    });
+
+    test('currentSeriesNumber follows the running series', () {
+      provider.selectPreset(preset: testPreset, profile: testProfile);
+
+      provider.startSeries();
+      expect(provider.currentSeriesNumber, 1);
+
+      provider.endSeries();
+      provider.confirmReview();
+
+      provider.startSeries();
+      expect(provider.currentSeriesNumber, 2);
+    });
+
+    test('sessionStartedAt is set when the preset is chosen', () {
+      expect(provider.sessionStartedAt, isNull);
+
+      provider.selectPreset(preset: testPreset, profile: testProfile);
+
+      expect(provider.sessionStartedAt, isNotNull);
+    });
+  });
 }
 
-ShotResult _makeShot({required double totalScore}) {
+ShotResult _makeShot({required double totalScore, int seriesNumber = 1}) {
   return ShotResult(
     timestamp: DateTime.now(),
     totalScore: totalScore,
@@ -405,5 +487,6 @@ ShotResult _makeShot({required double totalScore}) {
     peakJerk: 5.0,
     firearmType: FirearmType.pistol,
     trainingMode: TrainingMode.dryFire,
+    seriesNumber: seriesNumber,
   );
 }

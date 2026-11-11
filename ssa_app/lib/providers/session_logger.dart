@@ -49,6 +49,27 @@ class SessionLog {
       accelY.isNotEmpty &&
       accelZ.isNotEmpty;
 
+  /// Distinct series numbers that actually own shots, ascending.
+  ///
+  /// Derived from the shots so an empty series never shows up in the UI.
+  List<int> get seriesNumbers {
+    final numbers = shots.map((s) => s.seriesNumber).toSet().toList()..sort();
+    return numbers;
+  }
+
+  /// Shots belonging to one series.
+  List<ShotResult> shotsForSeries(int seriesNumber) {
+    return shots.where((s) => s.seriesNumber == seriesNumber).toList();
+  }
+
+  /// Average score of one series (0 when the series has no shots).
+  double averageScoreForSeries(int seriesNumber) {
+    final seriesShots = shotsForSeries(seriesNumber);
+    if (seriesShots.isEmpty) return 0;
+    return seriesShots.map((s) => s.totalScore).reduce((a, b) => a + b) /
+        seriesShots.length;
+  }
+
   double get averageScore {
     if (shots.isEmpty) return 0;
     return shots.map((s) => s.totalScore).reduce((a, b) => a + b) /
@@ -180,6 +201,65 @@ class SessionLogger {
 
   Future<List<SessionLog>> loadAllSessions() async {
     return await _db.loadAllSessions();
+  }
+
+  Future<SessionLog?> getSession(String sessionId) async {
+    return await _db.getSession(sessionId);
+  }
+
+  /// Save one series inside a training session.
+  ///
+  /// Every series of a training session shares the same [sessionId], so the
+  /// session stays one card in History.
+  Future<void> upsertSessionWithSeries({
+    required String sessionId,
+    required int seriesNumber,
+    required DateTime date,
+    required double seriesDuration,
+    required List<ShotResult> shots,
+    FirearmType firearmType = FirearmType.pistol,
+    TrainingMode trainingMode = TrainingMode.dryFire,
+    String profileName = '',
+    String trainingPreset = '',
+    List<DataPoint> gyroX = const [],
+    List<DataPoint> gyroY = const [],
+    List<DataPoint> gyroZ = const [],
+    List<DataPoint> accelX = const [],
+    List<DataPoint> accelY = const [],
+    List<DataPoint> accelZ = const [],
+  }) async {
+    await _db.upsertSessionWithSeries(
+      sessionId: sessionId,
+      seriesNumber: seriesNumber,
+      date: date,
+      seriesDuration: seriesDuration,
+      shots: shots,
+      firearmType: firearmType,
+      trainingMode: trainingMode,
+      profileName: profileName,
+      trainingPreset: trainingPreset,
+      gyroX: gyroX,
+      gyroY: gyroY,
+      gyroZ: gyroZ,
+      accelX: accelX,
+      accelY: accelY,
+      accelZ: accelZ,
+    );
+  }
+
+  /// Raw sensor data of every series of a session, keyed by series number.
+  Future<Map<int, Map<String, List<DataPoint>>>> getSeriesRaw(
+    String sessionId,
+  ) async {
+    return await _db.getSeriesRaw(sessionId);
+  }
+
+  /// Shots of one series of a session.
+  Future<List<ShotResult>> getShotsForSeries(
+    String sessionId,
+    int seriesNumber,
+  ) async {
+    return await _db.getShotsForSeries(sessionId, seriesNumber);
   }
 
   Future<void> deleteSession(String sessionId) async {

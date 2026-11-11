@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -8,6 +7,7 @@ import '../models/data_models.dart';
 import '../providers/profile_provider.dart';
 import '../providers/train_session_provider.dart';
 import '../providers/sensor_data_provider.dart';
+import '../providers/session_provider.dart';
 import '../theme/app_theme.dart';
 import '../widgets/train_target_widget.dart';
 import '../widgets/shot_replay_panel.dart';
@@ -99,7 +99,29 @@ class _TrainScreenState extends State<TrainScreen> {
         sensor.latestShot != null &&
         !identical(sensor.latestShot, _lastForwardedShot)) {
       _lastForwardedShot = sensor.latestShot;
-      train.onShotDetected(sensor.latestShot!);
+      final raw = sensor.latestShot!;
+      train.onShotDetected(
+        ShotResult(
+          timestamp: raw.timestamp,
+          totalScore: raw.totalScore,
+          holdScore: raw.holdScore,
+          pressScore: raw.pressScore,
+          recoilScore: raw.recoilScore,
+          elevationScore: raw.elevationScore,
+          windageScore: raw.windageScore,
+          travelDistance: raw.travelDistance,
+          peakJerk: raw.peakJerk,
+          firearmType: raw.firearmType,
+          trainingMode: raw.trainingMode,
+          seriesNumber: train.seriesCount,
+          holdX: raw.holdX,
+          holdY: raw.holdY,
+          pressX: raw.pressX,
+          pressY: raw.pressY,
+          recoilX: raw.recoilX,
+          recoilY: raw.recoilY,
+        ),
+      );
     }
   }
 
@@ -220,7 +242,7 @@ class _ChoicesView extends StatelessWidget {
                 Expanded(
                   child: ListView.separated(
                     itemCount: 4,
-                    separatorBuilder: (_, __) => const SizedBox(height: 10),
+                    separatorBuilder: (_, _) => const SizedBox(height: 10),
                     itemBuilder: (ctx, i) => _PresetCard(
                       index: i,
                       enabled: profileProv.activeProfile != null,
@@ -611,8 +633,9 @@ class _SessionViewState extends State<_SessionView>
     if (_isSaving) return;
     final train = context.read<TrainSessionProvider>();
     final sensor = context.read<SensorDataProvider>();
-    // Capture shots + metadata BEFORE provider mutation.
-    final shots = train.currentSeriesShots;
+    // Persist only this series; earlier series are already in the DB.
+    final shots = List<ShotResult>.from(train.currentSeriesShots);
+    final sessionId = train.trainingSessionId;
     final profileName = train.activeProfile?.trimmedName ?? '';
     final trainingPreset = train.selectedPreset?.id ?? '';
     final seriesCount = train.seriesCount;
@@ -622,15 +645,21 @@ class _SessionViewState extends State<_SessionView>
     setState(() => _isSaving = true);
     try {
       if (sensor.isRecording) sensor.stopRecording();
-      if (shots.isNotEmpty) {
+      if (shots.isNotEmpty && sessionId != null) {
         await sensor.saveCurrentSession(
           shots: shots,
+          sessionId: sessionId,
+          seriesNumber: seriesCount,
+          sessionDate: train.sessionStartedAt,
           profileName: profileName,
           trainingPreset: trainingPreset,
           seriesCount: seriesCount,
           firearmType: firearmType,
           trainingMode: trainingMode,
         );
+        if (context.mounted) {
+          await context.read<SessionProvider?>()?.loadSessions();
+        }
       }
       train.endSeries();
     } finally {
@@ -643,25 +672,34 @@ class _SessionViewState extends State<_SessionView>
     final train = context.read<TrainSessionProvider>();
     final sensor = context.read<SensorDataProvider>();
     // Capture BEFORE endSession() resets profile/preset/session counters.
-    final shots = train.currentSeriesShots;
+    // Only the active series is written here: the series that already ended
+    // are stored, and writing them again would duplicate their shots.
+    final shots = List<ShotResult>.from(train.currentSeriesShots);
+    final sessionId = train.trainingSessionId;
+    final seriesCount = train.seriesCount;
     final profileName = train.activeProfile?.trimmedName ?? '';
     final trainingPreset = train.selectedPreset?.id ?? '';
-    final seriesCount = train.seriesCount;
     final firearmType = train.selectedPreset?.firearmType;
     final trainingMode = train.selectedPreset?.trainingMode;
 
     setState(() => _isSaving = true);
     try {
       if (sensor.isRecording) sensor.stopRecording();
-      if (shots.isNotEmpty) {
+      if (shots.isNotEmpty && sessionId != null) {
         await sensor.saveCurrentSession(
           shots: shots,
+          sessionId: sessionId,
+          seriesNumber: seriesCount,
+          sessionDate: train.sessionStartedAt,
           profileName: profileName,
           trainingPreset: trainingPreset,
           seriesCount: seriesCount,
           firearmType: firearmType,
           trainingMode: trainingMode,
         );
+        if (context.mounted) {
+          await context.read<SessionProvider?>()?.loadSessions();
+        }
       }
       train.endSession();
     } finally {
@@ -829,10 +867,35 @@ class _SessionViewState extends State<_SessionView>
                             child: FittedBox(
                               fit: BoxFit.scaleDown,
                               alignment: Alignment.centerRight,
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  if (!_isSaving)
+                                    _SessionControl(
+                                      label: 'END SESSION',
+                                      color: StsysTheme.liveRed,
+                                      onTap: () => _endSession(context),
+                                    ),
+                                  const SizedBox(width: 6),
+                                  _SessionControl(
+                                    label: 'OK',
+                                    color: StsysTheme.cyanOf(context),
+                                    onTap: () => train.confirmReview(),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          )
+                        else if (state == TrainSessionState.readySeries &&
+                            !_isSaving)
+                          Flexible(
+                            child: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              alignment: Alignment.centerRight,
                               child: _SessionControl(
-                                label: 'OK',
-                                color: StsysTheme.cyanOf(context),
-                                onTap: () => train.confirmReview(),
+                                label: 'END SESSION',
+                                color: StsysTheme.liveRed,
+                                onTap: () => _endSession(context),
                               ),
                             ),
                           ),
@@ -846,7 +909,7 @@ class _SessionViewState extends State<_SessionView>
                             ? 'SERIES ${train.seriesCount}  ·  COMPLETE'
                             : active
                             ? 'SERIES ${train.seriesCount}  ·  LIVE'
-                            : 'READY  ·  SERIES ${train.seriesCount + 1}',
+                            : 'READY  ·  SERIES ${train.currentSeriesNumber + 1}',
                         style: TextStyle(
                           fontFamily: 'Manrope',
                           fontSize: 9,
@@ -954,7 +1017,7 @@ class _SessionControl extends StatelessWidget {
 
 class _ShotLogRow extends StatelessWidget {
   final List<ShotResult> shots;
-  _ShotLogRow({required this.shots});
+  const _ShotLogRow({required this.shots});
 
   @override
   Widget build(BuildContext context) {
@@ -986,7 +1049,7 @@ class _ShotLogRow extends StatelessWidget {
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         itemCount: shots.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 6),
+        separatorBuilder: (_, _) => const SizedBox(width: 6),
         itemBuilder: (ctx, i) {
           final shot = shots[i];
           final score = shot.totalScore;

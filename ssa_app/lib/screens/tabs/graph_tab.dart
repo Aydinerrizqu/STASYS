@@ -30,13 +30,7 @@ class _GraphTabState extends State<GraphTab> with SingleTickerProviderStateMixin
     super.dispose();
   }
 
-  Color _getScoreColor(double score) {
-    if (score >= 95) return const Color(0xFFFFD700);
-    if (score >= 85) return const Color(0xFF4CAF50);
-    if (score >= 70) return const Color(0xFF2196F3);
-    if (score >= 50) return const Color(0xFFFF9800);
-    return const Color(0xFFF44336);
-  }
+  Color _getScoreColor(double score) => StsysTheme.getScoreColor(score);
 
   String _formatTime(DateTime dt) {
     return '${dt.hour.toString().padLeft(2, '0')}:'

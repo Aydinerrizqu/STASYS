@@ -117,7 +117,7 @@ class HomeTab extends StatelessWidget {
           ),
           _StatBox(
             label: 'TOTAL MIN',
-            value: '${(totalDuration / 60).toStringAsFixed(0)}',
+            value: (totalDuration / 60).toStringAsFixed(0),
             color: StsysTheme.tertiaryOf(context),
           ),
           const Spacer(),
@@ -330,7 +330,7 @@ class _SessionCardState extends State<_SessionCard> {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          '$timeStr',
+                          timeStr,
                           style: TextStyle(
                             fontFamily: 'Manrope',
                             fontSize: 20,

@@ -25,8 +25,7 @@ class SensorDataProvider extends ChangeNotifier {
   // Queue messages sent before isolate SendPort was received
   final List<SensorDataMessage> _pendingMessages = [];
   
-    // Konfigurasi
-  final int _displayWindowSeconds = 5;
+  // Konfigurasi
 
   // Display buffers (HANYA 5 detik terakhir - immutable snapshots dari isolate)
   List<DataPoint> _gyroXData = [];
@@ -86,8 +85,7 @@ class SensorDataProvider extends ChangeNotifier {
   int _demoShotPhase = 0; // 0=idle, 1-9=recoil spike decay
   double _demoTime = 0;
   DateTime? _demoLastShotTime;
-  int _demoShotCount = 0;
-  
+
   // Getters
   List<DataPoint> get gyroXData => _gyroXData;
   List<DataPoint> get gyroYData => _gyroYData;
@@ -649,15 +647,12 @@ class SensorDataProvider extends ChangeNotifier {
 
   // Demo trace state (for MantisX-style direct mapping)
   double _demoTraceXPos = 0.0, _demoTraceYPos = 0.0;  // trace line position (gyro integrated)
-  double _demoLiveX = 0.0, _demoLiveY = 0.0;    // live dot position (accel direct)
   final List<_DemoTracePoint> _demoTracePoints = [];   // trace line history for widget
-  static const double _demoSensitivity = 0.08;   // accel → screen scale
   static const int _demoTraceMax = 200;
   static const double _demoDt = 0.01;           // ~100Hz integration
 
   void _startDemoTimer() {
     _demoTime = 0;
-    _demoShotCount = 0;
     _demoLastShotTime = DateTime.now().subtract(const Duration(seconds: 5));
     _demoGyroX = 0;
     _demoGyroY = 0;
@@ -732,8 +727,6 @@ class SensorDataProvider extends ChangeNotifier {
     // Integrate gyro → trace path (MantisX style: -gz → X, -gx → Y)
     _demoTraceXPos += (-_demoGyroZ) * _demoDt;
     _demoTraceYPos += (-_demoGyroX) * _demoDt;
-    _demoLiveX = _demoAccelX * _demoSensitivity;
-    _demoLiveY = _demoAccelY * _demoSensitivity;
 
     final ts = now.millisecondsSinceEpoch.toDouble();
     _demoTracePoints.add(_DemoTracePoint(_demoTraceXPos, _demoTraceYPos, ts));
@@ -789,7 +782,6 @@ class SensorDataProvider extends ChangeNotifier {
   }
 
   void _triggerDemoShot() {
-    _demoShotCount++;
     _demoShotPhase = 1; // Start recoil spike (next tick will be phase 2-9)
 
     // Generate random score 60-95

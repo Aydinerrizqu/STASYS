@@ -10,9 +10,11 @@ import 'target_replay_view.dart';
 
 enum TrainTargetDisplay { start, activeTrace, seriesScatter }
 
-const _holdColor = Color(0xFFFF4444);
-const _pressColor = Color(0xFFFFFF44);
-const _recoilColor = Color(0xFF44FFFF);
+// Phase colors — hold/press/recoil map onto the app's primary, secondary
+// and error accents, matching the live muzzle trace and the replay view.
+const _holdColor = Color(0xFF00E5FF); // primary — cyan
+const _pressColor = Color(0xFF4D7CFE); // secondary — blue
+const _recoilColor = Color(0xFFFF6B6B); // error — coral
 
 /// Rings 1-6 are painted on the page background, so their colour has to
 /// follow the active theme: the near-black of the light shell disappears

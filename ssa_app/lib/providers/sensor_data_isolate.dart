@@ -372,7 +372,7 @@ class ShotDetector {
     _qTare = _q.copy();
   }
 
-  void setQuaternion(_Quaternion q) {
+  void _setQuaternion(_Quaternion q) {
     _q = q;
   }
 
@@ -507,14 +507,6 @@ class ShotDetector {
     // Re-taring here would move the current point to (0, 0) and break the
     // stability history. Tare is performed during calibration or reset_axis.
     return result;
-  }
-
-  bool _isStationary() {
-    final gxBc = gxRaw - offsetGx;
-    final gyBc = gyRaw - offsetGy;
-    final gzBc = gzRaw - offsetGz;
-    final mag = math.sqrt(gxBc * gxBc + gyBc * gyBc + gzBc * gzBc);
-    return mag < stationaryThreshold;
   }
 
   void autoTare() {
@@ -758,17 +750,8 @@ class SensorDataIsolate {
   double _offsetGyroY = 0.0;
   double _offsetGyroZ = 0.0;
 
-  late DateTime _baseTime;
-
   // Shot storage for session
   final List<ShotResult> _sessionShots = [];
-
-  // Performance tracking
-  int _dataPointsReceived = 0;
-  int _uiUpdatesSkipped = 0;
-
-  // Calibrated flag
-  bool _isCalibrated = false;
 
   static void entryPoint(SensorIsolateConfig config) {
     final isolate = SensorDataIsolate._internal(config);
@@ -787,7 +770,6 @@ class SensorDataIsolate {
     _mainSendPort = config.mainSendPort;
     _uiUpdateIntervalMs = config.uiUpdateIntervalMs;
     _displayWindowSeconds = config.displayWindowSeconds;
-    _baseTime = DateTime.now();
 
     final bufferSize = _displayWindowSeconds * _assumedDataRateHz;
     _fullGyroX = RingBuffer<DataPoint>(bufferSize);
@@ -925,7 +907,7 @@ class SensorDataIsolate {
         final meanAx = sumAx / n;
         final meanAy = sumAy / n;
         final meanAz = sumAz / n;
-        _shotDetector.setQuaternion(_quatFromAccel(meanAx, meanAy, meanAz));
+        _shotDetector._setQuaternion(_quatFromAccel(meanAx, meanAy, meanAz));
         _shotDetector.tare();
 
         // Process ALL calibration samples through detector to build initial trace
@@ -943,7 +925,6 @@ class SensorDataIsolate {
 
         _autoCalSamples.clear();
         _autoCalibrating = false;
-        _isCalibrated = true;
         _shotDetector.isCalibrated = true;
         _mainSendPort.send(
           SensorDataMessage('calibration_complete', {
@@ -988,7 +969,6 @@ class SensorDataIsolate {
         );
 
         _isCalibrating = false;
-        _isCalibrated = true;
 
         _mainSendPort.send(
           SensorDataMessage('calibration_complete', {
@@ -1058,15 +1038,11 @@ class SensorDataIsolate {
       );
     }
 
-    _dataPointsReceived++;
-
     // Throttled UI update
     final currentMs = DateTime.now().millisecondsSinceEpoch;
     if (currentMs - _lastUiUpdateMs >= _uiUpdateIntervalMs) {
       _lastUiUpdateMs = currentMs;
       _sendThrottledUpdate();
-    } else {
-      _uiUpdatesSkipped++;
     }
   }
 
@@ -1143,8 +1119,6 @@ class SensorDataIsolate {
   }
 
   void _reset() {
-    _baseTime = DateTime.now();
-
     final bufferSize = _displayWindowSeconds * _assumedDataRateHz;
     _fullGyroX = RingBuffer<DataPoint>(bufferSize);
     _fullGyroY = RingBuffer<DataPoint>(bufferSize);
@@ -1160,9 +1134,6 @@ class SensorDataIsolate {
     _newAccelY.clear();
     _newAccelZ.clear();
     _clearSessionData();
-
-    _dataPointsReceived = 0;
-    _uiUpdatesSkipped = 0;
 
     _mainSendPort.send(SensorDataMessage('reset_complete'));
   }

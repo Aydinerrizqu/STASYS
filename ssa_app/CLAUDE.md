@@ -12,106 +12,127 @@ Mobile companion app for the STASYS shooter stability analyzer. Primary platform
 
 ## Architecture
 
+> **Verified 2026-11-22** against the working tree of branch `PreProduction3_Design_Adjust`.
+
 ```
 ssa_app/
 ├── lib/
 │   ├── main.dart                    # App entry, MultiProvider + GoRouter
-│   ├── router/app_router.dart       # GoRouter configuration (ShellRoute)
-│   ├── theme/app_theme.dart         # Dark STSYS theme (#FFB693 primary, #131313 bg, Manrope/Inter fonts)
+│   ├── router/app_router.dart       # GoRouter: /connection + ShellRoute (4 tabs)
+│   ├── theme/app_theme.dart         # Context-aware palette (StsysTheme.*Of(context))
 │   ├── services/
-│   │   ├── database_helper.dart     # SQLite singleton, schema creation, migrations (v2)
-│   │   ├── database_service.dart    # CRUD operations, binary BLOB encoding
+│   │   ├── database_helper.dart     # SQLite singleton, schema v3, migrations
+│   │   ├── database_service.dart    # CRUD, chunked BLOB read, binary BLOB encoding
 │   │   ├── export_service.dart      # CSV export via Share Sheet
-│   │   ├── firmware_service.dart    # OTA firmware loading + chunking + SHA256
-│   │   ├── profile_service.dart     # Local name-only profile persistence (SharedPreferences)
-│   │   └── trajectory/
-│   │       ├── replay_engine.dart   # Offline replay: SessionLog → ReplayTrace
-│   │       ├── replay_models.dart   # ReplayFrame, ReplayShot, ReplayTrace
-│   │       ├── quaternion.dart      # Quaternion ops (extracted from isolate)
-│   │       └── barrel_projection.dart # Right-handed barrel projection + tests
+│   │   ├── stasys_protocol.dart     # greeting + 36-byte XOR frame parser (pure Dart)
+│   │   ├── firmware_service.dart    # OTA binary loading + chunking + SHA256
+│   │   └── profile_service.dart     # Local name-only profile persistence (SharedPreferences)
 │   ├── providers/
-│   │   ├── bluetooth_provider.dart  # Text auth (READY→challenge→SHA256 hex) + dual-mode parser
-│   │   │                              # Binary: 0xAA 0xBB + 6 floats + piezo + battery + CRC16
-│   │   │                              # 3-state parser: waitingForReady → waitingForHash → streaming
-│   │   │                              # + OTA command methods: sendOtaStart, sendOtaChunk, sendOtaFinish,
-│   │   │                              #   sendRebootCommand, getFirmwareVersion
-│   │   ├── sensor_data_provider.dart  # UI state, isolate communication, demo mode
-│   │   ├── sensor_data_isolate.dart    # Shot detection + 3-phase analysis (hold/press/recoil)
-│   │   │                              # + auto-calibration on first 50 samples (gyro zero-offset)
-│   │   ├── settings_provider.dart      # Firearm type, training mode, demo mode, target distance (5–25m)
-│   │   │                              # + autoUpdateFirmware (bool, default false)
-│   │   ├── session_provider.dart       # Session list management
-│   │   ├── session_logger.dart         # Delegates to DatabaseService (SQLite), profile/preset/series metadata
-│   │   ├── ota_provider.dart           # OTA state machine: idle→loading→sending→verifying→rebooting→completed/failed
-│   │   ├── profile_provider.dart       # Load/create/select/delete name-only profiles, connection-scoped selection
-│   │   └── train_session_provider.dart # Train state machine: choices→readySeries→activeSeries, series lifecycle, shot tracking
+│   │   ├── bluetooth_provider.dart  # greeting → streaming, dual-mode parser
+│   │   │                             # Binary: 0xAA 0xBB + 6 floats + mag + piezo + battery + XOR
+│   │   │                             # + OTA command methods: sendOtaStart, sendOtaChunk,
+│   │   │                             #   sendOtaFinish, sendRebootCommand, getFirmwareVersion
+│   │   ├── sensor_data_provider.dart # UI state, isolate communication, demo mode
+│   │   ├── sensor_data_isolate.dart   # Shot detection + 3-phase analysis (hold/press/recoil)
+│   │   │                             # + auto-calibration on first 50 samples (gyro zero-offset)
+│   │   ├── settings_provider.dart     # Firearm type, training mode, demo mode, target
+│   │   │                             #   distance (5–25m), themeMode, autoUpdateFirmware
+│   │   ├── session_provider.dart      # Session list management
+│   │   ├── session_logger.dart        # Delegates to DatabaseService (SQLite), series metadata
+│   │   ├── train_session_provider.dart# Train state machine, series lifecycle, shot tracking
+│   │   ├── profile_provider.dart      # Load/create/select/delete name-only profiles
+│   │   └── ota_provider.dart          # OTA state machine: idle→loading→sending→verifying→rebooting
+│   ├── models/
+│   │   ├── data_models.dart          # DataPoint, SessionLog, ShotResult
+│   │   │                             # FirearmType, TrainingMode, MountDirection, MountPosition
+│   │   ├── train_preset.dart         # 4 fixed training presets (dry/live × weapon × distance)
+│   │   └── profile.dart              # Name-only local profile value object
 │   ├── screens/
-│   │   ├── splash_screen.dart        # STSYS branding, 2s auto-navigate
-│   │   ├── connection_screen.dart     # BT scan/connect + Explore App + mandatory calibration/mount flow
-│   │   ├── main_shell.dart           # Bottom 4-tab navigation shell (Train, History, Tracking, Settings)
-│   │   ├── train_screen.dart         # Train choices (profile+preset) → TRAIN-0 (ready) → TRAIN-1 (active)
-│   │   ├── tracking_screen.dart      # Dot-only live trace preview (simplified diagnostic view)
-│   │   ├── history_screen.dart       # Session list + export CSV + clear all + refresh + profile/metadata display
-│   │   ├── settings_screen.dart      # BT scan + weapon preference + mount/direction + target distance
-│   │   ├── session_detail_screen.dart # POST SHOT + ANALYSIS toggle + shot chips
-│   │   ├── replay_screen.dart        # Full-screen replay (legacy, logic moved to AnalysisTab)
+│   │   ├── connection_screen.dart    # BT scan/connect + Explore App + calibration/mount flow
+│   │   ├── main_shell.dart           # Bottom 4-tab shell (Train/History/Tracking/Settings)
+│   │   ├── train_screen.dart         # Choices → TRAIN-0 (ready) → TRAIN-1 (active) → review
+│   │   ├── tracking_screen.dart      # Dot-only live trace preview (diagnostic view)
+│   │   ├── history_screen.dart       # Session list + export CSV + clear all + N-SERIES badge
+│   │   ├── settings_screen.dart      # BT scan + theme + weapon + mount/direction + distance
+│   │   ├── session_detail_screen.dart# Single-page detail + series chip selector + shot chips
 │   │   ├── ota_update_screen.dart    # Full-screen OTA progress UI (route /ota-update)
-│   │   └── ota_prompt_dialog.dart    # Modal dialog: version compare + Skip/Update + calibration on skip
-│   ├── screens/tabs/
+│   │   └── ota_prompt_dialog.dart    # Modal dialog: version compare + Skip/Update
+│   ├── screens/tabs/                 # Legacy 4-tab screens — DEAD (unreachable from main.dart)
 │   │   ├── graph_tab.dart            # TRACE (muzzle trace) + POST SHOT (3-phase analysis)
 │   │   ├── home_tab.dart             # Dashboard (STSYSStyle)
-│   │   ├── connection_tab.dart        # Bluetooth device selection
+│   │   ├── connection_tab.dart       # Bluetooth device selection
 │   │   ├── settings_tab.dart         # Firearm type, training mode
 │   │   └── shot_timer_tab.dart       # Shot timer with countdown & splits
-│   ├── widgets/
-│   │   ├── muzzle_trace_widget.dart  # MantisX-style live trace
-│   │   ├── shot_analysis_panel.dart  # 3-phase post-shot chart with ring overlay
-│   │   ├── shot_history_list.dart    # Session shot list with tappable cards
-│   │   ├── shot_replay_panel.dart    # Selected-shot replay panel for TRAIN-1 (wraps TargetReplayView)
-│   │   ├── train_target_widget.dart  # TRAIN-0/1 target: AnimatedSwitcher START ↔ active target
-│   │   ├── calibration_flow.dart     # Mandatory 2-phase calibration/mount dialog after BT connection
-│   │   ├── gyro_realtime_chart.dart  # Real-time gyro chart
-│   │   ├── interactive_chart.dart
-│   │   ├── control_panel.dart
-│   │   ├── status_bar.dart
-│   │   ├── benchmark_analysis_widget.dart
-│   │   ├── debug_overlay.dart
-│   │   └── analysis/                  # New: offline trajectory replay widgets
-│   │       ├── analysis_tab.dart     # Composite: BarrelTraceCanvas + Scrubber + PhaseSummary + FactorBreakdown
-│   │       ├── trajectory_canvas.dart    # Barrel trace + target overlay + shot markers
-│   │       ├── trajectory_scrubber.dart  # Timeline scrubber + shot chip selector
-│   │       ├── phase_summary_card.dart   # Per-shot 3-phase chart
-│   │       └── factor_breakdown_card.dart # Stability/smoothness/harmonics factor scores
-│   └── models/
-│       ├── data_models.dart          # DataPoint, SessionLog, ShotResult
-│       │                               FirearmType, TrainingMode, MountDirection, MountPosition
-│       ├── train_preset.dart         # 4 fixed training presets (dry/live × weapon × distance)
-│       └── profile.dart              # Name-only local profile value object
+│   └── widgets/
+│       ├── muzzle_trace_widget.dart  # MantisX-style live trace
+│       ├── shot_trace_geometry.dart  # Shared ordered HOLD→PRESS→RECOIL path
+│       ├── shot_replay_controls.dart # Replay scrubber/play controls
+│       ├── shot_replay_panel.dart    # Selected-shot replay panel (wraps TargetReplayView)
+│       ├── train_target_widget.dart  # ISSF target, trace, scatter, ring contrast
+│       ├── target_replay_view.dart   # Target overlay replay
+│       ├── calibration_flow.dart     # Mandatory 2-phase calibration/mount dialog
+│       ├── shot_analysis_panel.dart  # 3-phase post-shot chart with ring overlay
+│       ├── shot_history_list.dart    # Session shot list with tappable cards
+│       ├── gyro_realtime_chart.dart  # Real-time gyro chart
+│       ├── interactive_chart.dart, control_panel.dart, status_bar.dart
+│       └── benchmark_analysis_widget*.dart  # Legacy benchmark widgets (dead)
+├── tool/
+│   ├── live_files.py                 # Dead-code finder: walks imports from lib/main.dart
+│   └── inject_large_session.py       # Builds an oversized session row (CursorWindow test)
+└── test/unit/
+    ├── models/, providers/, services/, screens/, widgets/, utils/
 ```
 
----
+### Removed (2026-11, working tree) — do not look for these
+
+`lib/services/trajectory/` (replay_engine, replay_models, quaternion, projection,
+target_geometry), `lib/widgets/analysis/` (analysis_tab, trajectory_canvas,
+trajectory_scrubber, phase_summary_card, factor_breakdown_card),
+`lib/screens/replay_screen.dart`, `lib/widgets/replay_shot_widget.dart`,
+`lib/widgets/replay_trace_painter.dart`.
+
+Replay is now `ShotTraceGeometry` → `TrainTargetWidget` + `ShotReplayControls`.
+
+### Finding dead code
+
+```bash
+cd ssa_app && python tool/live_files.py
+```
+Walks imports from `lib/main.dart` and prints every unreachable `lib/**.dart`.
+As of 2026-11-22: **LIVE: 38 / DEAD: 22**. Some "dead" files are still imported by
+other dead files, so read the whole list before deleting.
 
 ## Navigation Flow (GoRouter)
 
 ```
-App Launch
-  └── SplashScreen (STSYS branding, 2s auto-navigate)
-        └── ConnectionScreen
-              ├── Scan Bluetooth → connect → [firmware check] → calibration/mount flow → /train
-              └── Explore App → demo mode → /train (skips calibration)
+App Launch (initialLocation: '/connection')
+  └── ConnectionScreen
+        ├── Scan Bluetooth → connect → [firmware check] → calibration/mount flow → /train
+        └── Explore App → demo mode → /train (skips calibration)
 
-MainShell (4-tab bottom nav):
+MainShell (4-tab bottom nav, ShellRoute):
   ├── /train → TrainScreen
   │     ├── Choices view: profile selector + 4 preset cards
   │     ├── TRAIN-0 (readySeries): empty target + START button
-  │     └── TRAIN-1 (activeSeries): target + END SERIES/END SESSION + shot log + replay panel
+  │     ├── TRAIN-1 (activeSeries): target + END SERIES/END SESSION + shot log + replay panel
+  │     └── Review (reviewSeries / reviewSession): scatter + shot log + replay + OK
   ├── /history → HistoryScreen
-  │     └── Session list + swipe delete + clear all + refresh + profile/metadata
+  │     └── Session list + swipe delete + clear all + refresh + N-SERIES badge
   ├── /tracking → TrackingScreen (dot-only diagnostic preview)
-  │     └── Live muzzle trace — no training controls
   └── /settings → SettingsScreen
-        └── BT scan + weapon preference + mount/direction + target distance
+        └── BT scan + theme (dark/light) + weapon + mount/direction + target distance
 ```
+
+There is **no splash screen** in the router any more. `/ota-update` is a
+full-screen route outside the ShellRoute.
+
+### Train session state machine
+
+`providers/train_session_provider.dart` →
+`TrainSessionState { choices, readySeries, activeSeries, reviewSeries, reviewSession }`.
+
+Android Back is intercepted: `choices` → exit app (confirmation dialog),
+`readySeries` → back to choices, `activeSeries` → blocked.
 
 ---
 
@@ -251,51 +272,45 @@ Per-shot scoring:
 - `holdX/Y`, `pressX/Y`, `recoilX/Y` trace lists for 3-phase analysis plotting
 
 ### Session Detail Screen
-- POST SHOT 3-phase chart (H/P/R + ELEV/WIND)
-- Horizontal shot chips (tap → chart updates)
-- Delete session with confirmation
-- **POST SHOT | ANALYSIS toggle** — pill-shaped toggle in header. POST SHOT = 3-phase chart. ANALYSIS = offline trajectory replay (replay_engine.dart) rendering barrel trace + target overlay + timeline scrubber + factor breakdown cards.
+- Single scrollable page (2026-11 redesign; the old POST SHOT / ANALYSIS tab
+  toggle is gone).
+- Horizontal shot chips (tap → chart updates), header stats follow the selection.
+- **Series chip selector** — one training session can hold several series
+  (`session.seriesNumbers`). The chip strip only appears when there is more than
+  one; the default selection is the **last** series, and the header shot count
+  and average describe the selected series only.
 
-## Trajectory Replay Pipeline (2026-06-21) — Updated 2026-07-08
+---
 
-Offline replay engine: `SessionLog` (SQLite) ��� `ReplayEngine.replay()` → `ReplayTrace` (frames + shots). Uses extracted modules.
+## Shot Replay (replaces the deleted trajectory pipeline)
 
-### Modules
-1. **quaternion.dart** — extracted from isolate: `Quaternion.identity()`, `normalize()`, `conjugate()`, `multiply()`, `integrate()`, `applyEulerAngle()`. Header-only, no dependency on isolate context.
-2. **barrel_projection.dart** — right-handed frame (X=right, Y=down, Z=back). Exports `project(barRel, targetXDeg, targetYDeg)` → `(float x, float y)`. Barrel vector: `(0, 0, -1)`.
-3. **replay_engine.dart** — full pipeline:
-   - `_mergeAccelGyro(session)` **pairs by list index** (gyroX[i] ↔ accelX[i]). See "Critical Fix" below.
-   - `replay(session)` → iterates merged samples:
-     - Integrates gyro quaternion
-     - Auto-tare when stable (threshold=0.02 rad, stationary=1.0 rad/s)
-     - Applies barrel rotation + target offset
-     - Detects shots via hold/press/recoil state machine (same params as isolate)
-     - Produces `ReplayTrace` with `frames` (x,y,z=distance) and `shots` (scores per phase)
+The offline trajectory-replay pipeline (`services/trajectory/`, `widgets/analysis/`)
+was removed in 2026-11. Replay now works like this:
 
-### Critical Fix (2026-07-08): Index-Based Merge, NOT Timestamp Buckets
+| Piece | Role |
+|-------|------|
+| `widgets/shot_trace_geometry.dart` | `ShotTraceGeometry.fromShot(shot)` → one ordered HOLD → PRESS → RECOIL path with phase boundaries |
+| `widgets/train_target_widget.dart` | Paints the ISSF target, the trace, the scatter of all shots, and the impact marker |
+| `widgets/shot_replay_controls.dart` | Scrubber + play/pause; drives `replayProgress` (0.0 → 1.0) |
+| `widgets/shot_replay_panel.dart` | Bottom panel that wires the controls to the main target |
+| `widgets/target_replay_view.dart` | Standalone target-overlay replay of one shot |
 
-`DataPoint.x` from the isolate is **epoch milliseconds** (`DateTime.now().millisecondsSinceEpoch.toDouble()`), NOT time-since-start. The original `_mergeAccelGyro` used `(p.x / dt).round()` with `dt=0.01`, which produced buckets of magnitude ~1.77e14 — every sample landed in a unique bucket, so gyro and accel never matched → 0 merged samples → 0 replay frames → "NO SHOTS RECORDED".
+**One geometry, two consumers.** The static post-shot chart and the moving
+replay draw the *same* path, so the trace and the impact marker always line up.
+The impact marker is the trace endpoint — `markerPositions` is shared between the
+live drawing and the scatter drawing.
 
-**Fix**: pair by `List<DataPoint>` index. In the isolate loop (lines 963-968 of `sensor_data_isolate.dart`), `gyroX[i]`, `gyroY[i]`, `gyroZ[i]`, `accelX[i]`, `accelY[i]`, `accelZ[i]` are all built from the same `timestamp` in the same iteration. Index `i` is the correct sync point.
+`ShotTracePath.maxDeviation` scales the target to the shot's own deviation
+(`maxDeviation * 1.3`, clamped to ≥ 0.01).
 
-If you ever switch to time-based bucketing, the timestamps need to be **relative** (e.g., seconds-since-session-start), not absolute.
-
-### AnalysisTab Widget
-Composite widget that renders the replay output:
-1. **Header**: `BARREL TRACE` | `SHOT LIST` tabs (pill toggle) + target overlay geometry controls
-2. **TrajectoryCanvas**: `CustomPaint` rendering barrel trace path + target rings + shot markers (numbers on target)
-3. **Timeline**: Replay scrubber slider (shows frame count, time in sec)
-4. **Phase Summary Card**: Per-shot 3-phase chart + score breakdown
-5. **Factor Breakdown**: Aggregate scores for stability, smoothness, harmonics, trigger quality
-
-### Target Overlay Geometry
-- Target rings: outer → inner based on `targetRadiusDegrees` (default 5°) and `targetDistanceM` (default 10m, settings)
-- Formula: `radius_px = (distanceM / tan(degrees_to_radians(targetRadiusDegrees))) * scale`
-- Shot markers: numbered dots placed at projected target position per shot
-
-### Known Issues
-- **`ReplayEngine._mergeAccelGyro()`** — empty `gyroX/Y/Z` or `accelX/Y/Z` → "NO IMU DATA TO REPLAY" shown in AnalysisTab. All 6 lists must be non-empty (BLOB decode from SQLite).
-- **Detected shot count may be 0 even with valid merged samples** — if `max abs gyro < 4.0 rad/s` (ARMING threshold in `ShotDetector`), no shots trigger. Live-fire and demo-mode trigger sharp gyro spikes; dry-fire without trigger pull may not.
+### Train target rendering
+- ISSF standard target: 10 rings, black bull `r = maxR * 0.4`, dashed crosshair,
+  ring numbers 1–10 (outer → inner) drawn with a cached `TextPainter`.
+- `maxR = shortestSide * 0.40`.
+- Ring strokes are **theme-dependent**: light strokes on the dark shell, dark
+  strokes on the light shell. The full-bleed band behind the target follows the
+  theme too — a fixed near-white band hid the rings in dark mode.
+- Dry vs live training mode paints a different target treatment.
 
 ---
 
@@ -303,7 +318,7 @@ Composite widget that renders the replay output:
 
 - **SharedPreferences** for app settings only
 - **SQLite** for session/shots persistence (stasys_sessions.db)
-- **Key strings**: `firearmType`, `trainingMode`, `maxSamples`, `mountDirection`, `mountPosition`
+- **Key strings**: `firearmType`, `trainingMode`, `maxSamples`, `mountDirection`, `mountPosition`, `themeMode`
 - **`maxSamples` clamp**: Di-load dengan `.clamp(2, 10)` di `SettingsProvider._loadSettings`. Nilai corrupt (misal 15 dari slider lama) auto-di-fix dan di-overwrite ke SharedPreferences.
 
 ---
@@ -322,6 +337,38 @@ session_date,firearm_type,training_mode,shot_timestamp,total_score,hold_score,pr
 ```
 
 Export button in HistoryScreen header (visible when sessions exist).
+
+---
+
+## Theme — context-aware, cyan + light/dark
+
+`theme/app_theme.dart` exposes `StsysTheme.*Of(context)` accessors that resolve
+per brightness. The palette is **not** the old warm-orange dark-only theme.
+
+| Token | Value | Accessor |
+|-------|-------|----------|
+| primary | `#00E5FF` cyan | `primaryOf(context)` |
+| secondary | `#4D7CFE` | `secondaryOf(context)` |
+| error | `#FF6B6B` | `errorOf(context)` |
+| surface | `#0C0E11` (dark) / near-white (light) | `surfaceContainerLowOf(context)` etc. |
+| onSurface | `#F1F5F9` (dark) / `#17202A` (light) | `onSurfaceOf(context)` |
+
+**Rules**
+- Never hard-code a colour in a widget — always use the `...Of(context)` accessor.
+  Commit `5832434` migrated 16 screens/widgets out of hard-coded `Color(0xFF…)`
+  literals; new code must follow the same rule.
+- `CustomPainter` has no `BuildContext` — the caller resolves the colour and
+  passes it into the painter, which applies it inside `paint()`.
+- `onGradientOf(context)` is fixed (`#00252C`): it sits on top of the brand and
+  tactical gradients, which do not change with brightness. A white label would
+  vanish on the cyan half of the brand gradient.
+- Score colours live in `StsysTheme.getScoreColor(score)` — do not re-implement
+  the threshold ladder locally (`session_detail_screen.dart` and
+  `graph_tab.dart` both delegate to it).
+- Dark/light is user-selectable: Settings → Theme, stored in SharedPreferences
+  under key `themeMode` (`SettingsProvider.setThemeMode`).
+- The OTA screens were hard-wired to the dark palette before `5832434`; they now
+  follow the theme too.
 
 ---
 
@@ -352,63 +399,6 @@ flutter:
 ```
 
 ---
-
-## OTA Firmware Update (Bluetooth Classic)
-
-### Architecture
-
-```
-Flutter App                    ESP32 Firmware
-    │                               │
-    │ GET_VERSION ──────────────►   │
-    │ ◄──────────── VERSION=1.0.0   │
-    │                               │
-    │ Compare: device vs APK        │
-    │                               │
-    │ OTA_START:size=1726576 ──►   │
-    │ ◄──────────── OTA_READY       │
-    │                               │
-    │ (512-byte chunks × 3372)      │
-    │ OTA_DATA:seq=0:base64=... ─► │
-    │ ◄──────────── OTA_ACK:seq=0   │
-    │ ...repeat...                  │
-    │                               │
-    │ OTA_FINISH:sha256=... ─────► │
-    │ (ESP32 verifies SHA256)       │
-    │ ◄──────────── OTA_COMPLETE   │
-    │                               │
-    │ REBOOT ──────────────────────►│ esp_restart()
-    │                               │
-    └─ ESP32 boots new firmware ────┘
-```
-
-### Key Files
-
-| File | Role |
-|------|------|
-| `services/firmware_service.dart` | Load `.bin` from assets, compute SHA256, chunk into 512-byte pieces |
-| `providers/ota_provider.dart` | State machine: idle→loading→sending→verifying→rebooting→completed/failed. 3 retries per chunk |
-| `providers/bluetooth_provider.dart` | `sendOtaStart()`, `sendOtaChunk()`, `sendOtaFinish()`, `getFirmwareVersion()` |
-| `screens/ota_update_screen.dart` | Full-screen progress UI (circular %, step indicators) |
-| `screens/ota_prompt_dialog.dart` | Modal dialog: version compare + Skip/Update buttons |
-| `screens/connection_screen.dart` | After auth, calls `_checkFirmwareUpdate()` → shows dialog or navigates to `/tracking` |
-| `router/app_router.dart` | Route `/ota-update` (full-screen, outside ShellRoute) |
-| `assets/firmware/stasys_fw.bin` | Bundled firmware binary (updated on each release) |
-| `pubspec.yaml` | Declares `assets/firmware/stasys_fw.bin` |
-
-### State Machine (OtaProvider)
-
-```
-OtaState.idle → loading → sending → verifying → rebooting → completed
-                ↓                    ↓                      ↓
-             failed (on error)   failed (OTA_FINISH fail)  failed
-```
-
-### Version Logic
-
-- ESP32 firmware version: compile-time `FIRMWARE_VERSION` macro (storage.h) + NVS (`config` namespace, key `fw_version`)
-- APK assets version: `firmware_service.dart` → `expectedVersion = '1.3.0'` (update on release)
-- Dialog appears when `currentFw != newFw.version`
 
 ## OTA Firmware Update (Bluetooth Classic) — ✅ WORKING (2026-05-23)
 
@@ -463,9 +453,23 @@ OtaState.idle → loading → sending → verifying → rebooting → completed
 
 ### Version Logic
 
-- ESP32 firmware version: compile-time `FIRMWARE_VERSION` macro (storage.h) + NVS (`config` namespace, key `fw_version`)
-- APK assets version: `firmware_service.dart` → `expectedVersion = '1.4.0'` (update on release)
-- Dialog appears when `currentFw != newFw.version`
+- ESP32 firmware version: compile-time `FIRMWARE_VERSION` macro — now in
+  `Firmware_STASYS32/src/main.cpp:22` (`"2.0.0"`), **not** `storage.h` any more.
+- APK assets version: `firmware_service.dart` → `expectedVersion = '1.4.0'` (update on release).
+- Dialog appears when `currentFw != newFw.version`.
+
+> ⚠️ **The auth-free v2 firmware does not answer `GET_VERSION`.**
+> `connection_screen._checkFirmwareUpdate` therefore gets `null` and skips the
+> dialog — but only after waiting out the ~3 s timeout. The version mismatch
+> (`1.4.0` vs `2.0.0`) is inert until `GET_VERSION` is reimplemented on the
+> firmware side.
+
+### OTA state on the firmware side (2026-11)
+
+`Firmware_STASYS32/src/ota/*` is **dead code** — it is not listed in
+`src/CMakeLists.txt` SRCS, so it is never compiled. Its `extern isAuthenticated`
+guard is stale (that symbol no longer exists) and would fail to link if it were
+re-enabled. Replace the guard with `g_state != BT_OTA_IDLE` before reviving OTA.
 
 ### Implementation Details (2026-05-23)
 
@@ -492,7 +496,7 @@ OtaState.idle → loading → sending → verifying → rebooting → completed
 
 ### Build Process for Release
 
-1. Update `Firmware_STASYS32/src/storage/storage.h` → `#define FIRMWARE_VERSION "X.Y.Z"`
+1. Update `Firmware_STASYS32/src/main.cpp` → `#define FIRMWARE_VERSION "X.Y.Z"` (line 22)
 2. Build firmware: `cd Firmware_STASYS32 && python -m platformio run -e esp32dev`
 3. Copy binary: `cp .pio/build/esp32dev/firmware.bin ../ssa_app/assets/firmware/stasys_fw.bin`
 4. Update `firmware_service.dart` → `expectedVersion = 'X.Y.Z'`
@@ -504,13 +508,16 @@ OtaState.idle → loading → sending → verifying → rebooting → completed
 
 | Branch | Status | Description |
 |--------|---------|-------------|
-| `PreProduction3` | **Active** | STASYS_FW + live tracking + trajectory replay; synchronized post-shot/replay trace playback (commit `d303935`) |
-| `trajectory_refactor` | **In Progress** | Offline trajectory replay pipeline: quaternion extraction, barrel projection, replay engine, analysis tab |
+| `PreProduction3_Design_Adjust` | **Active** | 6 commits ahead of `main` (`5832434`): session-series grouping, single-page session detail, chunked BLOB reads, context-aware theme migration. Working tree has the trajectory-pipeline removal (uncommitted). |
+| `PreProduction3` | Staged | STASYS_FW + live tracking, pre-series-grouping session model |
+| `feature/figma-train-redesign` | Merged into `main` | Figma train-flow redesign worktree |
 | `migrasi_firmware_awal_v1` | Backup | Previous version with XOR checksum (30-byte packets) |
 | `migrasi_firmware_awal` | Backup | Snapshot of earlier version |
 | `backup-dark-theme-redesign` | Backup | Full backup of all uncommitted changes pushed to remote |
 | `develop` | Staged | Dark theme elements pending merge |
-| `main` | Base | Initial commit only |
+| `main` | Base | `61799f9` — auth-free protocol adoption + CLAUDE.md update |
+
+`main` is also checked out in the worktree `.worktrees/figma-train-redesign`.
 
 ---
 
@@ -521,15 +528,18 @@ OtaState.idle → loading → sending → verifying → rebooting → completed
 - [ ] **Trace window sync with Python** — Flutter 2s window vs Python 0.5s cursor-normalized.
 - [ ] **MantisX feature parity** — drill modes, trend analysis, split time, session notes, etc.
 - [ ] **Frame freeze / gralloc4 GPU failure** — GPU/driver incompatibility with Impeller rendering engine. **Not app code issue**. Test on different device.
+- [ ] **Supabase cloud sync** — design spec only (`docs/superpowers/specs/2026-11-01-supabase-cloud-sync-design.md`). Not implemented.
+- [ ] **Dead-code cleanup** — 22 unreachable Flutter files, listed by `python tool/live_files.py`.
+- [ ] **Hardware acceptance of the auth-free protocol** — flash firmware → reboot → connect → immediate stream, no key. The current 36-byte/XOR firmware has never been flashed to hardware.
 
 ### Completed (2026-08-23) ✅
 - [x] **Post-shot/replay trace synchronization** — `ShotTraceGeometry` provides one ordered HOLD → PRESS → RECOIL path, shared by the static `_ThreePhasePainter` and `ReplayShotWidget` playback. Playback draws the same colored segments progressively under the moving dot. Added geometry and Session Detail layout regression tests. Commit: `d303935`.
 
-### Completed (2026-06-21) ✅
-- [x] **Trajectory Refactor Phase 1: Module Extraction** — `quaternion.dart` (isolated from isolate), `barrel_projection.dart` (right-handed frame, exported to tests). Both header-only, no isolate dependency.
-- [x] **Trajectory Refactor Phase 2: Replay Engine** — `replay_engine.dart`: offline `SessionLog` → `ReplayTrace` pipeline. Bins gyro/accel at 10ms dt, integrates quaternion, auto-tare (0.02 rad threshold, 1.0 rad/s stationary), holds target orientation, applies barrel rotation + target offset, detects shots via hold/press/recoil state machine.
-- [x] **Trajectory Refactor Phase 3: AnalysisTab** — Composite widget in `session_detail_screen.dart`. Toggle between POST SHOT (3-phase chart) and ANALYSIS (offline replay). Renders barrel trace canvas with target overlay, shot markers (numbered dots), timeline scrubber, phase summary cards, and factor breakdown scores.
-- [x] **Target Distance Settings** — `targetDistanceM` (5–25m, default 10m) in `SettingsProvider` + slider in `settings_screen.dart` under "TARGET DISTANCE" section.
+### Completed (2026-06-21) — superseded 2026-11
+- [x] **Trajectory Refactor Phase 1: Module Extraction** — `quaternion.dart`, `barrel_projection.dart`. **Deleted 2026-11.**
+- [x] **Trajectory Refactor Phase 2: Replay Engine** — `replay_engine.dart`: offline `SessionLog` → `ReplayTrace`. **Deleted 2026-11.**
+- [x] **Trajectory Refactor Phase 3: AnalysisTab** — POST SHOT / ANALYSIS toggle. **Deleted 2026-11.**
+- [x] **Target Distance Settings** — `targetDistanceM` (5–25m, default 10m) in `SettingsProvider` + slider in `settings_screen.dart` under "TARGET DISTANCE" section. Still current.
 
 ### Completed (2026-05-23) ✅
 - [x] **OTA Bluetooth Firmware Update** — ✅ WORKING! Full E2E implementation complete. See detailed implementation above. Tested E2E with 1.7MB firmware, ~45 min transfer time.
@@ -540,10 +550,63 @@ OtaState.idle → loading → sending → verifying → rebooting → completed
 - [x] RESET AXIS button — triggers `SensorDataProvider.resetAxis()` → isolate `reset_axis` message → clears offsets, re-runs 50-sample auto-calibration
 
 ### Dead Code (Pending Cleanup)
+
+Regenerate the list with `python tool/live_files.py` (from `ssa_app/`) rather than
+trusting this snapshot — it was taken 2026-11-22 and reports **LIVE: 38 / DEAD: 22**:
 - `services/sensor_data_stream.dart` — fully commented out, unused
-- `providers/bluetooth_isolate.dart` — old 28-byte protocol implementation, unused
-- `widgets/benchmark_analysis_widget_asli.dart` + `benchmark_anlysis_adjust.dart` — 3 versions of benchmark widget, not all in use
+- `providers/bluetooth_isolate.dart` — old 28-byte protocol implementation
 - `screens/main_screen.dart` — old 4-tab navigation (replaced by `main_shell.dart`)
+- `screens/splash_screen.dart` — splash removed from the router
+- `screens/tabs/*` — graph, home, connection, settings, shot_timer
+- `screens/tracking_mode_view.dart`
+- `widgets/control_panel.dart`, `widgets/gyro_realtime_chart.dart`,
+  `widgets/shot_analysis_panel.dart`, `widgets/shot_history_list.dart`,
+  `widgets/status_bar.dart`, `widgets/interactive_chart.dart`
+- `widgets/benchmark_analysis_widget*.dart` — 3 versions of the benchmark widget
+- `utils/data_processor.dart`, `utils/debug_helper.dart`, `utils/debug_overlay.dart`
+
+> Some of these are still imported by other dead files, so the reachability graph
+> has to be read as a whole before deleting anything.
+
+---
+
+## Progress 2026-11-01 → 2026-11-22 — Session Grouping, Detail Redesign, Theme Migration ✅
+
+Branch `PreProduction3_Design_Adjust`, 6 commits ahead of `main`.
+Verified 2026-11-22: **Flutter 209/209 tests pass · `flutter analyze --no-fatal-infos`
+clean · firmware 39/39 Python tests pass.**
+
+- [x] **`97820ae`** — design spec: Supabase cloud sync + developer panel.
+  Offline-first (local SQLite stays the source of truth, sync is additive),
+  optional Google/Email login, per-session upload, offline queue via a
+  `sync_status` column, developer panel = Supabase Studio + three SQL views.
+- [x] **`4ff4ec0`** — design spec: session-series grouping.
+- [x] **`80fd819`** — single-page session detail + safe loading of large session rows.
+  History queries omit the IMU BLOBs; raw data is read per series in 256 KB
+  chunks to stay under Android's ~2 MB CursorWindow limit.
+  Adds `database_row_size_test.dart` and `tool/inject_large_session.py`.
+- [x] **`fb759a2`** — session-series grouping implemented (schema v2 → v3).
+  New `session_series` table; `shots.series_number` now holds the real series
+  number, so one training session stays one card in History. History cards show
+  an "N SERIES" badge; the default series is the last one; the session detail
+  and replay get a series chip selector whose stats follow the selection.
+  The raw buffer is cleared when a new series starts, so a finished series'
+  raw data cannot leak into the next one. Session ids carry a monotonic counter
+  so two sessions started in the same clock tick cannot overwrite each other.
+- [x] **`5832434`** — theme migration (see the Theme section above).
+
+### Working-tree changes (uncommitted as of 2026-11-22)
+
+Removes the trajectory-replay pipeline and consolidates the UI:
+`lib/services/trajectory/*`, `lib/widgets/analysis/*`, `lib/widgets/analysis_tab.dart`,
+`lib/screens/replay_screen.dart`, `lib/widgets/replay_shot_widget.dart`,
+`lib/widgets/replay_trace_painter.dart` — **−4026 lines net**.
+Also: `print` → `debugPrint`, `withOpacity` → `withValues(alpha:)`,
+unused fields/parameters removed, `_StasysHeader` simplified (the shell now
+renders its own header).
+
+**These changes are not committed — check `git status --short` before committing
+anything else so they are not lost.**
 
 ---
 
@@ -574,12 +637,13 @@ OtaState.idle → loading → sending → verifying → rebooting → completed
 
 Bluetooth debug logs in `bluetooth_provider.dart`:
 ```
-[BT] Sent CMD_START_SESSION
-[BT] Sent CMD_AUTH with HMAC-SHA256
-[BT] Auth successful
-[BT] Session started: ...
-[CFG] *** data_mode=N ***  (printed on connect)
+[BT] Connected to <device name>
+[BT] Greeting received: READY v=2
+[BT] Streaming started
 ```
+The auth log lines (`CMD_AUTH`, `Auth successful`, `CMD_START_SESSION`) were
+removed with the auth-free protocol — see Progress 2026-10-18.
+Use `debugPrint`, not `print` (the working tree migrated the OTA and BT logs).
 
 ---
 

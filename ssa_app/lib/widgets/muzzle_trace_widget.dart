@@ -10,16 +10,17 @@ import '../providers/sensor_data_provider.dart';
 import '../models/data_models.dart';
 import '../theme/app_theme.dart';
 
-// Phase colors (MantisX style — STSYS palette)
-const Color _holdColor = Color(0xFFFFB693); // STSYS primary — orange
-const Color _pressColor = Color(0xFF8BCEFF); // STSYS secondary — blue
-const Color _recoilColor = Color(0xFFFFB4AB); // STSYS error — coral
+// Phase colors — hold/press/recoil map onto the app's primary, secondary
+// and error accents so the trace and the replay target speak one language.
+const Color _holdColor = Color(0xFF00E5FF); // primary — cyan
+const Color _pressColor = Color(0xFF4D7CFE); // secondary — blue
+const Color _recoilColor = Color(0xFFFF6B6B); // error — coral
 
 // Scoring ring colors (MantisX zones)
 const Color _eliteColor = Color(0xFFFFD700);
 const Color _expertColor = Color(0xFF4CAF50);
 const Color _advancedColor = Color(0xFF2196F3);
-const Color _intermediateColor = Color(0xFFFF9800);
+const Color _intermediateColor = Color(0xFF00E5FF);
 const Color _beginnerColor = Color(0xFFF44336);
 
 class MuzzleTraceWidget extends StatefulWidget {
@@ -51,7 +52,6 @@ class _MuzzleTraceWidgetState extends State<MuzzleTraceWidget>
   // --- Trace path ---
   final List<_TracePoint> _recentTrace = [];
   static const int _maxTracePoints = 400;
-  static const int _traceWindowMs = 2000;
 
   // --- MantisX-style: dot uses direct accel ---
   static const double _liveDotSensitivity = 0.08;
@@ -75,7 +75,7 @@ class _MuzzleTraceWidgetState extends State<MuzzleTraceWidget>
   static const double _minZoom = 0.015; // max zoom-in (tight)
   static const double _maxZoom = 0.12; // max zoom-out (wide view)
   double _currentZoom = 0.05;
-  double _autoZoomLerp = 0.02;
+  final double _autoZoomLerp = 0.02;
 
   Color get _currentPhaseColor {
     if (_isRecoil) return _recoilColor;
@@ -376,11 +376,6 @@ class _MuzzleTracePainter extends CustomPainter {
 
   static final Paint _trailDotPaint = Paint()..style = PaintingStyle.fill;
 
-  // Pre-allocated mutable paints
-  final Paint _glowPaint1 = Paint()..style = PaintingStyle.fill;
-  final Paint _glowPaint2 = Paint()..style = PaintingStyle.fill;
-  final Paint _currentDotPaint = Paint()..style = PaintingStyle.fill;
-
   static final List<(double, Color, Color)> _ringRenders = [
     (
       0.2,
@@ -559,12 +554,6 @@ class _MuzzleTracePainter extends CustomPainter {
     }
   }
 
-  double _clamp(double v, double lo, double hi) => v < lo
-      ? lo
-      : v > hi
-      ? hi
-      : v;
-
   @override
   bool shouldRepaint(covariant _MuzzleTracePainter oldDelegate) {
     if (oldDelegate.dotX != dotX) return true;
@@ -577,8 +566,9 @@ class _MuzzleTracePainter extends CustomPainter {
       final newLast = trace.last;
       if (oldLast.x != newLast.x ||
           oldLast.y != newLast.y ||
-          oldLast.phase != newLast.phase)
+          oldLast.phase != newLast.phase) {
         return true;
+      }
     }
     if (oldDelegate.phaseColor != phaseColor) return true;
     if (oldDelegate.liveSpeed != liveSpeed) return true;

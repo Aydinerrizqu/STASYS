@@ -80,75 +80,99 @@ STASYS is a DIY shooter training device inspired by MantisX ($99-$249). It consi
 
 ## Architecture
 
+> **Verified 2026-11-22** against the working tree of branch `PreProduction3_Design_Adjust`.
+> File paths below are the real ones — earlier revisions of this file listed files
+> that have since been deleted (see "Removed Subsystems" at the bottom).
+
 ```
 d:\Aydiner\Projek Flutter SSA\
 ├── ssa_app/                         # Flutter mobile app (PRIMARY)
 │   └── lib/
 │       ├── main.dart                    # App entry, MultiProvider + GoRouter
-│       ├── router/app_router.dart       # GoRouter ShellRoute (3-tab nav)
-│       ├── theme/app_theme.dart         # Dark STSYS theme (#FFB693 primary, #131313 bg)
+│       ├── router/app_router.dart       # GoRouter: /connection + ShellRoute (4 tabs)
+│       ├── theme/app_theme.dart         # Context-aware palette (StsysTheme.*Of(context))
 │       ├── services/
-│       │   ├── database_helper.dart    # SQLite singleton, schema creation, migrations
-│       │   ├── database_service.dart   # CRUD operations, binary BLOB encoding
-│       │   └── export_service.dart     # CSV export via Share Sheet (all sessions)
+│       │   ├── database_helper.dart    # SQLite singleton, schema v3, migrations
+│       │   ├── database_service.dart   # CRUD, chunked BLOB read, binary BLOB encoding
+│       │   ├── export_service.dart     # CSV export via Share Sheet (all sessions)
+│       │   ├── stasys_protocol.dart    # greeting + 36-byte XOR frame parser (pure Dart)
+│       │   ├── firmware_service.dart   # OTA binary loading + chunking + SHA256
+│       │   └── profile_service.dart    # Local name-only profiles (SharedPreferences)
 │       ├── providers/
-│       │   ├── bluetooth_provider.dart  # greeting + 36-byte XOR frame streaming
+│       │   ├── bluetooth_provider.dart  # greeting → streaming, dual-mode parser
 │       │   ├── sensor_data_provider.dart # UI state, isolate communication, demo mode
 │       │   ├── sensor_data_isolate.dart  # Shot detection + 3-phase analysis
-│       │   ├── settings_provider.dart    # + isDemoMode, setDemoMode()
-│       │   ├── session_provider.dart
-│       │   └── session_logger.dart       # Delegates to DatabaseService (SQLite)
+│       │   ├── settings_provider.dart    # + themeMode, isDemoMode, target distance
+│       │   ├── session_provider.dart     # Session list management
+│       │   ├── session_logger.dart       # Delegates to DatabaseService (SQLite)
+│       │   ├── train_session_provider.dart # Train state machine, series lifecycle
+│       │   ├── profile_provider.dart     # Local profile CRUD
+│       │   └── ota_provider.dart         # OTA state machine
+│       ├── models/
+│       │   ├── data_models.dart          # DataPoint, SessionLog, ShotResult, enums
+│       │   ├── train_preset.dart         # 4 fixed training presets
+│       │   └── profile.dart              # Name-only local profile
 │       ├── screens/
-│       │   ├── splash_screen.dart        # STSYS branding, 2s auto-navigate
-│       │   ├── connection_screen.dart     # BT scan/connect + Explore App
-│       │   ├── main_shell.dart          # 3-tab NavigationBar shell
-│       │   ├── tracking_screen.dart     # Mode selection (4 firearm cards)
-│       │   ├── tracking_mode_view.dart   # Live graph + mode change dialog
-│       │   ├── history_screen.dart      # Session list + clear all + refresh
-│       │   ├── settings_screen.dart     # BT scan overlay + settings + target distance slider
-│       │   └── session_detail_screen.dart # POST SHOT | ANALYSIS toggle + shot chips
+│       │   ├── connection_screen.dart    # BT scan/connect + calibration/mount flow
+│       │   ├── main_shell.dart           # 4-tab NavigationBar shell (Train/History/Tracking/Settings)
+│       │   ├── train_screen.dart         # Choices → TRAIN-0 ready → TRAIN-1 active → review
+│       │   ├── tracking_screen.dart      # Dot-only live trace preview
+│       │   ├── history_screen.dart       # Session list + export + clear all + N-SERIES badge
+│       │   ├── settings_screen.dart      # BT scan + theme + mount + target distance
+│       │   ├── session_detail_screen.dart # Single-page detail + series chip selector
+│       │   ├── ota_update_screen.dart    # Full-screen OTA progress UI
+│       │   └── ota_prompt_dialog.dart    # Version compare + Skip/Update
 │       └── widgets/
 │           ├── muzzle_trace_widget.dart  # MantisX-style live trace
+│           ├── shot_trace_geometry.dart  # Shared HOLD→PRESS→RECOIL path (chart + replay)
+│           ├── shot_replay_controls.dart # Replay scrubber/play controls
+│           ├── shot_replay_panel.dart    # Selected-shot replay panel
+│           ├── train_target_widget.dart  # ISSF target, trace, scatter, ring contrast
+│           ├── target_replay_view.dart   # Target overlay replay
+│           ├── calibration_flow.dart     # Mandatory calibration/mount dialog
 │           ├── shot_analysis_panel.dart  # 3-phase post-shot chart
 │           ├── shot_history_list.dart    # Session shot list
 │           ├── gyro_realtime_chart.dart  # Real-time gyro chart
-│           └── analysis/                 # Offline trajectory replay widgets
-│               ├── analysis_tab.dart     # Composite: BarrelTraceCanvas + Scrubber + PhaseSummary + FactorBreakdown
-│               ├── trajectory_canvas.dart    # Barrel trace + target overlay + shot markers
-│               ├── trajectory_scrubber.dart  # Timeline scrubber + shot chip selector
-│               ├── phase_summary_card.dart   # Per-shot 3-phase chart
-│               └── factor_breakdown_card.dart # Stability/smoothness/harmonics factor scores
+│           ├── control_panel.dart, status_bar.dart, interactive_chart.dart
+│           └── benchmark_analysis_widget*.dart  # Legacy benchmark widgets (dead)
 │
-├── Firmware_STASYS32/                 # Modular ESP32 firmware (STASYS_FW)
-│   └── src/
-│       ├── main.cpp                    # Entry, 4 FreeRTOS tasks
-│       ├── storage/
-│       │   ├── storage.h/cpp           # NVS config/stats/auth
-│       │   ├── crc.h/cpp               # CRC16-CCITT
-│       │   ├── status_led.h/cpp         # LED patterns
-│       │   └── ota.h/cpp               # OTA manager
-│       └── sensor/
-│           ├── quaternion.h             # Header-only quaternion ops
-│           ├── madgwick.h/cpp           # AHRS filter
-│           ├── calibration.h/cpp        # IMU calibration + ZUPT
-│           └── i2c_bus_recovery.h/cpp   # I2C bus recovery
+├── Firmware_STASYS32/                 # ESP-IDF ESP32 firmware (STASYS_FW)
+│   ├── src/main.cpp                  # app_main, 2 FreeRTOS tasks, SPP + streaming
+│   ├── src/ota/                      # BT OTA handler (DEAD CODE — not in CMakeLists)
+│   ├── components/
+│   │   ├── app_protocol/             # 36-byte packet serializer (XOR checksum)
+│   │   ├── sensors/                  # sensor_hal: MPU6050 + QMC5883L + HMC5883L + ADC
+│   │   └── system_config/            # Pinout + HAL handles
+│   ├── partitions_dual_ota.csv
+│   └── platformio.ini                # espressif32@6.12.0, framework = espidf
 │
-└── Python Code (SSA)/          # OLD — all moved to _python_legacy/ (2026-06-13)
-    └── (archived)
-
-### Trajectory Replay Pipeline (2026-06-21) — ✅ Working (2026-07-08)
-
-Offline replay engine converts saved `SessionLog` into visual trajectory.
-Critical fix (2026-07-08): `_mergeAccelGyro()` now pairs by **list index** instead of timestamp buckets
-(timestamps are epoch ms, not relative → unique buckets → 0 matches).
-- `services/trajectory/`: quaternion ops, barrel projection, replay engine
-- `widgets/analysis/`: barrel trace canvas, timeline scrubber, phase summary, factor breakdown
-- Access: `SessionDetailScreen` → ANALYSIS tab → renders `AnalysisTab` composite widget
-- Known: shot detection threshold (4.0 rad/s stability window) may not trigger for slow/dry-fire movements
-
-See `ssa_app/CLAUDE.md` for full details.
-
+├── docs/superpowers/{specs,plans}/   # Design specs + implementation plans (gitignored
+│                                     #   — already-tracked files stay tracked)
+├── _python_legacy/                   # Old Python desktop apps (archived 2026-06-13)
+└── tools/                            # stasys_packet.py firmware-side reference
 ```
+
+### Removed Subsystems (do not look for these)
+
+| Deleted | When | Replacement |
+|---------|------|-------------|
+| `lib/services/trajectory/` (replay_engine, quaternion, projection, target_geometry, replay_models) | 2026-11 (working tree) | — |
+| `lib/widgets/analysis/` (analysis_tab, trajectory_canvas, trajectory_scrubber, phase_summary_card, factor_breakdown_card) | 2026-11 (working tree) | `widgets/train_target_widget.dart` + `widgets/shot_trace_geometry.dart` |
+| `lib/screens/replay_screen.dart`, `lib/widgets/replay_shot_widget.dart`, `lib/widgets/replay_trace_painter.dart` | 2026-11 (working tree) | Single-page `session_detail_screen.dart` + `shot_replay_controls.dart` |
+
+> The offline trajectory-replay pipeline documented in earlier revisions of this file
+> no longer exists. Shot replay now goes through `ShotTraceGeometry` → `TrainTargetWidget`.
+
+### Unreachable (dead) Flutter files — `ssa_app/tool/live_files.py`
+
+`python tool/live_files.py` (run from `ssa_app/`) walks imports from `lib/main.dart`
+and lists every `lib/**.dart` file that is unreachable. As of 2026-11-22 it reports
+**LIVE: 38 / DEAD: 22**, including `screens/main_screen.dart`, `screens/splash_screen.dart`,
+`screens/tabs/*`, `widgets/control_panel.dart`, `widgets/gyro_realtime_chart.dart`,
+`widgets/shot_analysis_panel.dart`, `widgets/shot_history_list.dart`,
+`widgets/status_bar.dart`, `utils/*`, `providers/bluetooth_isolate.dart`,
+`services/sensor_data_stream.dart`, `widgets/benchmark_analysis_widget*.dart`.
+Run it before deleting anything — some "dead" files are still imported by other dead files.
 
 ---
 
@@ -191,26 +215,44 @@ Tidak ada key, provisioning, atau PROOF. Lihat `tools/stasys_packet.py` (firma) 
 
 ## Database Schema (SQLite — stasys_sessions.db)
 
-> **Implemented**: 2026-04-14 — migrated from SharedPreferences (JSON) to SQLite for production scalability.
+> **Implemented**: 2026-04-14 — migrated from SharedPreferences (JSON) to SQLite.
+> **Schema version 3** (`openDatabase(version: 3)` in `services/database_helper.dart`).
 > Storage location: `getDatabasesPath() + '/stasys_sessions.db'` (Android internal storage).
+> `onUpgrade` is additive and non-destructive: v1→v2 adds metadata columns,
+> v2→v3 creates `session_series` and copies legacy raw BLOBs into series 1.
 
-### Table: `sessions`
+### Table: `sessions` (one row per training session)
 ```sql
 CREATE TABLE sessions (
-  id TEXT PRIMARY KEY,
-  date INTEGER NOT NULL,          -- Unix timestamp (ms)
+  id TEXT PRIMARY KEY,             -- SESSION_<micros>_<counter>, see below
+  date INTEGER NOT NULL,           -- Unix timestamp (ms)
   duration REAL NOT NULL,          -- seconds
   firearm_type TEXT NOT NULL,
   training_mode TEXT NOT NULL,
-  gyro_x BLOB,                    -- Binary encoded time series
-  gyro_y BLOB,
-  gyro_z BLOB,
-  accel_x BLOB,
-  accel_y BLOB,
-  accel_z BLOB
+  profile_name TEXT NOT NULL DEFAULT '',
+  training_preset TEXT NOT NULL DEFAULT '',
+  series_count INTEGER NOT NULL DEFAULT 0,
+  gyro_x BLOB,                     -- legacy raw (kept for pre-v3 sessions)
+  gyro_y BLOB, gyro_z BLOB,
+  accel_x BLOB, accel_y BLOB, accel_z BLOB
 );
 CREATE INDEX idx_sessions_date ON sessions(date DESC);
 CREATE INDEX idx_sessions_firearm ON sessions(firearm_type);
+```
+
+### Table: `session_series` (v3 — raw IMU per series)
+```sql
+CREATE TABLE session_series (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  session_id TEXT NOT NULL,
+  series_number INTEGER NOT NULL,
+  duration REAL NOT NULL DEFAULT 0,
+  gyro_x BLOB, gyro_y BLOB, gyro_z BLOB,
+  accel_x BLOB, accel_y BLOB, accel_z BLOB,
+  FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE,
+  UNIQUE (session_id, series_number)   -- required, else INSERT OR REPLACE never replaces
+);
+CREATE INDEX idx_session_series ON session_series(session_id, series_number);
 ```
 
 ### Table: `shots`
@@ -229,6 +271,7 @@ CREATE TABLE shots (
   peak_jerk REAL NOT NULL,
   firearm_type TEXT NOT NULL,
   training_mode TEXT NOT NULL,
+  series_number INTEGER NOT NULL DEFAULT 1,  -- v2: which series the shot belongs to
   hold_x BLOB,                    -- Binary encoded phase traces
   hold_y BLOB,
   press_x BLOB,
@@ -242,39 +285,77 @@ CREATE INDEX idx_shots_score ON shots(total_score DESC);
 
 ### Binary BLOB Encoding
 
-Time series and phase traces are stored as binary BLOB (not JSON) for compactness and speed:
-
-**Time series** (gyro/accel per session): `pointCount(int32)` + `[relTimestamp(float32) + value(float32)] * N`
+**Time series** (gyro/accel per series): `pointCount(int32)` + `[relTimestamp(float32) + value(float32)] * N`
 **Phase traces** (per shot): `count(int32)` + `[value(float64)] * N`
 
 Benefits: ~40% more compact than JSON, 5x faster decode, no JSON parsing overhead.
+
+### Android CursorWindow limit — read BLOBs in chunks
+
+A session row with 60k samples/axis is ~2.8 MB, which exceeds Android's ~2 MB
+SQLite CursorWindow and makes `db.query()` throw. Therefore:
+- `getSession()` / history queries select **summary columns only** (no IMU BLOBs).
+- Raw data is read per series via `getSeriesRaw(sessionId)` → `_readSeriesBlobColumn()`
+  → `SELECT substr(col, ?, ?)` in **256 KB chunks** (`_blobChunkBytes`).
+- `ssa_app/tool/inject_large_session.py` builds a deliberately oversized row to
+  regression-test this (`test/unit/services/database_row_size_test.dart`).
+
+### Session ID uniqueness
+
+`train_session_provider.dart` builds `SESSION_<microsSinceEpoch>_<counter>` with a
+monotonic `_sessionCounter`. Two sessions started in the same clock tick would
+otherwise share an id and overwrite each other.
 
 ---
 
 ## Development Workflow
 
-### Building & Uploading Firmware (PlatformIO)
+### Building & Uploading Firmware (PlatformIO + ESP-IDF)
 ```bash
 # Find ESP32 COM port first
 powershell -Command "[System.IO.Ports.SerialPort]::GetPortNames()"
 
-# Build
+# Build (framework = espidf, espressif32@6.12.0)
 cd Firmware_STASYS32
 python -m platformio run -e esp32dev
 
-# Upload (COM12 detected 2026-05-05)
-python -m platformio run -e esp32dev --target upload --upload-port COM12
+# Upload (COM3 detected 2026-05-23)
+python -m platformio run -e esp32dev --target upload --upload-port COM3
 
 # Monitor serial
-python -m platformio device monitor --port COM12 --baud 115200
+python -m platformio device monitor --port COM3 --baud 115200
 ```
+
+> ⚠️ **ESP-IDF rejects build paths containing spaces.** The repo lives in
+> `d:\Aydiner\Projek Flutter SSA\` — build from a copy in a space-free path.
+> `IDF_PATH` is normally unset in the shell; PlatformIO supplies its own
+> `framework-espidf` package, but the IDF CMake tools still need a space-free cwd.
+
+### Firmware tests (Python — no pytest installed)
+```bash
+cd Firmware_STASYS32
+python test/test_protocol_contract.py   # 5 tests
+python test/test_sens_log.py            # 13 tests
+python test/test_stasys_packet.py       # 8 tests
+python test/test_validate_partitions.py # 13 tests
+```
+`pytest` is **not** installed on this machine — run each file directly (each is a
+`unittest` module with a `__main__` block).
 
 ### Testing Flutter App
 ```bash
 cd ssa_app
+flutter test                     # 209 tests (2026-11-22, all pass)
+flutter analyze --no-fatal-infos # "No issues found!" (2026-11-22)
 flutter build apk --debug
 # Install APK from build/app/outputs/flutter-apk/app-debug.apk
 ```
+
+> **Toolchain**: Flutter 3.35.1 stable · Dart SDK `^3.9.0` · `flutter_lints: ^6.0.0`.
+> **Test gotchas**: `flutter test` runs files in parallel and two files opening the
+> same SQLite file lock each other out — `DatabaseHelper.setDatabaseFileNameForTesting()`
+> points each test at a unique file name. In Git Bash, `tail` on the compact reporter
+> output is unreliable (CR rendering); check the exit code instead.
 
 ---
 
@@ -292,9 +373,20 @@ path: ^1.9.0                      # Path utilities for DB
 share_plus: ^10.0.0               # CSV export via Share Sheet
 permission_handler: ^12.0.1
 path_provider: ^2.1.1
-crypto: ^3.0.3  # SHA256 for HMAC auth
+crypto: ^3.0.3                    # SHA256 (OTA checksum)
 intl: ^0.19.0
 go_router: ^15.1.0
+mime: ^2.0.0
+```
+Dev: `mocktail ^1.0.3`, `coverage ^1.7.2`, `sqflite_common_ffi ^2.3.4+4`,
+`firebase_crashlytics ^4.0.0`, `firebase_core ^3.0.0` (setup pending).
+
+### ESP32 / PlatformIO
+```
+platform = espressif32@6.12.0
+framework = espidf                     # NOT arduino — see Firmware_STASYS32/CLAUDE.md
+board_build.partitions = partitions_dual_ota.csv
+components: bt, nvs_flash, driver, esp_adc, esp_http_client
 ```
 
 ### Release Build Note (2026-04-26)
@@ -310,15 +402,104 @@ implementation 'androidx.appcompat:appcompat:1.3.0'  → 1.7.0
 Path: `C:/Users/<USER>/AppData/Local/Pub/Cache/hosted/pub.dev/flutter_bluetooth_serial-0.4.0/android/build.gradle`
 ⚠️ `flutter pub cache repair` will revert this — re-patch after repair.
 
-### Arduino / ESP32 (PlatformIO)
+---
+
+## Theme & Navigation (2026-11)
+
+### Theme — context-aware, cyan + light/dark
+
+The palette is **no longer** the warm-orange dark-only theme. `theme/app_theme.dart`
+now exposes `StsysTheme.*Of(context)` accessors that resolve per brightness.
+
+| Token | Dark | Light |
+|-------|------|-------|
+| `primary` | `#00E5FF` (cyan) | same accent family |
+| `secondary` | `#4D7CFE` | — |
+| `error` | `#FF6B6B` | — |
+| `surface` | `#0C0E11` | near-white shell |
+| `onSurface` | `#F1F5F9` | `#17202A` |
+
+- **Never hard-code a colour in a widget.** Use `StsysTheme.primaryOf(context)`,
+  `surfaceContainerLowOf(context)`, `onGradientOf(context)`, etc. Hard-coded
+  `Color(0xFF…)` literals were migrated out in commit `5832434`; new code must
+  follow the same rule.
+- `CustomPainter` has no `BuildContext` — the caller passes the colour in and
+  the painter applies it inside `paint()`.
+- `onGradientOf(context)` is fixed (`#00252C`) because it sits on top of the
+  fixed brand/tactical gradients, which do not change with brightness.
+- Dark/light is user-selectable in Settings (`themeMode` in SharedPreferences,
+  `SettingsProvider.setThemeMode`).
+- Score colours live in `StsysTheme.getScoreColor(score)` — do not re-implement
+  the threshold ladder locally.
+
+### Navigation — 4 tabs, no splash
+
 ```
-framework: arduino (ESP32 arduino core 3.20017)
-BluetoothSerial (built-in ESP32)
-Wire (built-in)
-WiFi (built-in)
-Preferences (built-in)
-esp_https_ota (built-in)
+App Launch → /connection (ConnectionScreen)
+              ├── Scan BT → connect → firmware check → calibration/mount flow → /train
+              └── Explore App → demo mode → /train
+
+MainShell (ShellRoute, 4 tabs): /train, /history, /tracking, /settings
 ```
+There is **no splash screen** in the router any more (`initialLocation: '/connection'`).
+
+---
+
+## Progress 2026-11-01 → 2026-11-22 — Session Grouping, Detail Redesign, Theme Migration ✅
+
+Branch `PreProduction3_Design_Adjust` (ahead of `main` = `61799f9` by 6 commits).
+Verified 2026-11-22: **Flutter 209/209 tests pass · `flutter analyze` clean ·
+firmware 39/39 Python tests pass.**
+
+- [x] **`97820ae`** — design spec: Supabase cloud sync + developer panel.
+  Offline-first (local SQLite stays source of truth, sync is additive),
+  optional Google/Email login, per-session upload, offline queue via a
+  `sync_status` column, developer panel = Supabase Studio + three SQL views.
+  **Spec only — no implementation yet.**
+- [x] **`4ff4ec0`** — design spec: session-series grouping (one History card per
+  training session, series chips in detail, `shots.series_number` populated).
+- [x] **`80fd819`** — single-page session detail + safe loading of large rows.
+  History queries omit the IMU BLOBs; raw data is read per series in 256 KB
+  chunks to stay under Android's ~2 MB CursorWindow limit.
+  Adds `database_row_size_test.dart` + `tool/inject_large_session.py`.
+- [x] **`fb759a2`** — session-series grouping implemented. New `session_series`
+  table (schema v2→v3, non-destructive migration copies legacy raw into series 1).
+  `UPDATE`-then-`INSERT` instead of `INSERT OR REPLACE` (REPLACE would cascade-delete
+  the session's own shots); `UNIQUE(session_id, series_number)` is required for
+  `INSERT OR REPLACE` to replace. Session ids carry a monotonic counter so two
+  sessions in the same clock tick don't overwrite each other.
+- [x] **`5832434`** — theme migration: 16 screens/widgets moved to the
+  context-aware `StsysTheme.*Of(context)` accessors; the two OTA screens were
+  hard-wired to the dark palette and now follow the theme. CustomPainter colours
+  are passed in by the caller. Also fixes a 4.5 px overflow of the "N SERIES"
+  badge in History (wrapped in a `FittedBox`).
+
+### Working-tree changes (2026-11, not yet committed)
+
+Removes the offline trajectory-replay pipeline and consolidates the UI:
+`lib/services/trajectory/*`, `lib/widgets/analysis/*`, `lib/widgets/analysis_tab.dart`,
+`lib/screens/replay_screen.dart`, `lib/widgets/replay_shot_widget.dart`,
+`lib/widgets/replay_trace_painter.dart` are deleted (−4026 lines net).
+Replay now runs through `ShotTraceGeometry` → `TrainTargetWidget` +
+`ShotReplayControls`. Also: `print` → `debugPrint`, `withOpacity` → `withValues`,
+and removal of unused fields/params.
+
+**Not yet committed — do not lose these.** Verify with
+`git status --short` before committing anything else.
+
+### Known follow-ups (non-blocking)
+
+- `firmware_service.expectedVersion = '1.4.0'` vs firmware `FIRMWARE_VERSION "2.0.0"`
+  (`Firmware_STASYS32/src/main.cpp:22`) — inert while the firmware does not answer
+  `GET_VERSION`.
+- ~3 s connect delay while the app waits for that unanswered `GET_VERSION`.
+- `isAuthenticated` in `bluetooth_provider.dart` now means "streaming active" (old name).
+- `Firmware_STASYS32/src/ota/*` is dead code (not in `src/CMakeLists.txt` SRCS);
+  its `extern isAuthenticated` guard is stale — replace with
+  `g_state != BT_OTA_IDLE` before reviving OTA.
+- Greeting chunk that also carries the first frame loses ~1 frame (FrameAssembler resync).
+- **Hardware acceptance still outstanding**: flash firmware → reboot → connect to
+  `STASYS-XXXX` → immediate stream, no key/provisioning/PROOF.
 
 ---
 
@@ -375,6 +556,9 @@ esp_https_ota (built-in)
 - [ ] **Firebase Crashlytics** — dependency added (2026-05-05), setup pending (needs Firebase account + google-services.json)
 - [ ] **Frame freeze / gralloc4 GPU buffer failure** — GPU/driver incompatibility with Impeller. **Not app code issue**. Test on different device.
 - [ ] **MantisX feature parity** — drill modes, trend analysis, split time, session notes, etc.
+- [ ] **Supabase cloud sync** — spec only (`97820ae`). Not implemented.
+- [ ] **Dead-code cleanup** — 22 unreachable Flutter files listed by `ssa_app/tool/live_files.py`.
+- [ ] **Hardware acceptance for the auth-free protocol** — flash → reboot → connect → immediate stream, no key.
 
 ### Live Tracking Requirements (2026-04-24)
 User requirements for MantisX-style live tracking:
@@ -422,17 +606,20 @@ stream langsung jalan. **Tanpa key/provisioning/PROOF.**
 - `isAuthenticated` di provider kini berarti "streaming aktif" (nama lama, rename opsional).
 - Greeting chunk yang menyertakan frame pertama: ~1 frame hilang (FrameAssembler resync; sudah dicatat).
 
-### Migration Status (2026-05-09)
+### Migration Status (2026-05-09, updated 2026-11-22)
 
 | Component | Protocol | Status |
 |-----------|---------|--------|
-| `Firmware_STASYS32/` | STASYS_FW (CRC16, 31-byte, FreeRTOS) | ✅ Updated — from `dylemmas/STASYSFW` |
-| `Flutter bluetooth_provider.dart` | CRC16 verification | ✅ Updated |
-| `Flutter settings_tab.dart` | Mount Direction/Position + RESET AXIS | ✅ Implemented (2026-05-09) |
+| `Firmware_STASYS32/` | STASYS_FW v2 (36-byte XOR, ESP-IDF) | ✅ Updated — auth-free, upstream `5f955e8` |
+| `Flutter bluetooth_provider.dart` | 36-byte XOR frame parser | ✅ Updated |
+| `Flutter settings_screen.dart` | Mount Direction/Position + RESET AXIS | ✅ Implemented (2026-05-09) |
 | `Python desktop apps` | XOR (30-byte) | 📁 Archived to `_python_legacy/` (2026-06-13). Update deferred. |
 
-> **Firmware Uploaded**: 2026-06-13 via COM3 (latest, v1.4.0 with CRC16 scope fix). Chip ESP32-D0WD-V3, MAC 78:1c:3c:f5:16:18.
-> **Live Tracking Status**: ✅ WORKING (verified 2026-06-13). Bluetooth auth + CRC16 verification + streaming data + muzzle trace rendering semua berfungsi.
+> **Firmware**: ESP32-D0WD-V3, MAC 78:1c:3c:f5:16:18, `FIRMWARE_VERSION "2.0.0"`
+> (`src/main.cpp:22`). Last uploaded 2026-06-13 via COM3 — that build predates the
+> ESP-IDF port, so **the current firmware has never been flashed to hardware**.
+> **Live Tracking Status**: last verified 2026-06-13 on the CRC16-era build; the
+> current 36-byte/XOR protocol is verified by contract tests only.
 
 ### Quick Wins (2026-05-09) ✅
 - [x] Fix duplicate `@override` in `sensor_data_provider.dart:512`
@@ -441,7 +628,7 @@ stream langsung jalan. **Tanpa key/provisioning/PROOF.**
 - [x] RESET AXIS button (clears gyro offsets, re-runs 50-sample auto-calibration via isolate)
 
 ### App Shell Redesign (2026-04-09) + SQLite Migration (2026-04-14)
-- [x] GoRouter with ShellRoute (3-tab bottom nav: Tracking/History/Settings)
+- [x] GoRouter with ShellRoute (3-tab bottom nav: Tracking/History/Settings — since grown to 4 tabs: Train/History/Tracking/Settings)
 - [x] SplashScreen (STSYS branding, 2s auto-navigate)
 - [x] ConnectionScreen (BT scan/connect + Explore App demo mode)
 - [x] TrackingScreen (mode selection 4 firearm cards + live graph)
@@ -483,84 +670,24 @@ stream langsung jalan. **Tanpa key/provisioning/PROOF.**
 
 ---
 
-## UI/UX Design Mockups (NOT YET IMPLEMENTED)
+## UI/UX Design References
 
-HTML mockups exist for visual reference. Both designs are **not yet implemented** in Flutter code.
+> ⚠️ The `UI UX Design/` folder **no longer exists on disk** (removed during the
+> 2026-10 repo cleanup, `6c527a3`). The HTML mockups it held are gone. The live
+> design source of truth is now the Figma file used for the train-flow redesign
+> (see `docs/superpowers/specs/2026-09-13-figma-train-flow-redesign-design.md`).
 
-```
-d:\Aydiner\Projek Flutter SSA\
-└── UI UX Design\
-    ├── Currently_used\                  # Exact replica of current Flutter UI
-    │   ├── index.html
-    │   ���── splash-screen.html
-    │   ├── connection-screen.html
-    │   ├── tracking-mode-selection.html
-    │   ├── tracking-live.html
-    │   ├── history-screen.html
-    │   ├── settings-screen.html
-    │   └── session-detail.html
-    └── DESIGN\
-        ├── DESIGN 1 (Redesign Tampilan - 2026-04-10)\
-        │   ├── index.html
-        │   ├── splash-screen.html
-        │   ├── connection-screen.html
-        │   ├── tracking-mode-selection.html
-        │   ├── tracking-live.html
-        │   ├── history-screen.html
-        │   ├── settings-screen.html
-        │   └── session-detail.html
-        └── DESIGN 2 (Night Ops HUD - 2026-04-10)\
-            ├── index.html
-            ├── splash-screen.html
-            ├── connection-screen.html
-            ├── tracking-mode-selection.html
-            ├── tracking-live.html
-            ├── history-screen.html
-            ├── settings-screen.html
-            └── session-detail.html
-```
+The two historical directions, for reference only:
 
-**Preview**: Open any `.html` file in Chrome/Edge/Firefox. Uses Google Fonts + Phosphor Icons CDN — no build needed.
+### DESIGN 1 — Evolutionary Redesign (2026-04-10, superseded)
+Polish from the Tactical Precision design system: glassmorphism cards, Manrope +
+Inter, pulse/gradient animations, tiered score rings. The warm-orange accent
+(`#FFB693`) it used is **no longer** the app's primary (see Theme above).
 
----
-
-### DESIGN 1 — Evolutionary Redesign
-
-**Approach**: Polish and refine from existing Tactical Precision design system.
-
-| Element | Change from current |
-|---------|-------------------|
-| Base bg | `#0D0D0D` (deeper dark) |
-| Primary accent | `#FFB693` (warm orange) |
-| Typography | Manrope + Inter, larger display, tighter body |
-| Cards | Glassmorphism with backdrop blur, rounded corners (12-16px) |
-| Animations | Pulse dots, fade transitions, gradient shimmer on buttons |
-| Score display | Ring/badge with tier colors (Elite/Expert/Advanced/etc.) |
-| Empty states | Illustrated with clear CTAs |
-
-**Preview**: `UI UX Design/DESIGN/DESIGN 1 (Redesign Tampilan - 2026-04-10)/index.html`
-
----
-
-### DESIGN 2 — Night Ops HUD (2026-04-10)
-
-**Approach**: Military/tactical HUD aesthetic with advanced data visualization.
-
-| Element | Change |
-|---------|--------|
-| Base bg | `#080C10` (near-black blue) |
-| Surface | `#0D1520` (dark navy) |
-| Primary accent | `#FF6B3D` (tactical orange-red) |
-| Secondary | `#00D4FF` (cyan HUD) |
-| Typography | **Orbitron** (HUD/tech display) + Inter (body) |
-| Icons | Phosphor Icons (duotone) |
-| Cards | Frosted glass with corner bracket decorations + cyan glow |
-| Score display | HUD ring with animated fill + glow pulse |
-| Charts | Animated SVG scan line sweeping, glow layers |
-| Animations | Radar sweep, scan effects, staggered reveals |
-| Status indicators | Animated radar pulse, signal bars |
-
-**Preview**: `UI UX Design/DESIGN/DESIGN 2 (Night Ops HUD - 2026-04-10)/index.html`
+### DESIGN 2 — Night Ops HUD (2026-04-10, superseded)
+Military HUD aesthetic: near-black-blue surfaces, Orbitron display type, cyan
+`#00D4FF` secondary, frosted-glass cards, radar/status indicators. The cyan half
+of this direction survived into the current palette; the orange did not.
 
 ---
 

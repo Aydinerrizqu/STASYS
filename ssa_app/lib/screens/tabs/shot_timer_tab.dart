@@ -218,7 +218,7 @@ class _ShotTimerTabState extends State<ShotTimerTab> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
-                  color: Colors.orange.withOpacity(0.2),
+                  color: Colors.orange.withValues(alpha: 0.2),
                   borderRadius: BorderRadius.circular(4),
                   border: Border.all(color: Colors.orange),
                 ),
@@ -231,7 +231,7 @@ class _ShotTimerTabState extends State<ShotTimerTab> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
-                  color: Colors.green.withOpacity(0.2),
+                  color: Colors.green.withValues(alpha: 0.2),
                   borderRadius: BorderRadius.circular(4),
                 ),
                 child: const Text(
@@ -312,7 +312,7 @@ class _ShotTimerTabState extends State<ShotTimerTab> {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
                   decoration: BoxDecoration(
-                    color: _getShotCountColor(_shotCount).withOpacity(0.2),
+                    color: _getShotCountColor(_shotCount).withValues(alpha: 0.2),
                     borderRadius: BorderRadius.circular(20),
                     border: Border.all(color: _getShotCountColor(_shotCount)),
                   ),

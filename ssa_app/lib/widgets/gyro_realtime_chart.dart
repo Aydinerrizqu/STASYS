@@ -202,8 +202,6 @@ class _GyroChartPainter extends CustomPainter {
     // Fixed scale — prevents coordinate jumps when data spikes
     const minVal = -5.0;
     const maxVal = 5.0;
-    const fixedYRange = maxVal - minVal; // 10.0
-
     // Find time range
     double minTs = double.infinity;
     double maxTs = -double.infinity;

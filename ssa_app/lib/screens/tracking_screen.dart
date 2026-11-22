@@ -63,6 +63,9 @@ class TrackingScreen extends StatelessWidget {
     );
   }
 
+  // Kept for the legacy Tracking header layout; the shell now renders its
+  // own header, so nothing calls this yet.
+  // ignore: unused_element
   Widget _buildHeader(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),

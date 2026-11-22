@@ -10,9 +10,11 @@ import '../models/data_models.dart';
 import '../theme/app_theme.dart';
 import 'shot_trace_geometry.dart';
 
-const Color _holdColor = Color(0xFFFF4444);
-const Color _pressColor = Color(0xFFFFFF44);
-const Color _recoilColor = Color(0xFF44FFFF);
+// Phase colors — hold/press/recoil map onto the app's primary, secondary
+// and error accents, matching the live muzzle trace.
+const Color _holdColor = Color(0xFF00E5FF); // primary — cyan
+const Color _pressColor = Color(0xFF4D7CFE); // secondary — blue
+const Color _recoilColor = Color(0xFFFF6B6B); // error — coral
 
 class TargetReplayMath {
   const TargetReplayMath._();

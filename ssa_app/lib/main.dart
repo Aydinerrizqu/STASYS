@@ -45,8 +45,9 @@ class MyApp extends StatelessWidget {
             logger: Provider.of<SessionLogger>(context, listen: false),
           ),
           update: (context, settings, logger, previous) {
-            if (previous == null)
+            if (previous == null) {
               return SensorDataProvider(settings: settings, logger: logger);
+            }
             previous.updateDependencies(settings: settings, logger: logger);
             return previous;
           },

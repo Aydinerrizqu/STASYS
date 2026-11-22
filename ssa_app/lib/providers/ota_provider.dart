@@ -49,14 +49,14 @@ class OtaProvider extends ChangeNotifier {
 
     try {
       final firmware = await _firmwareService.loadFirmware();
-      print('[OTA] Firmware loaded: ${firmware.sizeBytes} bytes, SHA256: ${firmware.sha256}');
+      debugPrint('[OTA] Firmware loaded: ${firmware.sizeBytes} bytes, SHA256: ${firmware.sha256}');
       _statusMessage = 'Starting OTA transfer...';
       notifyListeners();
 
       // Step 1: Send OTA_START
-      print('[OTA] Sending OTA_START with size=${firmware.sizeBytes}');
+      debugPrint('[OTA] Sending OTA_START with size=${firmware.sizeBytes}');
       final response = await _btProvider.sendOtaStart(firmware.sizeBytes);
-      print('[OTA] OTA_START response: $response');
+      debugPrint('[OTA] OTA_START response: $response');
       if (!response.contains('OTA_READY')) {
         throw Exception('OTA_START failed: $response');
       }
@@ -68,12 +68,12 @@ class OtaProvider extends ChangeNotifier {
       _state = OtaState.sending;
 
       for (final chunk in chunks) {
-        print('[OTA] Sending chunk seq=${chunk.seq}, size=${chunk.data.length}');
+        debugPrint('[OTA] Sending chunk seq=${chunk.seq}, size=${chunk.data.length}');
         _statusMessage = 'Sending chunk ${chunk.seq + 1}/$_totalChunks...';
         notifyListeners();
 
         final ack = await _btProvider.sendOtaChunk(chunk.seq, chunk.data);
-        print('[OTA] Chunk ${chunk.seq} ACK: $ack');
+        debugPrint('[OTA] Chunk ${chunk.seq} ACK: $ack');
         if (!ack.contains('OTA_ACK')) {
           // Retry up to 3 times
           bool success = false;

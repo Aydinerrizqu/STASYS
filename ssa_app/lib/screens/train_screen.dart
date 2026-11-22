@@ -13,9 +13,7 @@ import '../widgets/train_target_widget.dart';
 import '../widgets/shot_replay_panel.dart';
 
 class _StasysHeader extends StatelessWidget {
-  final Widget? trailing;
-  final bool showBattery;
-  const _StasysHeader({this.trailing, this.showBattery = false});
+  const _StasysHeader();
 
   @override
   Widget build(BuildContext context) {
@@ -44,19 +42,6 @@ class _StasysHeader extends StatelessWidget {
             ),
           ),
           const Spacer(),
-          if (showBattery)
-            Consumer<SensorDataProvider>(
-              builder: (context, sensor, _) => Text(
-                '${sensor.batteryLevel}%',
-                style: const TextStyle(
-                  fontFamily: 'Manrope',
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                  color: StsysTheme.successGreen,
-                ),
-              ),
-            ),
-          if (trailing != null) trailing!,
         ],
       ),
     );
@@ -761,7 +746,12 @@ class _SessionViewState extends State<_SessionView>
             (sessionReview && shots.isNotEmpty
                 ? shots.last.trainingMode
                 : null);
-        const bandColor = Color(0xFFF3F4F2);
+        // The band has to follow the theme: the target paints light ring
+        // strokes in dark mode and dark strokes in light mode, so a fixed
+        // near-white band would hide the rings in the dark shell.
+        final bandColor = StsysTheme.isLight(context)
+            ? const Color(0xFFF3F4F2)
+            : StsysTheme.surfaceContainerLowOf(context);
         final targetWidget = SizedBox(
           width: targetSize,
           height: targetSize,

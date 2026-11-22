@@ -69,7 +69,7 @@ class _OtaUpdateScreenState extends State<OtaUpdateScreen> {
                           value: null,
                           strokeWidth: 10,
                           backgroundColor: StsysTheme.surfaceContainerHighOf(context),
-                          valueColor: const AlwaysStoppedAnimation(Color(0xFF2A2A2A)),
+                          valueColor: AlwaysStoppedAnimation(StsysTheme.primaryOf(context)),
                         ),
                       ),
                       // Progress circle
@@ -80,7 +80,7 @@ class _OtaUpdateScreenState extends State<OtaUpdateScreen> {
                           value: ota.progress,
                           strokeWidth: 10,
                           backgroundColor: Colors.transparent,
-                          valueColor: const AlwaysStoppedAnimation(Color(0xFFFF6B3D)),
+                          valueColor: AlwaysStoppedAnimation(StsysTheme.primaryOf(context)),
                         ),
                       ),
                       // Percentage + chunks
@@ -89,8 +89,8 @@ class _OtaUpdateScreenState extends State<OtaUpdateScreen> {
                         children: [
                           Text(
                             '${(ota.progress * 100).toInt()}%',
-                            style: const TextStyle(
-                              color: Color(0xFFFF6B3D),
+                            style: TextStyle(
+                              color: StsysTheme.primaryOf(context),
                               fontSize: 36,
                               fontWeight: FontWeight.bold,
                             ),
@@ -185,8 +185,8 @@ class _OtaUpdateScreenState extends State<OtaUpdateScreen> {
                             context.read<OtaProvider>().startOta();
                           },
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFFFF6B3D),
-                            foregroundColor: Colors.white,
+                            backgroundColor: StsysTheme.primaryOf(context),
+                            foregroundColor: StsysTheme.onPrimaryOf(context),
                             padding: const EdgeInsets.symmetric(vertical: 14),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(8),
@@ -236,8 +236,8 @@ class _OtaUpdateScreenState extends State<OtaUpdateScreen> {
                     child: ElevatedButton(
                       onPressed: () => context.go('/connection'),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFFFF6B3D),
-                        foregroundColor: Colors.white,
+                        backgroundColor: StsysTheme.primaryOf(context),
+                        foregroundColor: StsysTheme.onPrimaryOf(context),
                         padding: const EdgeInsets.symmetric(vertical: 14),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(8),
@@ -260,13 +260,15 @@ class _OtaUpdateScreenState extends State<OtaUpdateScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
-        color: active ? const Color(0xFFFF6B3D).withValues(alpha: 0.15) : Colors.transparent,
+        color: active ? StsysTheme.primaryOf(context).withValues(alpha: 0.15) : Colors.transparent,
         borderRadius: BorderRadius.circular(20),
       ),
       child: Text(
         label,
         style: TextStyle(
-          color: active ? const Color(0xFFFF6B3D) : const Color(0xFF444444),
+          color: active
+              ? StsysTheme.primaryOf(context)
+              : StsysTheme.mobileMutedTextOf(context),
           fontSize: 13,
           fontWeight: active ? FontWeight.w600 : FontWeight.normal,
         ),
@@ -275,11 +277,14 @@ class _OtaUpdateScreenState extends State<OtaUpdateScreen> {
   }
 
   Widget _dot() {
-    return const Padding(
-      padding: EdgeInsets.symmetric(horizontal: 6),
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 6),
       child: Text(
         '•',
-        style: TextStyle(color: Color(0xFF2A2A2A), fontSize: 14),
+        style: TextStyle(
+          color: StsysTheme.mobileMutedTextOf(context),
+          fontSize: 14,
+        ),
       ),
     );
   }

@@ -21,7 +21,7 @@ class OtaPromptDialog extends StatelessWidget {
       backgroundColor: StsysTheme.surfaceContainerHighOf(context),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        side: const BorderSide(color: Color(0xFF2A2A2A), width: 1),
+        side: BorderSide(color: StsysTheme.outlineVariantOf(context), width: 1),
       ),
       title: Row(
         children: [
@@ -29,12 +29,12 @@ class OtaPromptDialog extends StatelessWidget {
             width: 40,
             height: 40,
             decoration: BoxDecoration(
-              color: const Color(0xFFFF6B3D).withValues(alpha: 0.2),
+              color: StsysTheme.primaryOf(context).withValues(alpha: 0.2),
               borderRadius: BorderRadius.circular(10),
             ),
-            child: const Icon(
+            child: Icon(
               Icons.system_update_alt,
-              color: Color(0xFFFF6B3D),
+              color: StsysTheme.primaryOf(context),
               size: 22,
             ),
           ),
@@ -90,17 +90,17 @@ class OtaPromptDialog extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: const Color(0xFFFF6B3D).withValues(alpha: 0.1),
+              color: StsysTheme.primaryOf(context).withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(8),
               border: Border.all(
-                color: const Color(0xFFFF6B3D).withValues(alpha: 0.3),
+                color: StsysTheme.primaryOf(context).withValues(alpha: 0.3),
               ),
             ),
             child: Row(
               children: [
                 Icon(
                   Icons.warning_amber_rounded,
-                  color: Color(0xFFFF6B3D),
+                  color: StsysTheme.primaryOf(context),
                   size: 18,
                 ),
                 SizedBox(width: 8),
@@ -128,8 +128,8 @@ class OtaPromptDialog extends StatelessWidget {
         ElevatedButton(
           onPressed: onUpdate,
           style: ElevatedButton.styleFrom(
-            backgroundColor: const Color(0xFFFF6B3D),
-            foregroundColor: Colors.white,
+            backgroundColor: StsysTheme.primaryOf(context),
+            foregroundColor: StsysTheme.onPrimaryOf(context),
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(8),

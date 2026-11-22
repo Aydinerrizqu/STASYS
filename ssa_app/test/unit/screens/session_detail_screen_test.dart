@@ -8,8 +8,6 @@ import 'package:ssa_app/providers/session_logger.dart';
 import 'package:ssa_app/providers/session_provider.dart';
 import 'package:ssa_app/providers/settings_provider.dart';
 import 'package:ssa_app/screens/session_detail_screen.dart';
-import 'package:ssa_app/widgets/analysis_tab.dart';
-import 'package:ssa_app/widgets/replay_shot_widget.dart';
 import 'package:ssa_app/widgets/shot_replay_controls.dart';
 
 ShotResult _shot({
@@ -221,9 +219,10 @@ void main() {
       expect(find.byType(ShotReplayControls), findsOneWidget);
       expect(find.byKey(const ValueKey('shot-chip-1')), findsOneWidget);
 
-      // ...and everything below the chip strip is removed.
-      expect(find.byType(ReplayShotWidget), findsNothing);
-      expect(find.byType(AnalysisTab), findsNothing);
+      // ...and everything below the chip strip is removed. The offline
+      // analysis widgets are gone, so the page must not show their labels.
+      expect(find.text('REPLAYED SHOTS'), findsNothing);
+      expect(find.text('NO TRACE DATA'), findsNothing);
       expect(find.text('NO IMU DATA AVAILABLE'), findsNothing);
       expect(tester.takeException(), isNull);
     });

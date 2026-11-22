@@ -6,7 +6,6 @@ import '../providers/settings_provider.dart';
 import '../services/export_service.dart';
 import '../theme/app_theme.dart';
 import 'session_detail_screen.dart';
-import 'replay_screen.dart';
 
 class HistoryScreen extends StatefulWidget {
   const HistoryScreen({super.key});
@@ -398,34 +397,6 @@ class _HistoryScreenState extends State<HistoryScreen>
                                               letterSpacing: 1.5,
                                               color: StsysTheme.onSurfaceVariantOf(context)
                                                   .withValues(alpha: 0.5),
-                                            ),
-                                          ),
-                                          const SizedBox(width: 6),
-                                          GestureDetector(
-                                            onTap: () {
-                                              Navigator.push(
-                                                context,
-                                                MaterialPageRoute(
-                                                  builder: (context) =>
-                                                      ReplayScreen(
-                                                        sessionId: session.id,
-                                                      ),
-                                                ),
-                                              );
-                                            },
-                                            child: Container(
-                                              padding: const EdgeInsets.all(4),
-                                              decoration: BoxDecoration(
-                                                color: StsysTheme.secondaryOf(context)
-                                                    .withValues(alpha: 0.15),
-                                                borderRadius:
-                                                    BorderRadius.circular(6),
-                                              ),
-                                              child: Icon(
-                                                Icons.timeline,
-                                                size: 14,
-                                                color: StsysTheme.secondaryOf(context),
-                                              ),
                                             ),
                                           ),
                                         ],

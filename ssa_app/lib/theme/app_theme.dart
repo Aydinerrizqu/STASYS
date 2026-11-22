@@ -6,8 +6,8 @@ import 'package:flutter/material.dart';
 
 class StsysTheme {
   // --- Color Palette (from Figma) ---
-  static const Color background = Color(0xFF131313);
-  static const Color surfaceContainerLowest = Color(0xFF0E0E0E);
+  static const Color background = Color(0xFF080A0C);
+  static const Color surfaceContainerLowest = Color(0xFF080B0E);
 
   // Mobile shell tokens from the Figma train-flow redesign.
   static const Color mobileBackground = Color(0xFF0C0E11);
@@ -17,16 +17,16 @@ class StsysTheme {
   static const Color liveRed = Color(0xFFFF4D5A);
   static const Color successGreen = Color(0xFF39D98A);
   static const Color mobileMutedText = Color(0xFF8B8B8B);
-  static const Color surfaceContainerLow = Color(0xFF1C1B1B);
-  static const Color surfaceContainer = Color(0xFF201F1F);
-  static const Color surfaceContainerHigh = Color(0xFF2A2A2A);
-  static const Color surfaceContainerHighest = Color(0xFF353534);
-  static const Color surfaceBright = Color(0xFF393939);
-  static const Color surfaceDim = Color(0xFF131313);
+  static const Color surfaceContainerLow = Color(0xFF111418);
+  static const Color surfaceContainer = Color(0xFF15191E);
+  static const Color surfaceContainerHigh = Color(0xFF1B2027);
+  static const Color surfaceContainerHighest = Color(0xFF232932);
+  static const Color surfaceBright = Color(0xFF2C333C);
+  static const Color surfaceDim = Color(0xFF0C0E11);
   static const Color mobileHeaderTrain = Color(0xFF102A35);
   static const Color mobileHeaderHistory = Color(0xFF241C35);
   static const Color mobileHeaderTracking = Color(0xFF18332E);
-  static const Color mobileHeaderSettings = Color(0xFF30251A);
+  static const Color mobileHeaderSettings = Color(0xFF1B2027);
 
   // The mobile redesign uses a near-white shell in light mode while keeping
   // the existing Night Ops palette unchanged in dark mode. These accessors
@@ -55,7 +55,7 @@ class StsysTheme {
   /// with the theme, so the "on" colour has to stay fixed as well to keep
   /// the contrast — a white label would vanish on the cyan half of the
   /// brand gradient and on the orange tactical gradient.
-  static Color onGradientOf(BuildContext context) => onPrimary;
+  static Color onGradientOf(BuildContext context) => const Color(0xFF00252C);
   static Color onSurfaceOf(BuildContext context) =>
       isLight(context) ? const Color(0xFF17202A) : onSurface;
   static Color errorOf(BuildContext context) =>
@@ -100,49 +100,55 @@ class StsysTheme {
   static Color tertiaryOf(BuildContext context) =>
       isLight(context) ? const Color(0xFF2F5D8C) : tertiary;
 
-  static const Color primary = Color(0xFFFFB693);
-  static const Color primaryContainer = Color(0xFFFF6B00);
-  static const Color primaryFixed = Color(0xFFFFDBCC);
-  static const Color primaryFixedDim = Color(0xFFFFB693);
-  static const Color onPrimary = Color(0xFF561F00);
-  static const Color onPrimaryContainer = Color(0xFF572000);
+  // The primary accent follows the Figma mobile direction: cyan for actions
+  // and headings, slate for the neutral chrome. The earlier warm orange
+  // palette clashed with the cyan shell, so every token below now belongs to
+  // the same cool family.
+  static const Color primary = Color(0xFF00E5FF);
+  static const Color primaryContainer = Color(0xFF008FA3);
+  static const Color primaryFixed = Color(0xFF9DEBFA);
+  static const Color primaryFixedDim = Color(0xFF00E5FF);
+  static const Color onPrimary = Color(0xFF00363F);
+  static const Color onPrimaryContainer = Color(0xFF001F26);
 
-  static const Color secondary = Color(0xFF8BCEFF);
+  static const Color secondary = Color(0xFF4D7CFE);
   static const Color secondaryContainer = Color(0xFF0CB3FF);
   static const Color secondaryFixed = Color(0xFFC9E6FF);
   static const Color secondaryFixedDim = Color(0xFF8BCEFF);
-  static const Color onSecondary = Color(0xFF00344E);
+  static const Color onSecondary = Color(0xFF00287A);
   static const Color onSecondaryContainer = Color(0xFF004261);
 
-  static const Color tertiary = Color(0xFF9CCAff);
+  static const Color tertiary = Color(0xFF94A3B8);
   static const Color tertiaryContainer = Color(0xFF059EFF);
   static const Color tertiaryFixed = Color(0xFFD0E4FF);
   static const Color tertiaryFixedDim = Color(0xFF9CCAff);
-  static const Color onTertiary = Color(0xFF003257);
+  static const Color onTertiary = Color(0xFF334155);
   static const Color onTertiaryContainer = Color(0xFF003357);
   static const Color onTertiaryFixed = Color(0xFF001D35);
   static const Color onTertiaryFixedVariant = Color(0xFF00497B);
 
-  static const Color error = Color(0xFFFFB4AB);
+  static const Color error = Color(0xFFFF6B6B);
   static const Color errorContainer = Color(0xFF93000A);
   static const Color onError = Color(0xFF690005);
   static const Color onErrorContainer = Color(0xFFFFDAD6);
 
-  static const Color surface = Color(0xFF131313);
-  static const Color onSurface = Color(0xFFE5E2E1);
-  static const Color surfaceVariant = Color(0xFF353534);
-  static const Color onSurfaceVariant = Color(0xFFE2BFB0);
-  static const Color surfaceTint = Color(0xFFFFB693);
-  static const Color inverseSurface = Color(0xFFE5E2E1);
-  static const Color onInverseSurface = Color(0xFF313030);
-  static const Color inversePrimary = Color(0xFFA04100);
+  static const Color surface = Color(0xFF0C0E11);
+  static const Color onSurface = Color(0xFFF1F5F9);
+  static const Color surfaceVariant = Color(0xFF1F242C);
+  static const Color onSurfaceVariant = Color(0xFFC0CAD8);
+  static const Color surfaceTint = Color(0xFF00E5FF);
+  static const Color inverseSurface = Color(0xFFF1F5F9);
+  static const Color onInverseSurface = Color(0xFF1F242C);
+  static const Color inversePrimary = Color(0xFF008FA3);
 
-  static const Color outline = Color(0xFFA98A7D);
-  static const Color outlineVariant = Color(0xFF5A4136);
+  static const Color outline = Color(0xFF475569);
+  static const Color outlineVariant = Color(0xFF1F242C);
 
   // --- Tactical Gradient ---
+  // The cyan-to-blue ramp mirrors the brand gradient so a single accent
+  // language runs through the whole app.
   static const LinearGradient tacticalGradient = LinearGradient(
-    colors: [primary, primaryContainer],
+    colors: [primary, secondary],
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
   );
@@ -304,7 +310,7 @@ class StsysTheme {
       bottomNavigationBarTheme: const BottomNavigationBarThemeData(
         backgroundColor: background,
         selectedItemColor: primary,
-        unselectedItemColor: Color(0xFFE5E2E1),
+        unselectedItemColor: Color(0xFFC0CAD8),
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
@@ -338,7 +344,7 @@ class StsysTheme {
       ),
       tabBarTheme: const TabBarThemeData(
         labelColor: onSurface,
-        unselectedLabelColor: Color(0xFFE5E2E1),
+        unselectedLabelColor: Color(0xFFC0CAD8),
       ),
     );
   }

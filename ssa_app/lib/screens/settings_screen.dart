@@ -429,12 +429,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 width: 40,
                 height: 40,
                 decoration: BoxDecoration(
-                  color: const Color(0xFFFF6B3D).withValues(alpha: 0.15),
+                  color: StsysTheme.primaryOf(context).withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: const Icon(
+                child: Icon(
                   Icons.system_update_alt,
-                  color: Color(0xFFFF6B3D),
+                  color: StsysTheme.primaryOf(context),
                   size: 20,
                 ),
               ),
@@ -466,7 +466,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
               Switch(
                 value: settings.autoUpdateFirmware,
-                activeTrackColor: const Color(0xFFFF6B3D),
+                activeTrackColor: StsysTheme.primaryOf(context),
                 onChanged: (v) => settings.setAutoUpdateFirmware(v),
               ),
             ],

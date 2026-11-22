@@ -251,7 +251,7 @@ class BluetoothProvider extends ChangeNotifier {
 
     for (int attempt = 0; attempt <= maxRetries; attempt++) {
       if (attempt > 0) {
-        debugPrint('[BT] Retry $attempt/${maxRetries} for ${device.address}');
+        debugPrint('[BT] Retry $attempt/$maxRetries for ${device.address}');
         // Force disconnect before retry
         await _forceDisconnect();
         await Future.delayed(delayBetweenRetries);
@@ -417,7 +417,7 @@ class BluetoothProvider extends ChangeNotifier {
       // Wait for ACK
       return await _waitForOtaResponse(timeoutMs: 5000);
     } catch (e) {
-      print('[OTA] sendOtaChunk($seq) exception: $e');
+      debugPrint('[OTA] sendOtaChunk($seq) exception: $e');
       return 'OTA_NAK:seq=$seq:err';
     }
   }

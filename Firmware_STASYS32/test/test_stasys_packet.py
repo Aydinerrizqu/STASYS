@@ -6,13 +6,28 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from tools.stasys_packet import (
+    AUTH_TRANSCRIPT_SIZE,
+    DEV_AUTH_SALT,
     FRAME_SIZE,
     Packet,
     PacketParser,
     PacketParseError,
     SppReceiver,
+    auth_derive_key,
+    auth_proof,
+    auth_transcript,
     encode_packet,
     parse_packet,
+)
+
+REFERENCE_MAC = bytes([0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF])
+REFERENCE_NONCE = bytes(range(32))
+REFERENCE_PROOF_HEX = (
+    "ec5a7a2972cb6a8ad4efd676535c63ae61d47c72bd82706edde7897a150ba8d9"
+)
+REFERENCE_TRANSCRIPT_HEX = (
+    "5354415359532d415554482f7633aabbccddeeff"
+    "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
 )
 
 
@@ -101,29 +116,68 @@ class FakeSerial:
         self.closed = True
 
 
+class AuthTests(unittest.TestCase):
+    def test_auth_transcript_matches_reference_bytes(self):
+        transcript = auth_transcript(REFERENCE_MAC, REFERENCE_NONCE)
+        self.assertEqual(len(transcript), AUTH_TRANSCRIPT_SIZE)
+        self.assertEqual(transcript.hex(), REFERENCE_TRANSCRIPT_HEX)
+
+    def test_auth_proof_matches_reference_vector(self):
+        device_key = auth_derive_key(DEV_AUTH_SALT, REFERENCE_MAC)
+        transcript = auth_transcript(REFERENCE_MAC, REFERENCE_NONCE)
+        proof = auth_proof(device_key, transcript)
+        self.assertEqual(proof.hex(), REFERENCE_PROOF_HEX)
+
+    def test_auth_rejects_wrong_key(self):
+        transcript = auth_transcript(REFERENCE_MAC, REFERENCE_NONCE)
+        wrong_key = bytes([0xFF] * 32)
+        proof = auth_proof(wrong_key, transcript)
+        self.assertNotEqual(proof.hex(), REFERENCE_PROOF_HEX)
+
+    def test_auth_rejects_changed_nonce(self):
+        device_key = auth_derive_key(DEV_AUTH_SALT, REFERENCE_MAC)
+        nonce = bytearray(REFERENCE_NONCE)
+        nonce[-1] ^= 0xFF
+        transcript = auth_transcript(REFERENCE_MAC, bytes(nonce))
+        proof = auth_proof(device_key, transcript)
+        self.assertNotEqual(proof.hex(), REFERENCE_PROOF_HEX)
+
+
 class SppReceiverTests(unittest.TestCase):
-    def test_ready_and_packet_are_read_without_writing(self):
+    def _auth_prefix(self):
+        return (
+            b"READY v=3\n"
+            + f"AUTH {REFERENCE_NONCE.hex()} {REFERENCE_MAC.hex()}\n".encode("ascii")
+        )
+
+    def test_receiver_handshake_succeeds(self):
         packet = Packet(1, 2, 3, 4, 5, 6, -1, 2, -3, 400, 88)
         frame = encode_packet(packet)
-        serial = FakeSerial([b"READY v=2\n" + frame])
+        serial = FakeSerial([self._auth_prefix(), b"OK\n", frame])
         receiver = SppReceiver(serial, read_size=128)
 
         decoded = receiver.read_packets(limit=1)
 
         self.assertEqual(decoded, [parse_packet(frame)])
-        self.assertEqual(serial.writes, [])
-        self.assertGreaterEqual(receiver.parser.discarded_bytes, len(b"READY v=2\n"))
+        self.assertEqual(len(serial.writes), 1)
+        self.assertTrue(serial.writes[0].startswith(b"PROOF "))
+        self.assertTrue(receiver.authenticated)
 
-    def test_packet_fragmentation_is_reassembled_without_writing(self):
+    def test_packet_fragmentation_is_reassembled_after_auth(self):
         packet = Packet(1, 2, 3, 4, 5, 6, -1, 2, -3, 400, 88)
         frame = encode_packet(packet)
-        serial = FakeSerial([b"READY v=2\n" + frame[:9], frame[9:]])
+        serial = FakeSerial([
+            self._auth_prefix(),
+            b"OK\n",
+            frame[:9],
+            frame[9:],
+        ])
         receiver = SppReceiver(serial, read_size=128)
 
         decoded = receiver.read_packets(limit=1)
 
         self.assertEqual(decoded, [parse_packet(frame)])
-        self.assertEqual(serial.writes, [])
+        self.assertEqual(len(serial.writes), 1)
 
 
 if __name__ == "__main__":

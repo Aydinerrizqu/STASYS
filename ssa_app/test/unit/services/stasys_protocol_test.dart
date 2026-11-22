@@ -4,26 +4,37 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:ssa_app/services/stasys_protocol.dart';
 
 void main() {
-  group('auth-free greeting', () {
+  group('greeting', () {
     test('parses the READY v=2 greeting', () {
       expect(StasysProtocol.parseGreeting('READY v=2'), 2);
     });
 
-    test('rejects legacy and unsupported greetings', () {
-      // Bare READY belonged to the pre-v2 auth handshake (dead protocol).
+    test('parses READY v=3 and rejects unknown versions', () {
+      expect(StasysProtocol.parseGreeting('READY v=3'), 3);
       expect(
-        () => StasysProtocol.parseGreeting('READY'),
+        () => StasysProtocol.parseGreeting('READY v=4'),
         throwsFormatException,
       );
-      expect(
-        () => StasysProtocol.parseGreeting('READY v=3'),
-        throwsFormatException,
-      );
-      // The gen= form belonged to the removed auth protocol.
       expect(
         () => StasysProtocol.parseGreeting('READY v=2 gen=7'),
         throwsFormatException,
       );
+    });
+  });
+
+
+  group('auth v3 reference vector', () {
+    test('proof matches STASYS_AUTH_PROTOCOL.md test vector', () {
+      const macHex = 'aabbccddeeff';
+      const nonceHex =
+          '000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f';
+      const expectedProof =
+          'ec5a7a2972cb6a8ad4efd676535c63ae61d47c72bd82706edde7897a150ba8d9';
+      final challenge = StasysProtocol.parseAuthChallenge(
+        'AUTH $nonceHex $macHex',
+      );
+      final proofLine = StasysProtocol.buildProofLine(challenge);
+      expect(proofLine.trim(), 'PROOF ' + expectedProof);
     });
   });
 

@@ -12,14 +12,19 @@ Frame layout (little endian):
   34     battery as uint8
   35     XOR of bytes 2..34 (header and checksum excluded)
 
-The firmware sends ``READY v=2\n`` after SPP connects and immediately streams
-36-byte binary packets. The receiver ignores text and synchronizes on ``AA BB``.
+After SPP connects the firmware runs an HMAC challenge-response handshake
+(``READY v=3``, ``AUTH``, ``PROOF``, ``OK``) before streaming 36-byte binary
+packets. The receiver completes authentication first, then synchronizes on
+``AA BB``.
 """
 
 from __future__ import annotations
 
 import argparse
+import hashlib
+import hmac
 import json
+import re
 import struct
 import sys
 from dataclasses import asdict, dataclass
@@ -31,6 +36,39 @@ CHECKSUM_OFFSET = 35
 PAYLOAD_FORMAT = "<6f3hHB"
 PAYLOAD_SIZE = struct.calcsize(PAYLOAD_FORMAT)
 MAX_BUFFER_SIZE = FRAME_SIZE * 4
+
+AUTH_VERSION = 3
+AUTH_DOMAIN = b"STASYS-AUTH/v3"
+AUTH_NONCE_SIZE = 32
+AUTH_MAC_SIZE = 6
+AUTH_TRANSCRIPT_SIZE = 52
+AUTH_PROOF_SIZE = 32
+AUTH_GREETING = re.compile(r"^READY v=(\d+)$")
+AUTH_CHALLENGE = re.compile(r"^AUTH ([0-9a-fA-F]{64}) ([0-9a-fA-F]{12})$")
+
+# Shared development salt (must match firmware `STASYS_AUTH_SALT`).
+DEV_AUTH_SALT = bytes(range(32))
+
+
+class AuthHandshakeError(RuntimeError):
+    """Raised when the challenge-response handshake fails."""
+
+
+def auth_transcript(identity: bytes, nonce: bytes) -> bytes:
+    """Build the 52-byte transcript for protocol v3."""
+    if len(identity) != AUTH_MAC_SIZE:
+        raise ValueError(f"identity must be {AUTH_MAC_SIZE} bytes")
+    if len(nonce) != AUTH_NONCE_SIZE:
+        raise ValueError(f"nonce must be {AUTH_NONCE_SIZE} bytes")
+    return AUTH_DOMAIN + identity + nonce
+
+
+def auth_derive_key(salt: bytes, identity: bytes) -> bytes:
+    return hmac.new(salt, identity, hashlib.sha256).digest()
+
+
+def auth_proof(device_key: bytes, transcript: bytes) -> bytes:
+    return hmac.new(device_key, transcript, hashlib.sha256).digest()
 
 
 class PacketParseError(ValueError):
@@ -145,13 +183,22 @@ class PacketParser:
 class SppReceiver:
     """Decode packets from a serial-like Bluetooth stream."""
 
-    def __init__(self, serial_port, *, read_size: int = 256):
+    def __init__(
+        self,
+        serial_port,
+        *,
+        read_size: int = 256,
+        salt: bytes | None = DEV_AUTH_SALT,
+    ):
         if read_size <= 0:
             raise ValueError("read_size must be positive")
         self.serial = serial_port
         self.read_size = read_size
+        self.salt = salt
         self._pending = bytearray()
+        self._text = bytearray()
         self.parser = PacketParser()
+        self.authenticated = False
 
     def _read(self) -> bytes:
         chunk = self.serial.read(self.read_size)
@@ -159,7 +206,58 @@ class SppReceiver:
             raise TimeoutError("Bluetooth COM port closed or timed out")
         return bytes(chunk)
 
+    def _line_iter(self, chunk: bytes):
+        self._text.extend(chunk)
+        while True:
+            newline = self._text.find(b"\n")
+            if newline < 0:
+                break
+            line = bytes(self._text[:newline]).strip()
+            del self._text[:newline + 1]
+            if line:
+                yield line.decode("ascii", errors="strict")
+
+    def authenticate(self) -> None:
+        """Complete the READY/AUTH/PROOF/OK handshake before streaming."""
+        if self.salt is None or len(self.salt) != 32:
+            raise AuthHandshakeError("salt must be 32 bytes")
+        nonce: bytes | None = None
+        identity: bytes | None = None
+        greeting_seen = False
+        while identity is None:
+            chunk = self._read()
+            for line in self._line_iter(chunk):
+                if not greeting_seen:
+                    match = AUTH_GREETING.fullmatch(line)
+                    if not match or int(match.group(1)) != AUTH_VERSION:
+                        raise AuthHandshakeError(f"unsupported greeting: {line!r}")
+                    greeting_seen = True
+                    continue
+                challenge = AUTH_CHALLENGE.fullmatch(line)
+                if challenge is None:
+                    raise AuthHandshakeError(f"expected AUTH line, got {line!r}")
+                nonce = bytes.fromhex(challenge.group(1))
+                identity = bytes.fromhex(challenge.group(2))
+        device_key = auth_derive_key(self.salt, identity)
+        transcript = auth_transcript(identity, nonce)
+        proof = auth_proof(device_key, transcript)
+        self.serial.write(b"PROOF " + proof.hex().encode("ascii") + b"\n")
+        while True:
+            chunk = self._read()
+            for line in self._line_iter(chunk):
+                if line == "OK":
+                    self.authenticated = True
+                    if self._text:
+                        self._pending.extend(self._text)
+                        self._text.clear()
+                    return
+                if line == "FAIL":
+                    raise AuthHandshakeError("proof rejected")
+                raise AuthHandshakeError(f"unexpected auth reply: {line!r}")
+
     def read_packets(self, limit: int | None = None) -> list[Packet]:
+        if not self.authenticated:
+            self.authenticate()
         packets: list[Packet] = []
         if self._pending:
             packets.extend(self.parser.feed(self._pending))

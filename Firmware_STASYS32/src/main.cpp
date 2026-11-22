@@ -13,13 +13,14 @@
 #include "esp_mac.h"
 #include "esp_rom_sys.h"
 #include "esp_timer.h"
+#include "esp_random.h"
 #include "app_protocol.h"
 #include "sensor_hal.h"
 #include <cmath>
 #include <cstdio>
 #include <cstring>
 
-#define FIRMWARE_VERSION "2.0.0"
+#define FIRMWARE_VERSION "3.0.0"
 
 static const char *TAG = "stasys";
 static EventGroupHandle_t app_events;
@@ -31,6 +32,52 @@ static uint32_t spp_handle;
 static bool spp_congested;
 
 #define BT_CONNECTED BIT0
+#define BT_AUTHENTICATED BIT1
+
+/* Development shared secret; replace per production batch. */
+static const uint8_t STASYS_AUTH_SALT[STASYS_AUTH_SALT_SIZE] = {
+    0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
+    0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f,
+};
+
+enum class spp_auth_state : uint8_t {
+    DISCONNECTED,
+    WAITING_FOR_PROOF,
+    AUTHENTICATED,
+};
+
+static spp_auth_state auth_state = spp_auth_state::DISCONNECTED;
+static uint8_t auth_nonce[STASYS_AUTH_NONCE_SIZE];
+static uint8_t auth_bt_mac[6];
+static char auth_rx[STASYS_AUTH_MAX_LINE + 1];
+static size_t auth_rx_len;
+static uint8_t auth_attempts;
+static int64_t auth_deadline_us;
+static uint8_t device_key_derived[STASYS_AUTH_PROOF_SIZE];
+
+static int device_key_provider(const uint8_t **key, size_t *key_len, void *)
+{
+    if (staysys_auth_derive_key(STASYS_AUTH_SALT, sizeof(STASYS_AUTH_SALT),
+                                auth_bt_mac, sizeof(auth_bt_mac),
+                                device_key_derived) != 0) {
+        return -1;
+    }
+    *key = device_key_derived;
+    *key_len = STASYS_AUTH_PROOF_SIZE;
+    return 0;
+}
+
+static void reset_auth_state(void)
+{
+    auth_state = spp_auth_state::DISCONNECTED;
+    auth_rx_len = 0;
+    auth_attempts = 0;
+    auth_deadline_us = 0;
+    auth_rx[0] = '\0';
+    staysys_secure_zero(auth_nonce, sizeof(auth_nonce));
+    staysys_secure_zero(auth_bt_mac, sizeof(auth_bt_mac));
+    staysys_secure_zero(device_key_derived, sizeof(device_key_derived));
+}
 
 static bool spp_write(uint32_t handle, const uint8_t *data, size_t length)
 {
@@ -47,13 +94,161 @@ static void reset_spp_state(bool clear_handle)
     spp_congested = false;
     if (clear_handle) spp_handle = 0;
     portEXIT_CRITICAL(&spp_lock);
-    xEventGroupClearBits(app_events, BT_CONNECTED);
+    xEventGroupClearBits(app_events, BT_CONNECTED | BT_AUTHENTICATED);
+    reset_auth_state();
+}
+
+static bool hex_nibble(char c, uint8_t *out)
+{
+    if (c >= '0' && c <= '9') {
+        *out = (uint8_t)(c - '0');
+        return true;
+    }
+    if (c >= 'a' && c <= 'f') {
+        *out = (uint8_t)(c - 'a' + 10);
+        return true;
+    }
+    if (c >= 'A' && c <= 'F') {
+        *out = (uint8_t)(c - 'A' + 10);
+        return true;
+    }
+    return false;
+}
+
+static bool decode_hex(const char *hex, size_t hex_len, uint8_t *out, size_t out_len)
+{
+    if (hex_len != out_len * 2) return false;
+    for (size_t i = 0; i < out_len; ++i) {
+        uint8_t hi = 0;
+        uint8_t lo = 0;
+        if (!hex_nibble(hex[i * 2], &hi) || !hex_nibble(hex[i * 2 + 1], &lo)) return false;
+        out[i] = (uint8_t)((hi << 4) | lo);
+    }
+    return true;
+}
+
+static void auth_fail_attempt(uint32_t handle)
+{
+    ++auth_attempts;
+    auth_rx_len = 0;
+    auth_rx[0] = '\0';
+    if (auth_attempts >= STASYS_AUTH_MAX_ATTEMPTS) {
+        ESP_LOGW(TAG, "auth failed %u times, disconnecting", (unsigned)auth_attempts);
+        reset_spp_state(true);
+        esp_spp_disconnect(handle);
+        return;
+    }
+    static const uint8_t fail_line[] = "FAIL\n";
+    if (!spp_write(handle, fail_line, sizeof(fail_line) - 1)) {
+        reset_spp_state(true);
+        esp_spp_disconnect(handle);
+    }
+}
+
+static void process_auth_line(uint32_t handle)
+{
+    if (auth_state != spp_auth_state::WAITING_FOR_PROOF) {
+        auth_rx_len = 0;
+        return;
+    }
+    int64_t now = esp_timer_get_time();
+    if (auth_deadline_us > 0 && now > auth_deadline_us) {
+        ESP_LOGW(TAG, "auth handshake timed out");
+        reset_spp_state(true);
+        esp_spp_disconnect(handle);
+        return;
+    }
+
+    const char proof_prefix[] = "PROOF ";
+    const size_t prefix_len = sizeof(proof_prefix) - 1;
+    if (auth_rx_len < prefix_len + STASYS_AUTH_PROOF_HEX_SIZE ||
+        memcmp(auth_rx, proof_prefix, prefix_len) != 0) {
+        auth_fail_attempt(handle);
+        return;
+    }
+
+    uint8_t received[STASYS_AUTH_PROOF_SIZE];
+    if (!decode_hex(auth_rx + prefix_len, STASYS_AUTH_PROOF_HEX_SIZE,
+                    received, sizeof(received))) {
+        auth_fail_attempt(handle);
+        return;
+    }
+
+    uint8_t transcript[STASYS_AUTH_TRANSCRIPT_SIZE];
+    if (staysys_auth_build_transcript(auth_bt_mac, sizeof(auth_bt_mac),
+                                      auth_nonce, sizeof(auth_nonce),
+                                      transcript) != 0) {
+        auth_fail_attempt(handle);
+        return;
+    }
+
+    const uint8_t *device_key = nullptr;
+    size_t device_key_len = 0;
+    if (staysys_auth_get_key(&device_key, &device_key_len) != 0 ||
+        device_key == nullptr || device_key_len != STASYS_AUTH_PROOF_SIZE) {
+        auth_fail_attempt(handle);
+        return;
+    }
+
+    uint8_t expected[STASYS_AUTH_PROOF_SIZE];
+    if (staysys_auth_proof(device_key, device_key_len,
+                           transcript, sizeof(transcript),
+                           expected) != 0) {
+        staysys_secure_zero(expected, sizeof(expected));
+        auth_fail_attempt(handle);
+        return;
+    }
+
+    bool ok = staysys_constant_time_equal(expected, received, sizeof(expected)) != 0;
+    staysys_secure_zero(expected, sizeof(expected));
+    staysys_secure_zero(received, sizeof(received));
+    auth_rx_len = 0;
+    if (!ok) {
+        auth_fail_attempt(handle);
+        return;
+    }
+
+    auth_state = spp_auth_state::AUTHENTICATED;
+    static const uint8_t ok_line[] = "OK\n";
+    if (!spp_write(handle, ok_line, sizeof(ok_line) - 1)) {
+        reset_spp_state(true);
+        esp_spp_disconnect(handle);
+        return;
+    }
+    xEventGroupSetBits(app_events, BT_AUTHENTICATED);
+    ESP_LOGI(TAG, "auth handshake succeeded");
+}
+
+static void spp_auth_feed(uint32_t handle, const uint8_t *data, size_t length)
+{
+    if (auth_state != spp_auth_state::WAITING_FOR_PROOF || data == nullptr || length == 0) return;
+    for (size_t i = 0; i < length; ++i) {
+        char c = (char)data[i];
+        if (c == '\r') continue;
+        if (c == '\n') {
+            if (auth_rx_len > STASYS_AUTH_MAX_LINE) {
+                auth_fail_attempt(handle);
+                return;
+            }
+            auth_rx[auth_rx_len] = '\0';
+            process_auth_line(handle);
+            return;
+        }
+        if (auth_rx_len >= STASYS_AUTH_MAX_LINE) {
+            auth_fail_attempt(handle);
+            return;
+        }
+        auth_rx[auth_rx_len++] = c;
+    }
 }
 
 static void spp_callback(esp_spp_cb_event_t event, esp_spp_cb_param_t *param)
 {
     switch (event) {
     case ESP_SPP_INIT_EVT:
+        /* Answer inquiry only now that Bluedroid is enabled: Windows discovery
+         * runs a BR/EDR inquiry and cannot see a NON_DISCOVERABLE device. */
+        esp_bt_gap_set_scan_mode(ESP_BT_CONNECTABLE, ESP_BT_GENERAL_DISCOVERABLE);
         esp_spp_start_srv(ESP_SPP_SEC_NONE, ESP_SPP_ROLE_SLAVE, 0, "STASYS");
         break;
     case ESP_SPP_SRV_OPEN_EVT: {
@@ -74,13 +269,45 @@ static void spp_callback(esp_spp_cb_event_t event, esp_spp_cb_param_t *param)
             esp_spp_disconnect(handle);
             break;
         }
-        static const uint8_t greeting[] = "READY v=2\n";
-        if (!spp_write(handle, greeting, sizeof(greeting) - 1)) {
+        reset_auth_state();
+        esp_read_mac(auth_bt_mac, ESP_MAC_BT);
+        esp_fill_random(auth_nonce, sizeof(auth_nonce));
+        auth_deadline_us = esp_timer_get_time() + (int64_t)STASYS_AUTH_TIMEOUT_MS * 1000;
+        auth_state = spp_auth_state::WAITING_FOR_PROOF;
+
+        static const char ready[] = "READY v=3\n";
+        char auth_line[STASYS_AUTH_MAX_LINE];
+        char nonce_hex[STASYS_AUTH_PROOF_HEX_SIZE + 1];
+        char mac_hex[STASYS_AUTH_MAC_HEX_SIZE + 1];
+        for (size_t i = 0; i < sizeof(auth_nonce); ++i) {
+            snprintf(&nonce_hex[i * 2], 3, "%02x", auth_nonce[i]);
+        }
+        for (size_t i = 0; i < sizeof(auth_bt_mac); ++i) {
+            snprintf(&mac_hex[i * 2], 3, "%02x", auth_bt_mac[i]);
+        }
+        int auth_len = snprintf(auth_line, sizeof(auth_line), "AUTH %s %s\n", nonce_hex, mac_hex);
+        if (auth_len <= 0 || (size_t)auth_len >= sizeof(auth_line)) {
+            reset_spp_state(true);
+            esp_spp_disconnect(handle);
+            break;
+        }
+        if (!spp_write(handle, reinterpret_cast<const uint8_t *>(ready), sizeof(ready) - 1) ||
+            !spp_write(handle, reinterpret_cast<const uint8_t *>(auth_line), (size_t)auth_len)) {
             reset_spp_state(true);
             esp_spp_disconnect(handle);
             break;
         }
         xEventGroupSetBits(app_events, BT_CONNECTED);
+        ESP_LOGI(TAG, "auth challenge sent");
+        break;
+    }
+    case ESP_SPP_DATA_IND_EVT: {
+        uint32_t handle = param->data_ind.handle;
+        portENTER_CRITICAL(&spp_lock);
+        bool current = handle != 0 && handle == spp_handle;
+        portEXIT_CRITICAL(&spp_lock);
+        if (!current) break;
+        spp_auth_feed(handle, param->data_ind.data, (size_t)param->data_ind.len);
         break;
     }
     case ESP_SPP_CONG_EVT:
@@ -101,6 +328,41 @@ static void spp_callback(esp_spp_cb_event_t event, esp_spp_cb_param_t *param)
     }
 }
 
+/* Legacy (pre-SSP) pairing has no place in the Just Works policy: the device
+ * has no display or keyboard, so accepting a peer-chosen or fixed PIN would
+ * add a credential path the device cannot justify. Reject and let the
+ * peer fail cleanly instead of hanging on an unanswered PIN request. */
+static void gap_callback(esp_bt_gap_cb_event_t event, esp_bt_gap_cb_param_t *param)
+{
+    switch (event) {
+    case ESP_BT_GAP_AUTH_CMPL_EVT: {
+        const char *status = param->auth_cmpl.stat == ESP_BT_STATUS_SUCCESS ? "success" : "failed";
+        ESP_LOGI(TAG, "pairing %s status:%d dev:\"%s\"",
+                 status,
+                 (int)param->auth_cmpl.stat,
+                 (const char *)param->auth_cmpl.device_name);
+        break;
+    }
+    case ESP_BT_GAP_CFM_REQ_EVT:
+        ESP_LOGI(TAG, "SSP confirm requested, accepting (num:%06u)", (unsigned)param->cfm_req.num_val);
+        esp_bt_gap_ssp_confirm_reply(param->cfm_req.bda, true);
+        break;
+    case ESP_BT_GAP_PIN_REQ_EVT:
+        ESP_LOGW(TAG, "legacy PIN pairing requested, rejecting (policy: Just Works only)");
+        {
+            esp_bt_pin_code_t rejected_code = {0};
+            esp_bt_gap_pin_reply(param->pin_req.bda, false, 0, rejected_code);
+        }
+        break;
+    case ESP_BT_GAP_KEY_REQ_EVT:
+        ESP_LOGI(TAG, "pairing passkey requested by peer (no input available)");
+        break;
+    default:
+        ESP_LOGD(TAG, "GAP event %d", (int)event);
+        break;
+    }
+}
+
 static void bt_init(void)
 {
     esp_bt_controller_config_t config = BT_CONTROLLER_INIT_CONFIG_DEFAULT();
@@ -108,6 +370,12 @@ static void bt_init(void)
     ESP_ERROR_CHECK(esp_bt_controller_enable(ESP_BT_MODE_CLASSIC_BT));
     ESP_ERROR_CHECK(esp_bluedroid_init());
     ESP_ERROR_CHECK(esp_bluedroid_enable());
+    /* Bluedroid drops pairing events (confirm/PIN/auth complete) unless a GAP
+     * callback is registered. Register it before starting the SPP server. */
+    ESP_ERROR_CHECK(esp_bt_gap_register_callback(gap_callback));
+    esp_bt_sp_param_t param_type = ESP_BT_SP_IOCAP_MODE;
+    esp_bt_io_cap_t iocap = ESP_BT_IO_CAP_NONE;
+    ESP_ERROR_CHECK(esp_bt_gap_set_security_param(param_type, &iocap, sizeof(iocap)));
     ESP_ERROR_CHECK(esp_spp_register_callback(spp_callback));
     esp_spp_cfg_t spp_cfg = {
         .mode = ESP_SPP_MODE_CB,
@@ -121,7 +389,7 @@ static void bt_init(void)
     char name[24];
     snprintf(name, sizeof(name), "STASYS-%04X", (uint16_t)(mac >> 32));
     ESP_ERROR_CHECK(esp_bt_dev_set_device_name(name));
-    ESP_ERROR_CHECK(esp_bt_gap_set_scan_mode(ESP_BT_CONNECTABLE, ESP_BT_GENERAL_DISCOVERABLE));
+    staysys_auth_set_key_provider(device_key_provider, nullptr);
 }
 
 static void sensor_task(void *)
@@ -132,16 +400,6 @@ static void sensor_task(void *)
     float previous[3] = {0};
     const int64_t diagnostic_interval_us = 500000;
     int64_t next_log_deadline = 0;
-    // Stage 1: full-rate monitoring of candidate pins GPIO32 (ADC1 ch4) and
-    // GPIO33 (ADC1 ch5), the only channels showing activity in the ADC scan.
-    adc_oneshot_chan_cfg_t cand_config = {
-        .atten = ADC_ATTEN_DB_11,
-        .bitwidth = ADC_BITWIDTH_12,
-    };
-    adc_oneshot_config_channel(sensors.adc1, ADC_CHANNEL_4, &cand_config);
-    adc_oneshot_config_channel(sensors.adc1, ADC_CHANNEL_5, &cand_config);
-    int diag_max_gpio32 = 0;
-    int diag_max_gpio33 = 0;
     while (true) {
         int64_t deadline = esp_timer_get_time() + STASYS_PACKET_PERIOD_US;
         have_mpu = false;
@@ -152,16 +410,6 @@ static void sensor_task(void *)
         int successful_mpu_reads = 0;
         uint16_t max_piezo = 0;
         for (int i = 0; i < STASYS_OVERSAMPLE_LOOPS; ++i) {
-            int cand_sample = 0;
-            if (adc_oneshot_read(sensors.adc1, ADC_CHANNEL_4, &cand_sample) == ESP_OK &&
-                cand_sample > diag_max_gpio32) {
-                diag_max_gpio32 = cand_sample;
-            }
-            cand_sample = 0;
-            if (adc_oneshot_read(sensors.adc1, ADC_CHANNEL_5, &cand_sample) == ESP_OK &&
-                cand_sample > diag_max_gpio33) {
-                diag_max_gpio33 = cand_sample;
-            }
             if (staysys_mpu_read(&sensors, last_mpu) != ESP_OK) {
                 esp_rom_delay_us(STASYS_SENSOR_DELAY_US);
                 continue;
@@ -235,51 +483,12 @@ static void sensor_task(void *)
                      piezo_nonzero,
                      piezo_errors,
                      (long long)piezo_burst_duration);
-            ESP_LOGI(TAG, "CAND gpio32=%d gpio33=%d", diag_max_gpio32, diag_max_gpio33);
-            diag_max_gpio32 = 0;
-            diag_max_gpio33 = 0;
-
-            const adc_channel_t scan_channels[] = {
-                ADC_CHANNEL_0, ADC_CHANNEL_1, ADC_CHANNEL_2, ADC_CHANNEL_3,
-                ADC_CHANNEL_4, ADC_CHANNEL_5, ADC_CHANNEL_6, ADC_CHANNEL_7,
-            };
-            const int scan_gpios[] = {36, 37, 38, 39, 32, 33, 34, 35};
-            adc_oneshot_chan_cfg_t scan_config = {
-                .atten = ADC_ATTEN_DB_11,
-                .bitwidth = ADC_BITWIDTH_12,
-            };
-            adc_oneshot_chan_cfg_t piezo_restore_config = {
-                .atten = ADC_ATTEN_DB_11,
-                .bitwidth = ADC_BITWIDTH_12,
-            };
-            for (int channel_index = 0; channel_index < 8; ++channel_index) {
-                adc_channel_t channel = scan_channels[channel_index];
-                if (channel == sensors.battery_channel) continue;
-                int config_err = adc_oneshot_config_channel(sensors.adc1, channel, &scan_config);
-                int channel_min = 4095, channel_max = 0;
-                if (config_err == ESP_OK) {
-                    for (int sample_index = 0; sample_index < 20; ++sample_index) {
-                        int sample = 0;
-                        if (adc_oneshot_read(sensors.adc1, channel, &sample) == ESP_OK) {
-                            if (sample < channel_min) channel_min = sample;
-                            if (sample > channel_max) channel_max = sample;
-                        }
-                    }
-                } else {
-                    channel_min = channel_max = -config_err;
-                }
-                ESP_LOGI(TAG, "ADCSCAN ch=%d gpio=%d min=%d max=%d",
-                         (int)channel, scan_gpios[channel_index], channel_min, channel_max);
-            }
-            if (adc_oneshot_config_channel(sensors.adc1, sensors.piezo_channel,
-                                           &piezo_restore_config) != ESP_OK) {
-                ESP_LOGE(TAG, "failed to restore piezo ADC config");
-            }
             next_log_deadline = now + diagnostic_interval_us;
         }
         uint8_t packet[STASYS_PACKET_SIZE];
         staysys_packet_serialize(&payload, packet);
-        if (!spp_congested && (xEventGroupGetBits(app_events) & BT_CONNECTED)) {
+        EventBits_t link_bits = xEventGroupGetBits(app_events);
+        if (!spp_congested && (link_bits & (BT_CONNECTED | BT_AUTHENTICATED)) == (BT_CONNECTED | BT_AUTHENTICATED)) {
             uint32_t handle;
             portENTER_CRITICAL(&spp_lock);
             handle = spp_handle;

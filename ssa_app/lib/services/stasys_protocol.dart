@@ -1,7 +1,19 @@
+import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:crypto/crypto.dart';
 
-/// One immutable decoded 36-byte firmware v2 sensor frame.
+import 'stasys_auth_config.dart';
+
+/// Parsed `AUTH <nonce-hex> <mac-hex>` challenge (protocol v3).
+class StasysAuthChallenge {
+  const StasysAuthChallenge({required this.nonce, required this.mac});
+
+  final Uint8List nonce;
+  final Uint8List mac;
+}
+
+/// One immutable decoded 36-byte firmware sensor frame.
 class StasysSensorFrame {
   const StasysSensorFrame({
     required this.ax,
@@ -59,7 +71,7 @@ class FrameAssemblyResult {
   final int checksumErrors;
 }
 
-/// Incrementally frames v2 sensor data and recovers from corrupt candidates.
+/// Incrementally frames sensor data and recovers from corrupt candidates.
 class FrameAssembler {
   final List<int> _buffer = [];
 
@@ -77,8 +89,8 @@ class FrameAssembler {
         }
       }
       if (header < 0) {
-        final keepSyncPrefix = _buffer.isNotEmpty &&
-            _buffer.last == StasysProtocol.syncByte0;
+        final keepSyncPrefix =
+            _buffer.isNotEmpty && _buffer.last == StasysProtocol.syncByte0;
         _buffer
           ..clear()
           ..addAll(keepSyncPrefix ? [StasysProtocol.syncByte0] : const []);
@@ -102,36 +114,91 @@ class FrameAssembler {
   void clear() => _buffer.clear();
 }
 
-/// Pure STASYS firmware v2 protocol helpers.
+/// Pure STASYS wire protocol helpers (greeting, auth v3, 36-byte frames).
 class StasysProtocol {
   StasysProtocol._();
 
+  static const int authVersion = 3;
+  static const int legacyAuthFreeVersion = 2;
+  static const int authNonceSize = 32;
+  static const int authMacSize = 6;
+  static const int authProofSize = 32;
   static const int frameSize = 36;
   static const int syncByte0 = 0xaa;
   static const int syncByte1 = 0xbb;
   static const int _checksumStart = 2;
   static const int _checksumOffset = 35;
-  /// Parses the auth-free firmware greeting: exactly `READY v=2`.
-  ///
-  /// Returns the firmware protocol version. The bare `READY` greeting and
-  /// the `READY v=2 gen=<n>` form belonged to the removed auth protocol.
+  static const String _authDomain = 'STASYS-AUTH/v3';
+
+  static final RegExp _greetingPattern = RegExp(r'^READY v=(\d+)$');
+  static final RegExp _challengePattern =
+      RegExp(r'^AUTH ([0-9a-fA-F]{64}) ([0-9a-fA-F]{12})$');
+  static final RegExp _hexPattern = RegExp(r'^[0-9a-fA-F]+$');
+
+  /// Returns protocol version from `READY v=N`. Supports v2 (auth-free) and v3.
   static int parseGreeting(String line) {
-    final match = RegExp(r'^READY v=(\d+)$').firstMatch(line);
+    final match = _greetingPattern.firstMatch(line);
     if (match == null) {
       throw const FormatException('Invalid firmware greeting');
     }
     final version = int.parse(match.group(1)!);
-    if (version != 2) {
+    if (version != legacyAuthFreeVersion && version != authVersion) {
       throw const FormatException('Unsupported firmware greeting');
     }
     return version;
   }
 
-  /// Parses exactly one complete 36-byte firmware v2 sensor frame.
-  ///
-  /// Layout (little endian): [0..1] AA BB header, [2..25] six float32,
-  /// [26..31] three int16 magnetometer, [32..33] uint16 piezo,
-  /// [34] uint8 battery, [35] XOR of bytes 2..34.
+  static StasysAuthChallenge parseAuthChallenge(String line) {
+    final match = _challengePattern.firstMatch(line);
+    if (match == null) {
+      throw const FormatException('Invalid AUTH challenge');
+    }
+    return StasysAuthChallenge(
+      nonce: _decodeHex(match.group(1)!, authNonceSize),
+      mac: _decodeHex(match.group(2)!, authMacSize),
+    );
+  }
+
+  /// Builds `PROOF <64-hex-hmac>\n` using the development SALT unless overridden.
+  static String buildProofLine(StasysAuthChallenge challenge, {List<int>? salt}) {
+    final saltBytes = Uint8List.fromList(salt ?? stasysAuthSalt);
+    if (saltBytes.length != authNonceSize) {
+      throw const FormatException('SALT must be 32 bytes');
+    }
+    final deviceKey = _deriveDeviceKey(saltBytes, challenge.mac);
+    final transcript = _buildTranscript(challenge.mac, challenge.nonce);
+    final proof = Hmac(sha256, deviceKey).convert(transcript).bytes;
+    return 'PROOF ${proof.map((b) => b.toRadixString(16).padLeft(2, '0')).join()}\n';
+  }
+
+  static Uint8List _deriveDeviceKey(Uint8List salt, Uint8List mac) {
+    return Uint8List.fromList(Hmac(sha256, salt).convert(mac).bytes);
+  }
+
+  static Uint8List _buildTranscript(Uint8List mac, Uint8List nonce) {
+    if (mac.length != authMacSize || nonce.length != authNonceSize) {
+      throw const FormatException('Invalid challenge sizes');
+    }
+    return Uint8List.fromList([
+      ...utf8.encode(_authDomain),
+      ...mac,
+      ...nonce,
+    ]);
+  }
+
+  static Uint8List _decodeHex(String hex, int outLen) {
+    if (hex.length != outLen * 2 || !_hexPattern.hasMatch(hex)) {
+      throw const FormatException('Invalid hex field');
+    }
+    return Uint8List.fromList(
+      List<int>.generate(
+        outLen,
+        (i) => int.parse(hex.substring(i * 2, i * 2 + 2), radix: 16),
+      ),
+    );
+  }
+
+  /// Parses exactly one complete 36-byte sensor frame.
   static StasysSensorFrame parseFrame(Uint8List frame) {
     if (frame.length != frameSize) {
       throw FormatException(

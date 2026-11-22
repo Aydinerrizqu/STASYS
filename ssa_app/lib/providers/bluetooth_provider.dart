@@ -16,6 +16,9 @@ enum _ConnectionPhase {
   otaMode,
 }
 
+const _authHandshakeTimeoutMs = 10000;
+const _maxAuthProofAttempts = 3;
+
 // Separate text buffer for OTA mode — unlimited, no trim, no collision
 String _otaTextBuffer = '';
 
@@ -88,26 +91,105 @@ class BluetoothProvider extends ChangeNotifier {
     }
   }
 
-  // ================= GREETING (auth-free firmware v2) =================
-  final LineBuffer _lineBuffer = LineBuffer();
+  // ================= HANDSHAKE (v3 auth or legacy v2) =================
+  final List<int> _handshakeBytes = [];
+  int? _protocolVersion;
+  bool _greetingSeen = false;
+  StasysAuthChallenge? _pendingChallenge;
+  int _authProofAttempts = 0;
   String _textBuffer = '';
 
+  void _resetHandshakeState() {
+    _handshakeBytes.clear();
+    _protocolVersion = null;
+    _greetingSeen = false;
+    _pendingChallenge = null;
+    _authProofAttempts = 0;
+  }
+
   void _handleTextData(Uint8List data) {
-    for (final line in _lineBuffer.feed(data)) {
-      if (_connectionPhase != _ConnectionPhase.waitingForGreeting) return;
+    if (_connectionPhase != _ConnectionPhase.waitingForGreeting) return;
+    _handshakeBytes.addAll(data);
+    while (true) {
+      final newline = _handshakeBytes.indexOf(0x0A);
+      if (newline < 0) break;
+      var lineEnd = newline;
+      if (lineEnd > 0 && _handshakeBytes[lineEnd - 1] == 0x0D) {
+        lineEnd -= 1;
+      }
+      final line = utf8.decode(_handshakeBytes.sublist(0, lineEnd));
+      _handshakeBytes.removeRange(0, newline + 1);
+      if (!_processHandshakeLine(line)) return;
+    }
+  }
+
+  bool _processHandshakeLine(String line) {
+    if (!_greetingSeen) {
+      int version;
       try {
-        StasysProtocol.parseGreeting(line);
+        version = StasysProtocol.parseGreeting(line);
       } on FormatException catch (error) {
         debugPrint('[BT] Ignoring line before greeting: ${error.message}');
-        continue;
+        return true;
       }
-      debugPrint('[BT] Greeting received; starting sensor stream');
-      _isAuthenticated = true;
-      _connectionPhase = _ConnectionPhase.streaming;
-      _lineBuffer.clear();
-      _textBuffer = '';
-      notifyListeners();
-      _sensorDataProvider.requestFullSync();
+      _greetingSeen = true;
+      _protocolVersion = version;
+      debugPrint('[BT] Greeting: READY v=$version');
+      if (version == StasysProtocol.legacyAuthFreeVersion) {
+        _enterStreaming();
+      }
+      return true;
+    }
+
+    if (_protocolVersion == StasysProtocol.authVersion) {
+      if (line == 'OK') {
+        debugPrint('[BT] Auth handshake OK');
+        _enterStreaming();
+        return false;
+      }
+      if (line == 'FAIL') {
+        _authProofAttempts++;
+        debugPrint('[BT] Auth FAIL (attempt $_authProofAttempts/$_maxAuthProofAttempts)');
+        if (_authProofAttempts >= _maxAuthProofAttempts || _pendingChallenge == null) {
+          disconnect();
+          return false;
+        }
+        _sendProof(_pendingChallenge!);
+        return true;
+      }
+      try {
+        final challenge = StasysProtocol.parseAuthChallenge(line);
+        _pendingChallenge = challenge;
+        _sendProof(challenge);
+      } on FormatException catch (error) {
+        debugPrint('[BT] Invalid AUTH line: ${error.message}');
+      }
+    }
+    return true;
+  }
+
+  void _sendProof(StasysAuthChallenge challenge) {
+    final conn = _connection;
+    if (conn == null) return;
+    try {
+      final proofLine = StasysProtocol.buildProofLine(challenge);
+      conn.output.add(Uint8List.fromList(proofLine.codeUnits));
+      debugPrint('[BT] PROOF sent');
+    } catch (e) {
+      debugPrint('[BT] Failed to send PROOF: $e');
+    }
+  }
+
+  void _enterStreaming() {
+    final tail = List<int>.from(_handshakeBytes);
+    _isAuthenticated = true;
+    _connectionPhase = _ConnectionPhase.streaming;
+    _resetHandshakeState();
+    _textBuffer = '';
+    notifyListeners();
+    _sensorDataProvider.requestFullSync();
+    if (tail.isNotEmpty) {
+      _handleBinaryData(Uint8List.fromList(tail));
     }
   }
 
@@ -238,7 +320,7 @@ class BluetoothProvider extends ChangeNotifier {
     _selectedDevice = device;
     _connectionPhase = _ConnectionPhase.waitingForGreeting;
     _frameAssembler.clear();
-    _lineBuffer.clear();
+    _resetHandshakeState();
     _textBuffer = '';
     _isAuthenticated = false;
     _totalPacketsReceived = 0;
@@ -280,7 +362,7 @@ class BluetoothProvider extends ChangeNotifier {
         // Wait up to 15s for the greeting; stop early if the remote side
         // already closed the connection (onDone nulls _connection).
         int waited = 0;
-        while (!_isAuthenticated && waited < 15000 && _connection != null) {
+        while (!_isAuthenticated && waited < _authHandshakeTimeoutMs && _connection != null) {
           await Future.delayed(const Duration(milliseconds: 300));
           waited += 300;
         }
@@ -290,7 +372,7 @@ class BluetoothProvider extends ChangeNotifier {
           return true;
         }
 
-        debugPrint('[BT] No greeting after ${waited}ms');
+        debugPrint('[BT] Handshake timed out after ${waited}ms');
         await disconnect();
         if (attempt < maxRetries) continue;
         return false;
@@ -325,7 +407,7 @@ class BluetoothProvider extends ChangeNotifier {
       _isAuthenticated = false;
       _connectionPhase = _ConnectionPhase.waitingForGreeting;
       _textBuffer = '';
-      _lineBuffer.clear();
+      _resetHandshakeState();
       _frameAssembler.clear();
       debugPrint('[BT] Force disconnect completed');
     } catch (e) {
@@ -339,7 +421,7 @@ class BluetoothProvider extends ChangeNotifier {
     _connectionPhase = _ConnectionPhase.waitingForGreeting;
     _connection = null;
     _selectedDevice = null;
-    _lineBuffer.clear();
+    _resetHandshakeState();
     _frameAssembler.clear();
     _textBuffer = '';
     _sensorDataProvider.resetTimeReference();

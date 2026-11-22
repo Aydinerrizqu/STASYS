@@ -17,7 +17,7 @@ class FirmwareInfo {
 
 class FirmwareService {
   static const String _assetPath = 'assets/firmware/stasys_fw.bin';
-  static const String expectedVersion = '1.4.0'; // Update on each release
+  static const String expectedVersion = '3.0.0'; // Update on each release
   // 128 bytes raw → ~172 bytes base64 → ~200 bytes BT transfer. Fits in 200-byte buffer.
   static const int chunkSize = 128;
 

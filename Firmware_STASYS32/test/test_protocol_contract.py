@@ -41,38 +41,36 @@ class FrameLayoutTests(unittest.TestCase):
         self.assertNotEqual(flipped[35], recalculated_xor)
 
 
-class AuthFreeProtocolTests(unittest.TestCase):
-    """Contract of the auth-free streaming protocol (upstream 5f955e8):
-    static READY greeting, open SPP, packets stream without any exchange."""
+class AuthV3ProtocolTests(unittest.TestCase):
+    """Application auth v3 (docs/STASYS_AUTH_PROTOCOL.md) before telemetry."""
 
     @classmethod
     def setUpClass(cls):
         cls.source = MAIN_CPP.read_text(encoding="utf-8")
 
-    def test_static_ready_v2_greeting(self):
-        self.assertIn('"READY v=2\\n"', self.source)
-        self.assertNotIn("AUTH ", self.source)
-        self.assertNotIn("PROOF", self.source)
+    def test_ready_v3_and_challenge_records(self):
+        self.assertIn('"READY v=3\\n"', self.source)
+        self.assertIn("AUTH %s %s\\n", self.source)
+        self.assertIn('"PROOF "', self.source)
+        self.assertIn('"OK\\n"', self.source)
+        self.assertIn('"FAIL\\n"', self.source)
 
     def test_spp_server_started_with_sec_none(self):
         self.assertIn("ESP_SPP_SEC_NONE", self.source)
         self.assertNotIn("ESP_SPP_SEC_AUTHENTICATE", self.source)
         self.assertNotIn("ESP_SPP_SEC_ENCRYPT", self.source)
 
-    def test_no_auth_or_provisioning_symbols_remain(self):
+    def test_hmac_helpers_wired(self):
         for symbol in (
-            "staysys_auth_",
-            "staysys_provisioned_key",
-            "auth_nonce",
-            "auth_state",
-            "provisioning",
-            "ENROLLMENT_WINDOW",
+            "staysys_auth_derive_key",
+            "staysys_auth_build_transcript",
+            "staysys_auth_proof",
+            "BT_AUTHENTICATED",
         ):
-            self.assertNotIn(symbol, self.source, f"'{symbol}' must be removed from src/main.cpp")
+            self.assertIn(symbol, self.source)
 
-    def test_packet_send_gate_has_no_auth_bit(self):
-        self.assertIn("bool can_send = !spp_congested && handle != 0;", self.source)
-        self.assertNotIn("BT_AUTHENTICATED", self.source)
+    def test_telemetry_gated_on_auth_bit(self):
+        self.assertIn("BT_CONNECTED | BT_AUTHENTICATED", self.source)
 
 
 if __name__ == "__main__":

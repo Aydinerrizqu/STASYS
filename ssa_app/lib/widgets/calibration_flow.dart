@@ -5,6 +5,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/sensor_data_provider.dart';
+import 'muzzle_trace_widget.dart';
 
 /// Shows after BT auth + firmware check passes.
 /// Phase 1: Direction calibration (live trace preview + CALIBRATE / MATCHED)
@@ -84,8 +85,16 @@ class _CalibrationFlowDialogState extends State<CalibrationFlowDialog> {
           ),
           const SizedBox(height: 16),
 
-          // Live trace preview
-          _LiveTracePreview(),
+          // Same 60fps trace pipeline as tracking (ticker + accel fallback).
+          const SizedBox(
+            height: 160,
+            width: double.infinity,
+            child: MuzzleTraceWidget(
+              zoom: 0.05,
+              showGrid: true,
+              compact: true,
+            ),
+          ),
           const SizedBox(height: 20),
 
           // Buttons row
@@ -163,58 +172,6 @@ class _CalibrationFlowDialogState extends State<CalibrationFlowDialog> {
       ),
     );
   }
-}
-
-// ------------------------------------------------------------------
-// Live trace preview — small canvas showing dot + trail from provider
-// ------------------------------------------------------------------
-class _LiveTracePreview extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      height: 140,
-      decoration: BoxDecoration(
-        color: const Color(0xFF0A0C0F),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFF1F242C)),
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(12),
-        child: CustomPaint(painter: _LiveTracePainter()),
-      ),
-    );
-  }
-}
-
-class _LiveTracePainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final center = Offset(size.width / 2, size.height / 2);
-
-    // Crosshair lines
-    final gridPaint = Paint()
-      ..color = const Color(0xFF1F242C)
-      ..strokeWidth = 1;
-    canvas.drawLine(
-      Offset(0, center.dy),
-      Offset(size.width, center.dy),
-      gridPaint,
-    );
-    canvas.drawLine(
-      Offset(center.dx, 0),
-      Offset(center.dx, size.height),
-      gridPaint,
-    );
-
-    // Scoring rings
-    for (final r in [12.0, 24.0, 36.0]) {
-      canvas.drawCircle(center, r, gridPaint);
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 // ------------------------------------------------------------------

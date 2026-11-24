@@ -883,6 +883,12 @@ class SensorDataIsolate {
     if (_autoCalibrating) {
       _autoCalSamples.add([ax, ay, az, gx, gy, gz]);
 
+      // Orient immediately so live preview moves on first BT packets.
+      if (_autoCalSamples.length == 1) {
+        _shotDetector._setQuaternion(_quatFromAccel(ax, ay, az));
+        _shotDetector.tare();
+      }
+
       if (_autoCalSamples.length >= _samplesToCollect) {
         // Compute gyro zero-offset
         double sumGx = 0, sumGy = 0, sumGz = 0;
@@ -933,8 +939,12 @@ class SensorDataIsolate {
             'offsetGyroZ': _offsetGyroZ,
           }),
         );
+        _sendFullSync();
+        return; // Sample already replayed in the batch above
       }
-      return; // Skip throttled update during calibration accumulation
+      // Live preview while collecting (single integration per packet).
+      _appendFrameAndDetect(ax, ay, az, gx, gy, gz, piezo);
+      return;
     }
 
     // Manual calibration (user-triggered via button)
@@ -981,7 +991,18 @@ class SensorDataIsolate {
       return;
     }
 
-    // Apply offset
+    _appendFrameAndDetect(ax, ay, az, gx, gy, gz, piezo);
+  }
+
+  void _appendFrameAndDetect(
+    double ax,
+    double ay,
+    double az,
+    double gx,
+    double gy,
+    double gz,
+    int piezo,
+  ) {
     final fixedGx = gx - _offsetGyroX;
     final fixedGy = gy - _offsetGyroY;
     final fixedGz = gz - _offsetGyroZ;

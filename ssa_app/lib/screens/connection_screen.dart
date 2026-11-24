@@ -157,6 +157,7 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
 
   /// Show mandatory calibration flow after successful BT connection.
   void _showCalibrationFlow() {
+    context.read<SensorDataProvider>().requestFullSync();
     showDialog(
       context: context,
       barrierDismissible: false,

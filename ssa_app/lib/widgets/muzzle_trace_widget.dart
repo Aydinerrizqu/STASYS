@@ -26,8 +26,15 @@ const Color _beginnerColor = Color(0xFFF44336);
 class MuzzleTraceWidget extends StatefulWidget {
   final double zoom;
   final bool showGrid;
+  /// Minimal chrome for embedded previews (e.g. calibration dialog).
+  final bool compact;
 
-  const MuzzleTraceWidget({super.key, this.zoom = 0.05, this.showGrid = true});
+  const MuzzleTraceWidget({
+    super.key,
+    this.zoom = 0.05,
+    this.showGrid = true,
+    this.compact = false,
+  });
 
   @override
   State<MuzzleTraceWidget> createState() => _MuzzleTraceWidgetState();
@@ -86,6 +93,7 @@ class _MuzzleTraceWidgetState extends State<MuzzleTraceWidget>
   @override
   void initState() {
     super.initState();
+    _currentZoom = widget.zoom;
     WidgetsBinding.instance.addObserver(this);
     _ticker = createTicker(_onTick);
     _ticker.start();
@@ -254,11 +262,50 @@ class _MuzzleTraceWidgetState extends State<MuzzleTraceWidget>
     return y;
   }
 
+  Widget _buildTraceCanvas(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: widget.compact
+            ? const Color(0xFF0A0C0F)
+            : StsysTheme.surfaceContainerLowestOf(context),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: widget.compact
+              ? const Color(0xFF1F242C)
+              : StsysTheme.outlineVariantOf(context).withValues(alpha: 0.2),
+        ),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: RepaintBoundary(
+          child: CustomPaint(
+            painter: _MuzzleTracePainter(
+              trace: _recentTrace,
+              dotX: _dotX,
+              dotY: _dotY,
+              cameraX: _cameraX,
+              cameraY: _cameraY,
+              zoom: _currentZoom,
+              showGrid: widget.showGrid,
+              phaseColor: _currentPhaseColor,
+              liveSpeed: _liveSpeed,
+            ),
+            size: Size.infinite,
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Consumer<SensorDataProvider>(
       builder: (context, provider, child) {
         _processLatestData(provider);
+
+        if (widget.compact) {
+          return _buildTraceCanvas(context);
+        }
 
         return Padding(
           padding: const EdgeInsets.all(12),
@@ -289,36 +336,7 @@ class _MuzzleTraceWidgetState extends State<MuzzleTraceWidget>
                 ],
               ),
               const SizedBox(height: 8),
-              Expanded(
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: StsysTheme.surfaceContainerLowestOf(context),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: StsysTheme.outlineVariantOf(context).withValues(alpha: 0.2),
-                    ),
-                  ),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(12),
-                    child: RepaintBoundary(
-                      child: CustomPaint(
-                        painter: _MuzzleTracePainter(
-                          trace: _recentTrace,
-                          dotX: _dotX,
-                          dotY: _dotY,
-                          cameraX: _cameraX,
-                          cameraY: _cameraY,
-                          zoom: _currentZoom,
-                          showGrid: widget.showGrid,
-                          phaseColor: _currentPhaseColor,
-                          liveSpeed: _liveSpeed,
-                        ),
-                        size: Size.infinite,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
+              Expanded(child: _buildTraceCanvas(context)),
               const SizedBox(height: 8),
             ],
           ),

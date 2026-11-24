@@ -15,6 +15,13 @@ void main() {
     when(() => mockSensor.resetAxis()).thenReturn(null);
     when(() => mockSensor.addListener(any())).thenReturn(null);
     when(() => mockSensor.removeListener(any())).thenReturn(null);
+    when(() => mockSensor.traceXData).thenReturn(const <double>[]);
+    when(() => mockSensor.traceYData).thenReturn(const <double>[]);
+    when(() => mockSensor.liveTraceX).thenReturn(0);
+    when(() => mockSensor.liveTraceY).thenReturn(0);
+    when(() => mockSensor.accelXData).thenReturn(const []);
+    when(() => mockSensor.accelYData).thenReturn(const []);
+    when(() => mockSensor.latestShot).thenReturn(null);
   });
 
   Widget buildDialog() {
